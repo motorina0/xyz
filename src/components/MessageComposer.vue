@@ -15,7 +15,7 @@
       @select="rememberSelection"
       @keydown.enter.exact.prevent="handleSend"
     >
-      <template #append>
+      <template #prepend>
         <q-btn
           flat
           round
@@ -25,7 +25,7 @@
           @click="rememberSelection"
         >
           <q-menu anchor="top right" self="bottom right" class="emoji-menu">
-            <q-scroll-area class="emoji-menu__scroll">
+            <div class="emoji-menu__scroll">
               <div class="emoji-grid">
                 <button
                   v-for="emoji in TOP_500_EMOJIS"
@@ -39,7 +39,7 @@
                   {{ emoji }}
                 </button>
               </div>
-            </q-scroll-area>
+            </div>
           </q-menu>
         </q-btn>
       </template>
