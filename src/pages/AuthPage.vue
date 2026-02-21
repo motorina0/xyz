@@ -1,7 +1,7 @@
 <template>
   <div class="auth-page">
     <div class="auth-shell">
-      <q-card flat bordered class="auth-card">
+      <q-card v-if="!isLoginMode" flat bordered class="auth-card">
         <q-card-section class="auth-card__header">
           <div class="auth-card__title">Welcome</div>
           <div class="auth-card__subtitle">Choose how you want to continue</div>
@@ -15,7 +15,7 @@
             icon="login"
             label="Login"
             class="auth-card__button"
-            @click="goToHome"
+            @click="openLoginCard"
           />
 
           <q-btn
@@ -29,14 +29,58 @@
           />
         </q-card-section>
       </q-card>
+
+      <q-card v-else flat bordered class="auth-card">
+        <q-card-section class="auth-card__header">
+          <div class="auth-card__title">Login</div>
+        </q-card-section>
+
+        <q-card-section class="auth-card__actions">
+          <q-input
+            v-model="privateKey"
+            class="tg-input"
+            dense
+            outlined
+            rounded
+            type="password"
+            label="Private Key (nsec)"
+            @keydown.enter.prevent="handleLogin"
+          />
+
+          <q-btn
+            unelevated
+            color="primary"
+            no-caps
+            label="Login"
+            class="auth-card__button"
+            :disable="privateKey.trim().length === 0"
+            @click="handleLogin"
+          />
+        </q-card-section>
+      </q-card>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 const router = useRouter();
+const isLoginMode = ref(false);
+const privateKey = ref('');
+
+function openLoginCard(): void {
+  isLoginMode.value = true;
+}
+
+function handleLogin(): void {
+  if (!privateKey.value.trim()) {
+    return;
+  }
+
+  goToHome();
+}
 
 function goToHome(): void {
   void router.push({ name: 'home' });
