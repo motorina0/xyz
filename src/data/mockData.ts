@@ -3,7 +3,7 @@ import type { Chat, Message } from 'src/types/chat';
 export const mockChats: Chat[] = [
   {
     id: 'chat-1',
-    name: 'Elena Rivera',
+    name: 'Elena Rivera x',
     avatar: 'ER',
     lastMessage: 'Can we sync before the release?',
     lastMessageAt: '2026-02-21T08:15:00.000Z',

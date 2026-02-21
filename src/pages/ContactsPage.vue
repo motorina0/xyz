@@ -33,16 +33,16 @@
         <q-scroll-area class="contacts-list">
           <q-list>
             <q-item
-              v-for="contact in filteredContacts"
+              v-for="contact in contacts"
               :key="contact.id"
               clickable
               class="contact-item"
-              :active="contact.id === chatStore.selectedChatId"
+              :active="contact.id === selectedContactId"
               active-class="contact-item--active"
-              @click="handleSelectContact(contact.id)"
+              @click="handleSelectContact(contact)"
             >
               <q-item-section avatar>
-                <q-avatar color="primary" text-color="white">{{ contact.avatar }}</q-avatar>
+                <q-avatar color="primary" text-color="white">{{ contactAvatar(contact) }}</q-avatar>
               </q-item-section>
 
               <q-item-section>
@@ -50,7 +50,9 @@
               </q-item-section>
             </q-item>
 
-            <div v-if="filteredContacts.length === 0" class="contacts-empty">
+            <div v-if="isLoadingContacts" class="contacts-empty">Loading contacts...</div>
+
+            <div v-else-if="contacts.length === 0" class="contacts-empty">
               No contacts found.
             </div>
           </q-list>
@@ -93,7 +95,8 @@
             no-caps
             label="Add"
             class="add-contact-dialog__action"
-            :disable="newContactIdentifier.trim().length === 0"
+            :disable="newContactIdentifier.trim().length === 0 || isCreatingContact"
+            :loading="isCreatingContact"
             @click="handleAddContact"
           />
         </q-card-actions>
@@ -103,13 +106,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatThread from 'src/components/ChatThread.vue';
+import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
+import type { ContactRecord } from 'src/types/contact';
 
 const $q = useQuasar();
 const router = useRouter();
@@ -119,21 +124,33 @@ const messageStore = useMessageStore();
 const isMobile = computed(() => $q.screen.lt.md);
 const contactQuery = ref('');
 const isAddContactDialogOpen = ref(false);
+const isLoadingContacts = ref(false);
+const isCreatingContact = ref(false);
 const newContactIdentifier = ref('');
+const selectedContactId = ref<number | null>(null);
+const contacts = ref<ContactRecord[]>([]);
 
-const sortedContacts = computed(() => {
-  return [...chatStore.chats].sort((first, second) => first.name.localeCompare(second.name));
+let latestSearchRequestId = 0;
+
+interface ContactMeta {
+  chatId?: string;
+  avatar?: string;
+}
+
+onMounted(() => {
+  void initializeContacts();
 });
 
-const filteredContacts = computed(() => {
-  const query = contactQuery.value.trim().toLowerCase();
+watch(contactQuery, (query) => {
+  void loadContacts(query);
+});
 
-  if (!query) {
-    return sortedContacts.value;
+watch(
+  () => chatStore.selectedChatId,
+  () => {
+    syncSelectedContact();
   }
-
-  return sortedContacts.value.filter((contact) => contact.name.toLowerCase().includes(query));
-});
+);
 
 const currentMessages = computed(() => messageStore.getMessages(chatStore.selectedChatId));
 
@@ -148,7 +165,126 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   }
 }
 
-function handleSelectContact(chatId: string): void {
+function parseContactMeta(meta: string): ContactMeta {
+  if (!meta.trim()) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(meta) as ContactMeta;
+    return typeof parsed === 'object' && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function buildAvatar(value: string): string {
+  const compactValue = value.replace(/\s+/g, ' ').trim();
+  if (!compactValue) {
+    return 'NA';
+  }
+
+  const parts = compactValue.split(' ');
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return compactValue.slice(0, 2).toUpperCase();
+}
+
+function contactAvatar(contact: ContactRecord): string {
+  const meta = parseContactMeta(contact.meta);
+  if (meta.avatar?.trim()) {
+    return meta.avatar.trim().slice(0, 2).toUpperCase();
+  }
+
+  return buildAvatar(contact.name || contact.public_key);
+}
+
+function syncSelectedContact(): void {
+  const selectedChatId = chatStore.selectedChatId;
+  if (!selectedChatId) {
+    selectedContactId.value = null;
+    return;
+  }
+
+  const linkedContact = contacts.value.find(
+    (contact) => parseContactMeta(contact.meta).chatId === selectedChatId
+  );
+
+  selectedContactId.value = linkedContact?.id ?? null;
+}
+
+async function initializeContacts(): Promise<void> {
+  try {
+    await contactsService.init();
+    await loadContacts();
+  } catch (error) {
+    console.error('Failed to initialize contacts service', error);
+  }
+}
+
+async function loadContacts(query = ''): Promise<void> {
+  const requestId = ++latestSearchRequestId;
+  isLoadingContacts.value = true;
+
+  try {
+    const nextContacts = query.trim()
+      ? await contactsService.searchContacts(query)
+      : await contactsService.listContacts();
+
+    if (requestId !== latestSearchRequestId) {
+      return;
+    }
+
+    contacts.value = nextContacts;
+    syncSelectedContact();
+  } catch (error) {
+    console.error('Failed to load contacts', error);
+  } finally {
+    if (requestId === latestSearchRequestId) {
+      isLoadingContacts.value = false;
+    }
+  }
+}
+
+async function ensureChatForContact(contact: ContactRecord): Promise<string | null> {
+  const meta = parseContactMeta(contact.meta);
+  const chatId = meta.chatId;
+
+  if (chatId && chatStore.chats.some((chat) => chat.id === chatId)) {
+    return chatId;
+  }
+
+  const createdChat = chatStore.addContact(contact.name || contact.public_key);
+  if (!createdChat) {
+    return null;
+  }
+
+  const nextMeta = JSON.stringify({
+    ...meta,
+    chatId: createdChat.id,
+    avatar: createdChat.avatar
+  });
+
+  const updatedContact = await contactsService.updateContact(contact.id, { meta: nextMeta });
+  if (updatedContact) {
+    const index = contacts.value.findIndex((entry) => entry.id === contact.id);
+    if (index >= 0) {
+      contacts.value[index] = updatedContact;
+    }
+  }
+
+  return createdChat.id;
+}
+
+async function handleSelectContact(contact: ContactRecord): Promise<void> {
+  const chatId = await ensureChatForContact(contact);
+  if (!chatId) {
+    return;
+  }
+
+  selectedContactId.value = contact.id;
   chatStore.selectChat(chatId);
 
   if (isMobile.value) {
@@ -165,18 +301,33 @@ function closeAddContactDialog(): void {
   newContactIdentifier.value = '';
 }
 
-function handleAddContact(): void {
-  const created = chatStore.addContact(newContactIdentifier.value);
-
-  if (!created) {
+async function handleAddContact(): Promise<void> {
+  const identifier = newContactIdentifier.value.trim();
+  if (!identifier || isCreatingContact.value) {
     return;
   }
 
-  chatStore.selectChat(created.id);
-  closeAddContactDialog();
+  isCreatingContact.value = true;
 
-  if (isMobile.value) {
-    void router.push({ name: 'chat', params: { chatId: created.id } });
+  try {
+    const created = await contactsService.createContact({
+      public_key: identifier,
+      name: identifier,
+      meta: ''
+    });
+
+    if (!created) {
+      return;
+    }
+
+    closeAddContactDialog();
+    contactQuery.value = '';
+    await loadContacts();
+    await handleSelectContact(created);
+  } catch (error) {
+    console.error('Failed to create contact', error);
+  } finally {
+    isCreatingContact.value = false;
   }
 }
 
