@@ -173,8 +173,7 @@ function rowToContact(row: unknown[]): ContactRecord {
   };
 }
 
-function mapContacts(results: ReturnType<SqlJsDatabase['exec']>): ContactRecord[] {
-  const rows = results[0]?.values ?? [];
+function mapContactRows(rows: unknown[][]): ContactRecord[] {
   return rows.map((row) => rowToContact(row));
 }
 
@@ -188,8 +187,8 @@ class ContactsService {
 
   async listContacts(): Promise<ContactRecord[]> {
     const db = await this.getDatabase();
-    const result = db.exec(`${CONTACT_SELECT_SQL} ORDER BY name COLLATE NOCASE ASC`);
-    return mapContacts(result);
+    const rows = this.queryRows(db, `${CONTACT_SELECT_SQL} ORDER BY name COLLATE NOCASE ASC`);
+    return mapContactRows(rows);
   }
 
   async searchContacts(searchText: string): Promise<ContactRecord[]> {
@@ -201,7 +200,8 @@ class ContactsService {
 
     const likeQuery = `%${query}%`;
     const db = await this.getDatabase();
-    const result = db.exec(
+    const rows = this.queryRows(
+      db,
       `
         ${CONTACT_SELECT_SQL}
         WHERE
@@ -213,13 +213,12 @@ class ContactsService {
       [likeQuery, likeQuery, likeQuery]
     );
 
-    return mapContacts(result);
+    return mapContactRows(rows);
   }
 
   async getContactById(id: number): Promise<ContactRecord | null> {
     const db = await this.getDatabase();
-    const result = db.exec(`${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
-    const contact = result[0]?.values?.[0];
+    const contact = this.querySingleRow(db, `${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
     return contact ? rowToContact(contact) : null;
   }
 
@@ -265,8 +264,10 @@ class ContactsService {
       insertStatement.free();
     }
 
-    const insertedResult = db.exec(`${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`);
-    const inserted = insertedResult[0]?.values?.[0];
+    const inserted = this.querySingleRow(
+      db,
+      `${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
+    );
     if (inserted) {
       this.persistDatabase(db);
     }
@@ -359,7 +360,7 @@ class ContactsService {
     }
 
     const db = await this.getDatabase();
-    return db.exec(sql, params);
+    return this.queryForDebug(db, sql, params);
   }
 
   private async getDatabase(): Promise<SqlJsDatabase> {
@@ -411,8 +412,7 @@ class ContactsService {
   }
 
   private seedContacts(db: SqlJsDatabase): void {
-    const existingRows = db.exec('SELECT COUNT(*) FROM contacts');
-    const count = Number(existingRows[0]?.values?.[0]?.[0] ?? 0);
+    const count = this.queryCount(db, 'SELECT COUNT(*) FROM contacts');
     if (count > 0) {
       return;
     }
@@ -439,8 +439,7 @@ class ContactsService {
   }
 
   private ensureSchema(db: SqlJsDatabase): boolean {
-    const tableInfo = db.exec('PRAGMA table_info(contacts)');
-    const rows = tableInfo[0]?.values ?? [];
+    const rows = this.queryRows(db, 'PRAGMA table_info(contacts)');
     const hasGivenName = rows.some((row) => String(row[1] ?? '') === 'given_name');
 
     if (!hasGivenName) {
@@ -452,7 +451,7 @@ class ContactsService {
   }
 
   private normalizeStoredMeta(db: SqlJsDatabase): boolean {
-    const rows = db.exec('SELECT id, meta FROM contacts')[0]?.values ?? [];
+    const rows = this.queryRows(db, 'SELECT id, meta FROM contacts');
     if (rows.length === 0) {
       return false;
     }
@@ -480,6 +479,67 @@ class ContactsService {
     }
 
     return didChange;
+  }
+
+  private queryRows(db: SqlJsDatabase, sql: string, params?: SqlExecParams): unknown[][] {
+    const statement = db.prepare(sql);
+
+    try {
+      if (params !== undefined) {
+        statement.bind(params);
+      }
+
+      const rows: unknown[][] = [];
+      while (statement.step()) {
+        rows.push(statement.get());
+      }
+
+      return rows;
+    } finally {
+      statement.free();
+    }
+  }
+
+  private querySingleRow(
+    db: SqlJsDatabase,
+    sql: string,
+    params?: SqlExecParams
+  ): unknown[] | null {
+    const rows = this.queryRows(db, sql, params);
+    return rows[0] ?? null;
+  }
+
+  private queryCount(db: SqlJsDatabase, sql: string, params?: SqlExecParams): number {
+    const row = this.querySingleRow(db, sql, params);
+    return Number(row?.[0] ?? 0);
+  }
+
+  private queryForDebug(
+    db: SqlJsDatabase,
+    sql: string,
+    params?: SqlExecParams
+  ): ReturnType<SqlJsDatabase['exec']> {
+    const statement = db.prepare(sql);
+
+    try {
+      if (params !== undefined) {
+        statement.bind(params);
+      }
+
+      const columns = statement.getColumnNames();
+      if (columns.length === 0) {
+        return [];
+      }
+
+      const values: unknown[][] = [];
+      while (statement.step()) {
+        values.push(statement.get());
+      }
+
+      return [{ columns, values }];
+    } finally {
+      statement.free();
+    }
   }
 
   private loadPersistedDatabase(): Uint8Array | null {
