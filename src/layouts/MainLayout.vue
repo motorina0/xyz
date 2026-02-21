@@ -45,11 +45,13 @@
 import { computed } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRoute, useRouter } from 'vue-router';
+import { useRelayStore } from 'src/stores/relayStore';
 import { readDarkModePreference } from 'src/utils/themeStorage';
 
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
+const relayStore = useRelayStore();
 const savedDarkMode = readDarkModePreference();
 const isMobile = computed(() => $q.screen.lt.md);
 
@@ -72,6 +74,7 @@ const activeSection = computed<NavigationSection>(() => {
 if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
+relayStore.init();
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {

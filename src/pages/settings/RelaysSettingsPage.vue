@@ -29,7 +29,7 @@
       </q-input>
 
       <q-list bordered separator class="relays-content__list q-mt-md">
-        <q-item v-for="(relay, index) in relays" :key="`${relay}-${index}`">
+        <q-item v-for="(relay, index) in relayStore.relays" :key="`${relay}-${index}`">
           <q-item-section>
             <q-item-label>{{ relay }}</q-item-label>
           </q-item-section>
@@ -54,12 +54,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+import { useRelayStore } from 'src/stores/relayStore';
 
-const relays = ref<string[]>([
-  'wss://cache2.primal.net/v1',
-  'wss://relay.damus.io',
-  'wss://nostr.mom'
-]);
+const relayStore = useRelayStore();
 const newRelay = ref('');
 const relayValidationError = computed(() => validateRelayUrl(newRelay.value.trim()));
 const canAddRelay = computed(() => {
@@ -67,13 +64,15 @@ const canAddRelay = computed(() => {
   return value.length > 0 && relayValidationError.value.length === 0;
 });
 
+relayStore.init();
+
 function addRelay(): void {
   const value = newRelay.value.trim();
   if (!value || relayValidationError.value) {
     return;
   }
 
-  relays.value = [...relays.value, value];
+  relayStore.addRelay(value);
   newRelay.value = '';
 }
 
@@ -99,7 +98,7 @@ function validateRelayUrl(value: string): string {
 }
 
 function removeRelay(index: number): void {
-  relays.value = relays.value.filter((_, entryIndex) => entryIndex !== index);
+  relayStore.removeRelay(index);
 }
 </script>
 
