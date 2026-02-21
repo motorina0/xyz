@@ -36,16 +36,15 @@
 <script setup lang="ts">
 const topItems = [
   { key: 'chats', label: 'Chats', icon: 'chat' },
-  { key: 'contacts', label: 'Contacts', icon: 'contacts' },
-  { key: 'favourites', label: 'Favourites', icon: 'star' }
+  { key: 'contacts', label: 'Contacts', icon: 'contacts' }
 ] as const;
 
 defineProps<{
-  modelValue: 'chats' | 'contacts' | 'favourites' | 'settings';
+  modelValue: 'chats' | 'contacts' | 'settings';
 }>();
 
 defineEmits<{
-  (event: 'update:modelValue', value: 'chats' | 'contacts' | 'favourites' | 'settings'): void;
+  (event: 'update:modelValue', value: 'chats' | 'contacts' | 'settings'): void;
 }>();
 </script>
 

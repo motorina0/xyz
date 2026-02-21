@@ -58,7 +58,7 @@ const chatStore = useChatStore();
 const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
-const activeRailSection = ref<'chats' | 'contacts' | 'favourites' | 'settings'>('chats');
+const activeRailSection = ref<'chats' | 'contacts' | 'settings'>('chats');
 
 const currentMessages = computed(() => {
   return messageStore.getMessages(chatStore.selectedChatId);
