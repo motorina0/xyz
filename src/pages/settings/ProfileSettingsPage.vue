@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Profile" />
+  <SettingsDetailLayout title="Profile" icon="face" />
 </template>
 
 <script setup lang="ts">

@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Notifications" />
+  <SettingsDetailLayout title="Notifications" icon="notifications" />
 </template>
 
 <script setup lang="ts">

@@ -20,6 +20,10 @@
             active-class="settings-menu__item--active"
             @click="goToSetting(item.routeName)"
           >
+            <q-item-section avatar>
+              <q-icon :name="item.icon" />
+            </q-item-section>
+
             <q-item-section>
               <q-item-label>{{ item.label }}</q-item-label>
             </q-item-section>
@@ -47,10 +51,15 @@ const router = useRouter();
 const isMobile = computed(() => $q.screen.lt.md);
 
 const settingsItems = [
-  { key: 'profile', label: 'Profile', routeName: 'settings-profile' },
-  { key: 'theme', label: 'Theme', routeName: 'settings-theme' },
-  { key: 'language', label: 'Language', routeName: 'settings-language' },
-  { key: 'notifications', label: 'Notifications', routeName: 'settings-notifications' }
+  { key: 'profile', label: 'Profile', icon: 'face', routeName: 'settings-profile' },
+  { key: 'theme', label: 'Theme', icon: 'wallpaper', routeName: 'settings-theme' },
+  { key: 'language', label: 'Language', icon: 'language', routeName: 'settings-language' },
+  {
+    key: 'notifications',
+    label: 'Notifications',
+    icon: 'notifications',
+    routeName: 'settings-notifications'
+  }
 ] as const;
 
 const activeSettingKey = computed(() => {

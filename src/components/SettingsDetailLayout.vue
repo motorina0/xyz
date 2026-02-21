@@ -1,6 +1,7 @@
 <template>
   <div class="settings-detail-layout">
     <div class="settings-detail-layout__header">
+      <q-icon v-if="icon" :name="icon" size="20px" class="settings-detail-layout__icon" />
       <div class="settings-detail-layout__title">{{ title }}</div>
     </div>
 
@@ -13,6 +14,7 @@
 <script setup lang="ts">
 defineProps<{
   title: string;
+  icon?: string;
 }>();
 </script>
 
@@ -35,6 +37,11 @@ defineProps<{
 .settings-detail-layout__title {
   font-size: 16px;
   font-weight: 600;
+}
+
+.settings-detail-layout__icon {
+  margin-right: 10px;
+  opacity: 0.82;
 }
 
 .settings-detail-layout__body {

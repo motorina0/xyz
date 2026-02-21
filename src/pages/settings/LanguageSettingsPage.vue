@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Language" />
+  <SettingsDetailLayout title="Language" icon="language" />
 </template>
 
 <script setup lang="ts">

@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout title="Theme">
+  <SettingsDetailLayout title="Theme" icon="wallpaper">
     <q-card flat bordered class="theme-card">
       <q-card-section class="row items-center justify-between q-gutter-md">
         <div>
