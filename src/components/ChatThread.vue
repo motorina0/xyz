@@ -1,0 +1,137 @@
+<template>
+  <div class="thread-root">
+    <template v-if="chat">
+      <div class="thread-header">
+        <q-btn
+          v-if="showBackButton"
+          flat
+          dense
+          no-caps
+          label="Back"
+          @click="$emit('back')"
+        />
+        <q-avatar color="primary" text-color="white">{{ chat.avatar }}</q-avatar>
+        <div class="thread-header__meta">
+          <div class="thread-header__name">{{ chat.name }}</div>
+          <div class="thread-header__time">Last active {{ headerTime }}</div>
+        </div>
+      </div>
+
+      <div ref="threadBodyRef" class="thread-body">
+        <MessageBubble v-for="message in messages" :key="message.id" :message="message" />
+      </div>
+
+      <MessageComposer @send="$emit('send', $event)" />
+    </template>
+
+    <div v-else class="thread-empty">
+      <div class="thread-empty__mark q-mb-md">...</div>
+      <div>Select a chat to start messaging.</div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue';
+import MessageBubble from 'src/components/MessageBubble.vue';
+import MessageComposer from 'src/components/MessageComposer.vue';
+import type { Chat, Message } from 'src/types/chat';
+
+const props = withDefaults(
+  defineProps<{
+    chat: Chat | null;
+    messages: Message[];
+    showBackButton?: boolean;
+  }>(),
+  {
+    showBackButton: false
+  }
+);
+
+defineEmits<{
+  (event: 'send', text: string): void;
+  (event: 'back'): void;
+}>();
+
+const threadBodyRef = ref<HTMLElement | null>(null);
+
+const headerTime = computed(() => {
+  if (!props.chat) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    month: 'short',
+    day: 'numeric'
+  }).format(new Date(props.chat.lastMessageAt));
+});
+
+async function scrollToBottom(): Promise<void> {
+  await nextTick();
+
+  if (threadBodyRef.value) {
+    threadBodyRef.value.scrollTop = threadBodyRef.value.scrollHeight;
+  }
+}
+
+watch(
+  () => [props.chat?.id, props.messages.length],
+  () => {
+    void scrollToBottom();
+  },
+  { immediate: true }
+);
+</script>
+
+<style scoped>
+.thread-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--tg-thread-bg);
+}
+
+.thread-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--tg-border);
+  background: var(--tg-sidebar);
+}
+
+.thread-header__meta {
+  overflow: hidden;
+}
+
+.thread-header__name {
+  font-weight: 600;
+}
+
+.thread-header__time {
+  font-size: 12px;
+  opacity: 0.65;
+}
+
+.thread-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+}
+
+.thread-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  opacity: 0.7;
+}
+
+.thread-empty__mark {
+  font-size: 48px;
+  line-height: 1;
+}
+</style>

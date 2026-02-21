@@ -1,0 +1,27 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+
+:root {
+  --tg-bg: #f4f6fb;
+  --tg-sidebar: #ffffff;
+  --tg-thread-bg: linear-gradient(180deg, #e9f2ff 0%, #f7fbff 100%);
+  --tg-sent: #d5f5c8;
+  --tg-received: #ffffff;
+  --tg-border: #d8dfea;
+}
+
+body.body--dark {
+  --tg-bg: #111827;
+  --tg-sidebar: #1f2937;
+  --tg-thread-bg: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+  --tg-sent: #1f6f5e;
+  --tg-received: #273449;
+  --tg-border: #334155;
+}
+
+body {
+  font-family: 'Manrope', 'Trebuchet MS', sans-serif;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(61, 137, 255, 0.1) 0, transparent 34%),
+    radial-gradient(circle at 84% 10%, rgba(86, 191, 156, 0.12) 0, transparent 30%),
+    var(--tg-bg);
+}
