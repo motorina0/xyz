@@ -6,9 +6,9 @@
         :key="item.key"
         unelevated
         class="nav-rail__btn"
-        :class="{ 'nav-rail__btn--active': modelValue === item.key }"
+        :class="{ 'nav-rail__btn--active': active === item.key }"
         :aria-label="item.label"
-        @click="$emit('update:modelValue', item.key)"
+        @click="$emit('select', item.key)"
       >
         <q-icon :name="item.icon" size="20px" />
 
@@ -21,9 +21,9 @@
     <q-btn
       unelevated
       class="nav-rail__btn"
-      :class="{ 'nav-rail__btn--active': modelValue === 'settings' }"
+      :class="{ 'nav-rail__btn--active': active === 'settings' }"
       aria-label="Settings"
-      @click="$emit('update:modelValue', 'settings')"
+      @click="$emit('select', 'settings')"
     >
       <q-icon name="settings" size="20px" />
       <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
@@ -40,11 +40,11 @@ const topItems = [
 ] as const;
 
 defineProps<{
-  modelValue: 'chats' | 'contacts' | 'settings';
+  active: 'chats' | 'contacts' | 'settings';
 }>();
 
 defineEmits<{
-  (event: 'update:modelValue', value: 'chats' | 'contacts' | 'settings'): void;
+  (event: 'select', value: 'chats' | 'contacts' | 'settings'): void;
 }>();
 </script>
 

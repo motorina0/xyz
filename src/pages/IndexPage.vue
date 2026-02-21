@@ -2,7 +2,7 @@
   <q-page class="home-page">
     <div class="home-shell" :class="{ 'home-shell--mobile': isMobile }">
       <aside v-if="!isMobile" class="rail-panel">
-        <AppNavRail v-model="activeRailSection" />
+        <AppNavRail active="chats" @select="handleRailSelect" />
       </aside>
 
       <aside class="sidebar">
@@ -43,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
@@ -58,7 +58,6 @@ const chatStore = useChatStore();
 const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
-const activeRailSection = ref<'chats' | 'contacts' | 'settings'>('chats');
 
 const currentMessages = computed(() => {
   return messageStore.getMessages(chatStore.selectedChatId);
@@ -71,6 +70,17 @@ const searchQuery = computed({
 
 function toggleDarkMode(): void {
   $q.dark.toggle();
+}
+
+function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
+  if (section === 'contacts') {
+    void router.push({ name: 'contacts' });
+    return;
+  }
+
+  if (section === 'settings') {
+    void router.push({ name: 'settings-profile' });
+  }
 }
 
 function handleSelectChat(chatId: string): void {
