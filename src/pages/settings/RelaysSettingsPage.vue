@@ -14,10 +14,12 @@
         <template #append>
           <q-btn
             unelevated
+            round
+            dense
             color="primary"
-            no-caps
-            label="Add"
-            class="relays-content__add-btn"
+            icon="add"
+            size="sm"
+            aria-label="Add relay"
             :disable="newRelay.trim().length === 0"
             @click="addRelay"
           />
@@ -76,11 +78,6 @@ function removeRelay(index: number): void {
 <style scoped>
 .relays-content {
   max-width: 720px;
-}
-
-.relays-content__add-btn {
-  border-radius: 999px;
-  min-width: 68px;
 }
 
 .relays-content__list {
