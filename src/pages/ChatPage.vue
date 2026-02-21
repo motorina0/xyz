@@ -1,15 +1,5 @@
 <template>
   <q-page class="chat-page">
-    <div class="chat-page__toolbar">
-      <q-btn
-        dense
-        flat
-        no-caps
-        :label="$q.dark.isActive ? 'Light' : 'Dark'"
-        @click="toggleDarkMode"
-      />
-    </div>
-
     <div class="chat-page__thread">
       <ChatThread
         :chat="activeChat"
@@ -73,10 +63,6 @@ watch(
   { immediate: true }
 );
 
-function toggleDarkMode(): void {
-  $q.dark.toggle();
-}
-
 function goBack(): void {
   void router.push({ name: 'home' });
 }
@@ -100,12 +86,6 @@ function handleSend(text: string): void {
   flex-direction: column;
   height: calc(100vh - env(safe-area-inset-top));
   padding: 10px;
-  gap: 10px;
-}
-
-.chat-page__toolbar {
-  display: flex;
-  justify-content: flex-end;
 }
 
 .chat-page__thread {
@@ -124,11 +104,6 @@ function handleSend(text: string): void {
 @media (max-width: 1023px) {
   .chat-page {
     padding: 0;
-    gap: 0;
-  }
-
-  .chat-page__toolbar {
-    padding: 6px 10px;
   }
 
   .chat-page__thread {

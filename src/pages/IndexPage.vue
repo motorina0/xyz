@@ -9,13 +9,6 @@
         <div class="sidebar-top">
           <div class="sidebar-top__row">
             <div class="sidebar-top__title">Chats</div>
-            <q-btn
-              dense
-              flat
-              no-caps
-              :label="$q.dark.isActive ? 'Light' : 'Dark'"
-              @click="toggleDarkMode"
-            />
           </div>
 
           <q-input
@@ -67,10 +60,6 @@ const searchQuery = computed({
   get: () => chatStore.searchQuery,
   set: (value: string) => chatStore.setSearchQuery(value)
 });
-
-function toggleDarkMode(): void {
-  $q.dark.toggle();
-}
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   if (section === 'contacts') {

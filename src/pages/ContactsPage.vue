@@ -9,13 +9,6 @@
         <div class="contacts-sidebar__top">
           <div class="contacts-sidebar__row">
             <div class="contacts-sidebar__title">Contacts</div>
-            <q-btn
-              dense
-              flat
-              no-caps
-              :label="$q.dark.isActive ? 'Light' : 'Dark'"
-              @click="toggleDarkMode"
-            />
           </div>
 
           <q-input
@@ -93,10 +86,6 @@ const filteredContacts = computed(() => {
 });
 
 const currentMessages = computed(() => messageStore.getMessages(chatStore.selectedChatId));
-
-function toggleDarkMode(): void {
-  $q.dark.toggle();
-}
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   if (section === 'chats') {
