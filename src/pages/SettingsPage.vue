@@ -54,6 +54,7 @@ const isSettingsListView = computed(() => route.name === 'settings');
 const settingsItems = [
   { key: 'profile', label: 'Profile', icon: 'face', routeName: 'settings-profile' },
   { key: 'theme', label: 'Theme', icon: 'wallpaper', routeName: 'settings-theme' },
+  { key: 'relays', label: 'Relays', icon: 'satellite_alt', routeName: 'settings-relays' },
   { key: 'language', label: 'Language', icon: 'language', routeName: 'settings-language' },
   {
     key: 'notifications',
@@ -90,7 +91,12 @@ function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
 }
 
 function goToSetting(
-  routeName: 'settings-profile' | 'settings-theme' | 'settings-language' | 'settings-notifications'
+  routeName:
+    | 'settings-profile'
+    | 'settings-theme'
+    | 'settings-relays'
+    | 'settings-language'
+    | 'settings-notifications'
 ): void {
   void router.push({ name: routeName });
 }

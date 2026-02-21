@@ -31,6 +31,11 @@ const routes: RouteRecordRaw[] = [
             component: () => import('pages/settings/ThemeSettingsPage.vue')
           },
           {
+            path: 'relays',
+            name: 'settings-relays',
+            component: () => import('pages/settings/RelaysSettingsPage.vue')
+          },
+          {
             path: 'language',
             name: 'settings-language',
             component: () => import('pages/settings/LanguageSettingsPage.vue')
