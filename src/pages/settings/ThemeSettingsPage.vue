@@ -24,6 +24,7 @@
 import { computed } from 'vue';
 import { useQuasar } from 'quasar';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+import { saveDarkModePreference } from 'src/utils/themeStorage';
 
 const $q = useQuasar();
 
@@ -31,6 +32,7 @@ const darkMode = computed({
   get: () => $q.dark.isActive,
   set: (value: boolean) => {
     $q.dark.set(value);
+    saveDarkModePreference(value);
   }
 });
 </script>
