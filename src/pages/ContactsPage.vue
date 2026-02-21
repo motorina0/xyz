@@ -46,7 +46,14 @@
               </q-item-section>
 
               <q-item-section>
-                <q-item-label class="contact-item__name">{{ contactDisplayName(contact) }}</q-item-label>
+                <q-item-label class="contact-item__name">{{ contactListTitle(contact) }}</q-item-label>
+                <q-item-label
+                  v-if="contactListCaption(contact)"
+                  caption
+                  class="contact-item__caption"
+                >
+                  {{ contactListCaption(contact) }}
+                </q-item-label>
               </q-item-section>
             </q-item>
 
@@ -209,6 +216,38 @@ function contactDisplayName(contact: ContactRecord): string {
   }
 
   return contact.name || contact.public_key;
+}
+
+function contactPubkeySnippet(contact: ContactRecord): string {
+  return contact.public_key.trim().slice(0, 32);
+}
+
+function contactListTitle(contact: ContactRecord): string {
+  const givenName = contact.given_name?.trim();
+  if (givenName) {
+    return givenName;
+  }
+
+  const name = contact.name.trim();
+  if (name) {
+    return name;
+  }
+
+  return contactPubkeySnippet(contact);
+}
+
+function contactListCaption(contact: ContactRecord): string {
+  const givenName = contact.given_name?.trim();
+  if (givenName) {
+    return contact.name.trim();
+  }
+
+  const name = contact.name.trim();
+  if (name) {
+    return contactPubkeySnippet(contact);
+  }
+
+  return '';
 }
 
 function syncSelectedContact(): void {
@@ -433,6 +472,10 @@ function handleSend(text: string): void {
 
 .contact-item__name {
   font-weight: 600;
+}
+
+.contact-item__caption {
+  opacity: 0.78;
 }
 
 .contact-item--active {
