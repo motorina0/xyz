@@ -6,6 +6,7 @@ import type { ContactRecord, CreateContactInput, UpdateContactInput } from 'src/
 type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>;
 type SqlJsDatabase = InstanceType<SqlJsStatic['Database']>;
 type SqlExecParams = Parameters<SqlJsDatabase['exec']>[1];
+const CONTACTS_DB_STORAGE_KEY = 'contacts-sqlite-db-v1';
 
 const CONTACTS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS contacts (
@@ -25,6 +26,33 @@ const CONTACT_SELECT_SQL = `
   SELECT id, public_key, name, meta
   FROM contacts
 `;
+
+function canUseStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  const chunkSize = 0x8000;
+  let binary = '';
+
+  for (let index = 0; index < bytes.length; index += chunkSize) {
+    const chunk = bytes.subarray(index, index + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value);
+  const output = new Uint8Array(binary.length);
+
+  for (let index = 0; index < binary.length; index += 1) {
+    output[index] = binary.charCodeAt(index);
+  }
+
+  return output;
+}
 
 function rowToContact(row: unknown[]): ContactRecord {
   return {
@@ -101,6 +129,10 @@ class ContactsService {
 
     const insertedResult = db.exec(`${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`);
     const inserted = insertedResult[0]?.values?.[0];
+    if (inserted) {
+      this.persistDatabase(db);
+    }
+
     return inserted ? rowToContact(inserted) : null;
   }
 
@@ -145,6 +177,10 @@ class ContactsService {
       updateStatement.free();
     }
 
+    if (db.getRowsModified() > 0) {
+      this.persistDatabase(db);
+    }
+
     return this.getContactById(id);
   }
 
@@ -157,7 +193,12 @@ class ContactsService {
       deleteStatement.free();
     }
 
-    return db.getRowsModified() > 0;
+    const hasChanges = db.getRowsModified() > 0;
+    if (hasChanges) {
+      this.persistDatabase(db);
+    }
+
+    return hasChanges;
   }
 
   async debugExec(
@@ -192,7 +233,20 @@ class ContactsService {
 
   private async createDatabase(): Promise<SqlJsDatabase> {
     const SQL = await this.getSqlJs();
-    const db = new SQL.Database();
+    const persistedBytes = this.loadPersistedDatabase();
+    let db: SqlJsDatabase;
+
+    if (persistedBytes) {
+      try {
+        db = new SQL.Database(persistedBytes);
+      } catch (error) {
+        console.error('Failed to restore persisted contacts database. Recreating a fresh database.', error);
+        this.clearPersistedDatabase();
+        db = new SQL.Database();
+      }
+    } else {
+      db = new SQL.Database();
+    }
 
     db.run(CONTACTS_TABLE_SQL);
     db.run(CONTACTS_INDEXES_SQL);
@@ -222,6 +276,48 @@ class ContactsService {
     }
 
     statement.free();
+    this.persistDatabase(db);
+  }
+
+  private loadPersistedDatabase(): Uint8Array | null {
+    if (!canUseStorage()) {
+      return null;
+    }
+
+    const encoded = window.localStorage.getItem(CONTACTS_DB_STORAGE_KEY);
+    if (!encoded) {
+      return null;
+    }
+
+    try {
+      return base64ToBytes(encoded);
+    } catch (error) {
+      console.error('Failed to decode persisted contacts database bytes.', error);
+      this.clearPersistedDatabase();
+      return null;
+    }
+  }
+
+  private persistDatabase(db: SqlJsDatabase): void {
+    if (!canUseStorage()) {
+      return;
+    }
+
+    try {
+      const bytes = db.export();
+      const encoded = bytesToBase64(bytes);
+      window.localStorage.setItem(CONTACTS_DB_STORAGE_KEY, encoded);
+    } catch (error) {
+      console.error('Failed to persist contacts database.', error);
+    }
+  }
+
+  private clearPersistedDatabase(): void {
+    if (!canUseStorage()) {
+      return;
+    }
+
+    window.localStorage.removeItem(CONTACTS_DB_STORAGE_KEY);
   }
 }
 
