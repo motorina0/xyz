@@ -5,13 +5,14 @@ import type { ContactRecord, CreateContactInput, UpdateContactInput } from 'src/
 
 type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>;
 type SqlJsDatabase = InstanceType<SqlJsStatic['Database']>;
+type SqlExecParams = Parameters<SqlJsDatabase['exec']>[1];
 
 const CONTACTS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS contacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     public_key TEXT NOT NULL,
     name TEXT NOT NULL,
-    meta TEXT NOT NULL DEFAULT ''
+    meta TEXT NOT NULL
   );
 `;
 
@@ -60,14 +61,15 @@ class ContactsService {
       return this.listContacts();
     }
 
+    const likeQuery = `%${query}%`;
     const db = await this.getDatabase();
     const result = db.exec(
       `
         ${CONTACT_SELECT_SQL}
-        WHERE LOWER(public_key) LIKE :query OR LOWER(name) LIKE :query
+        WHERE LOWER(public_key) LIKE ? OR LOWER(name) LIKE ?
         ORDER BY name COLLATE NOCASE ASC
       `,
-      { ':query': `%${query}%` }
+      [likeQuery, likeQuery]
     );
 
     return mapContacts(result);
@@ -75,7 +77,7 @@ class ContactsService {
 
   async getContactById(id: number): Promise<ContactRecord | null> {
     const db = await this.getDatabase();
-    const result = db.exec(`${CONTACT_SELECT_SQL} WHERE id = :id LIMIT 1`, { ':id': id });
+    const result = db.exec(`${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
     const contact = result[0]?.values?.[0];
     return contact ? rowToContact(contact) : null;
   }
@@ -90,21 +92,12 @@ class ContactsService {
     }
 
     const db = await this.getDatabase();
-    db.run(
-      `
-        INSERT INTO contacts (public_key, name, meta)
-        VALUES (:public_key, :name, :meta)
-      `,
-      { ':public_key': publicKey, ':name': name, ':meta': meta }
-    );
+    db.run('INSERT INTO contacts (public_key, name, meta) VALUES (?, ?, ?)', [publicKey, name, meta]);
 
-    const inserted = db.exec('SELECT last_insert_rowid()');
-    const insertedId = Number(inserted[0]?.values?.[0]?.[0] ?? 0);
-    if (!insertedId) {
-      return null;
-    }
-
-    return this.getContactById(insertedId);
+    const insertedResult = db.exec(`${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`);
+    console.log('## Inserted contact result', insertedResult);
+    const inserted = insertedResult[0]?.values?.[0];
+    return inserted ? rowToContact(inserted) : null;
   }
 
   async updateContact(id: number, input: UpdateContactInput): Promise<ContactRecord | null> {
@@ -136,23 +129,32 @@ class ContactsService {
       return this.getContactById(id);
     }
 
-    const setClause = updates.map((update, index) => `${update.field} = :value_${index}`).join(', ');
-    const params: Record<string, number | string> = { ':id': id };
-
-    updates.forEach((update, index) => {
-      params[`:value_${index}`] = update.value;
-    });
+    const setClause = updates.map((update) => `${update.field} = ?`).join(', ');
+    const params: Array<number | string> = updates.map((update) => update.value);
+    params.push(id);
 
     const db = await this.getDatabase();
-    db.run(`UPDATE contacts SET ${setClause} WHERE id = :id`, params);
+    db.run(`UPDATE contacts SET ${setClause} WHERE id = ?`, params);
 
     return this.getContactById(id);
   }
 
   async deleteContact(id: number): Promise<boolean> {
     const db = await this.getDatabase();
-    db.run('DELETE FROM contacts WHERE id = :id', { ':id': id });
+    db.run('DELETE FROM contacts WHERE id = ?', [id]);
     return db.getRowsModified() > 0;
+  }
+
+  async debugExec(
+    sql: string,
+    params?: SqlExecParams
+  ): Promise<ReturnType<SqlJsDatabase['exec']>> {
+    if (!import.meta.env.DEV) {
+      throw new Error('debugExec is available only in development mode.');
+    }
+
+    const db = await this.getDatabase();
+    return db.exec(sql, params);
   }
 
   private async getDatabase(): Promise<SqlJsDatabase> {
@@ -191,22 +193,17 @@ class ContactsService {
       return;
     }
 
-    const statement = db.prepare(
-      `
-        INSERT INTO contacts (public_key, name, meta)
-        VALUES (:public_key, :name, :meta)
-      `
-    );
+    const statement = db.prepare('INSERT INTO contacts (public_key, name, meta) VALUES (?, ?, ?)');
 
     for (const chat of mockChats) {
-      statement.run({
-        ':public_key': `pk_${chat.id}`,
-        ':name': chat.name,
-        ':meta': JSON.stringify({
+      statement.run([
+        `pk_${chat.id}`,
+        chat.name,
+        JSON.stringify({
           chatId: chat.id,
           avatar: chat.avatar
         })
-      });
+      ]);
     }
 
     statement.free();

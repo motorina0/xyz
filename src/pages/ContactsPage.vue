@@ -312,10 +312,10 @@ async function handleAddContact(): Promise<void> {
   try {
     const created = await contactsService.createContact({
       public_key: identifier,
-      name: identifier,
+      name: '',
       meta: ''
     });
-
+    console.log('### Created contact', created);
     if (!created) {
       return;
     }
