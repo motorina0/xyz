@@ -1,6 +1,5 @@
 import initSqlJs from 'sql.js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
-import { mockChats } from 'src/data/mockData';
 import type {
   ContactBirthday,
   ContactMetadata,
@@ -412,30 +411,7 @@ class ContactsService {
   }
 
   private seedContacts(db: SqlJsDatabase): void {
-    const count = this.queryCount(db, 'SELECT COUNT(*) FROM contacts');
-    if (count > 0) {
-      return;
-    }
-
-    const statement = db.prepare(
-      'INSERT INTO contacts (public_key, name, given_name, meta) VALUES (?, ?, ?, ?)'
-    );
-
-    for (const chat of mockChats) {
-      statement.run([
-        `pk_${chat.id}`,
-        chat.name,
-        null,
-        serializeContactMeta({
-          display_name: chat.name,
-          chatId: chat.id,
-          avatar: chat.avatar
-        })
-      ]);
-    }
-
-    statement.free();
-    this.persistDatabase(db);
+    void db;
   }
 
   private ensureSchema(db: SqlJsDatabase): boolean {
@@ -507,11 +483,6 @@ class ContactsService {
   ): unknown[] | null {
     const rows = this.queryRows(db, sql, params);
     return rows[0] ?? null;
-  }
-
-  private queryCount(db: SqlJsDatabase, sql: string, params?: SqlExecParams): number {
-    const row = this.querySingleRow(db, sql, params);
-    return Number(row?.[0] ?? 0);
   }
 
   private queryForDebug(
