@@ -36,6 +36,14 @@
         </q-card-section>
 
         <q-card-section class="auth-card__actions">
+          <q-card flat bordered class="auth-warning">
+            <q-card-section class="auth-warning__content">
+              <q-icon name="warning" size="20px" class="auth-warning__icon" />
+              <div>Entering your private key is not the preferred method for authentication. Use a Nostr Remote Signer.</div>
+           
+            </q-card-section>
+          </q-card>
+
           <q-input
             v-model="privateKey"
             class="tg-input"
@@ -46,7 +54,7 @@
             label="Private Key (nsec)"
             @keydown.enter.prevent="handleLogin"
           />
-
+         
           <q-btn
             unelevated
             color="primary"
@@ -129,5 +137,23 @@ function goToHome(): void {
 .auth-card__button {
   min-height: 44px;
   border-radius: 999px;
+}
+
+.auth-warning {
+  border-color: #f3c969;
+  background: #fff7db;
+}
+
+.auth-warning__content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  color: #7c4a03;
+  font-weight: 600;
+}
+
+.auth-warning__icon {
+  color: #b26b00;
 }
 </style>
