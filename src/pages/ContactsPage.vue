@@ -9,6 +9,15 @@
         <div class="contacts-sidebar__top">
           <div class="contacts-sidebar__row">
             <div class="contacts-sidebar__title">Contacts</div>
+            <q-btn
+              dense
+              flat
+              round
+              icon="person_add_alt"
+              aria-label="Add Contact"
+            >
+              <q-tooltip>Add Contact</q-tooltip>
+            </q-btn>
           </div>
 
           <q-input
