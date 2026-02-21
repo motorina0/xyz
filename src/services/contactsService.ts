@@ -1,5 +1,4 @@
-import initSqlJs from 'sql.js';
-import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
+import { dbService, type AppDatabase } from 'src/services/dbService';
 import type {
   ContactBirthday,
   ContactMetadata,
@@ -8,10 +7,7 @@ import type {
   UpdateContactInput
 } from 'src/types/contact';
 
-type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>;
-type SqlJsDatabase = InstanceType<SqlJsStatic['Database']>;
-type SqlExecParams = Parameters<SqlJsDatabase['exec']>[1];
-const CONTACTS_DB_STORAGE_KEY = 'contacts-sqlite-db-v1';
+type SqlExecParams = Parameters<AppDatabase['exec']>[1];
 
 const CONTACTS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS contacts (
@@ -32,33 +28,6 @@ const CONTACT_SELECT_SQL = `
   SELECT id, public_key, name, given_name, meta
   FROM contacts
 `;
-
-function canUseStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, index + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const output = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    output[index] = binary.charCodeAt(index);
-  }
-
-  return output;
-}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -177,11 +146,10 @@ function mapContactRows(rows: unknown[][]): ContactRecord[] {
 }
 
 class ContactsService {
-  private sqlPromise: Promise<SqlJsStatic> | null = null;
-  private dbPromise: Promise<SqlJsDatabase> | null = null;
+  private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
-    await this.getDatabase();
+    await this.ensureInitialized();
   }
 
   async listContacts(): Promise<ContactRecord[]> {
@@ -268,7 +236,7 @@ class ContactsService {
       `${CONTACT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
     );
     if (inserted) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
 
     return inserted ? rowToContact(inserted) : null;
@@ -327,7 +295,7 @@ class ContactsService {
     }
 
     if (db.getRowsModified() > 0) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
 
     return this.getContactById(id);
@@ -344,7 +312,7 @@ class ContactsService {
 
     const hasChanges = db.getRowsModified() > 0;
     if (hasChanges) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
 
     return hasChanges;
@@ -353,7 +321,7 @@ class ContactsService {
   async debugExec(
     sql: string,
     params?: SqlExecParams
-  ): Promise<ReturnType<SqlJsDatabase['exec']>> {
+  ): Promise<ReturnType<AppDatabase['exec']>> {
     if (!import.meta.env.DEV) {
       throw new Error('debugExec is available only in development mode.');
     }
@@ -362,40 +330,16 @@ class ContactsService {
     return this.queryForDebug(db, sql, params);
   }
 
-  private async getDatabase(): Promise<SqlJsDatabase> {
-    if (!this.dbPromise) {
-      this.dbPromise = this.createDatabase();
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initializeSchema();
     }
 
-    return this.dbPromise;
+    await this.initPromise;
   }
 
-  private async getSqlJs(): Promise<SqlJsStatic> {
-    if (!this.sqlPromise) {
-      this.sqlPromise = initSqlJs({
-        locateFile: () => sqlWasmUrl
-      });
-    }
-
-    return this.sqlPromise;
-  }
-
-  private async createDatabase(): Promise<SqlJsDatabase> {
-    const SQL = await this.getSqlJs();
-    const persistedBytes = this.loadPersistedDatabase();
-    let db: SqlJsDatabase;
-
-    if (persistedBytes) {
-      try {
-        db = new SQL.Database(persistedBytes);
-      } catch (error) {
-        console.error('Failed to restore persisted contacts database. Recreating a fresh database.', error);
-        this.clearPersistedDatabase();
-        db = new SQL.Database();
-      }
-    } else {
-      db = new SQL.Database();
-    }
+  private async initializeSchema(): Promise<void> {
+    const db = await dbService.getDatabase();
 
     db.run(CONTACTS_TABLE_SQL);
     const didMigrateSchema = this.ensureSchema(db);
@@ -404,17 +348,20 @@ class ContactsService {
     this.seedContacts(db);
 
     if (didMigrateSchema || didNormalizeMeta) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
-
-    return db;
   }
 
-  private seedContacts(db: SqlJsDatabase): void {
+  private async getDatabase(): Promise<AppDatabase> {
+    await this.ensureInitialized();
+    return dbService.getDatabase();
+  }
+
+  private seedContacts(db: AppDatabase): void {
     void db;
   }
 
-  private ensureSchema(db: SqlJsDatabase): boolean {
+  private ensureSchema(db: AppDatabase): boolean {
     const rows = this.queryRows(db, 'PRAGMA table_info(contacts)');
     const hasGivenName = rows.some((row) => String(row[1] ?? '') === 'given_name');
 
@@ -426,7 +373,7 @@ class ContactsService {
     return false;
   }
 
-  private normalizeStoredMeta(db: SqlJsDatabase): boolean {
+  private normalizeStoredMeta(db: AppDatabase): boolean {
     const rows = this.queryRows(db, 'SELECT id, meta FROM contacts');
     if (rows.length === 0) {
       return false;
@@ -457,7 +404,7 @@ class ContactsService {
     return didChange;
   }
 
-  private queryRows(db: SqlJsDatabase, sql: string, params?: SqlExecParams): unknown[][] {
+  private queryRows(db: AppDatabase, sql: string, params?: SqlExecParams): unknown[][] {
     const statement = db.prepare(sql);
 
     try {
@@ -477,7 +424,7 @@ class ContactsService {
   }
 
   private querySingleRow(
-    db: SqlJsDatabase,
+    db: AppDatabase,
     sql: string,
     params?: SqlExecParams
   ): unknown[] | null {
@@ -486,10 +433,10 @@ class ContactsService {
   }
 
   private queryForDebug(
-    db: SqlJsDatabase,
+    db: AppDatabase,
     sql: string,
     params?: SqlExecParams
-  ): ReturnType<SqlJsDatabase['exec']> {
+  ): ReturnType<AppDatabase['exec']> {
     const statement = db.prepare(sql);
 
     try {
@@ -511,47 +458,6 @@ class ContactsService {
     } finally {
       statement.free();
     }
-  }
-
-  private loadPersistedDatabase(): Uint8Array | null {
-    if (!canUseStorage()) {
-      return null;
-    }
-
-    const encoded = window.localStorage.getItem(CONTACTS_DB_STORAGE_KEY);
-    if (!encoded) {
-      return null;
-    }
-
-    try {
-      return base64ToBytes(encoded);
-    } catch (error) {
-      console.error('Failed to decode persisted contacts database bytes.', error);
-      this.clearPersistedDatabase();
-      return null;
-    }
-  }
-
-  private persistDatabase(db: SqlJsDatabase): void {
-    if (!canUseStorage()) {
-      return;
-    }
-
-    try {
-      const bytes = db.export();
-      const encoded = bytesToBase64(bytes);
-      window.localStorage.setItem(CONTACTS_DB_STORAGE_KEY, encoded);
-    } catch (error) {
-      console.error('Failed to persist contacts database.', error);
-    }
-  }
-
-  private clearPersistedDatabase(): void {
-    if (!canUseStorage()) {
-      return;
-    }
-
-    window.localStorage.removeItem(CONTACTS_DB_STORAGE_KEY);
   }
 }
 

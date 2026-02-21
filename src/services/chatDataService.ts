@@ -1,11 +1,6 @@
-import initSqlJs from 'sql.js';
-import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
+import { dbService, type AppDatabase } from 'src/services/dbService';
 
-type SqlJsStatic = Awaited<ReturnType<typeof initSqlJs>>;
-type SqlJsDatabase = InstanceType<SqlJsStatic['Database']>;
-type SqlExecParams = Parameters<SqlJsDatabase['exec']>[1];
-
-const CHAT_DB_STORAGE_KEY = 'chat-data-sqlite-db-v1';
+type SqlExecParams = Parameters<AppDatabase['exec']>[1];
 export const LOCAL_AUTHOR_PUBLIC_KEY = 'me';
 
 export interface ChatRow {
@@ -87,33 +82,6 @@ const MESSAGE_SELECT_SQL = `
   FROM messages
 `;
 
-function canUseStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-}
-
-function bytesToBase64(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  let binary = '';
-
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    const chunk = bytes.subarray(index, index + chunkSize);
-    binary += String.fromCharCode(...chunk);
-  }
-
-  return btoa(binary);
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const output = new Uint8Array(binary.length);
-
-  for (let index = 0; index < binary.length; index += 1) {
-    output[index] = binary.charCodeAt(index);
-  }
-
-  return output;
-}
-
 function parseMeta(value: unknown): Record<string, unknown> {
   if (typeof value !== 'string') {
     return {};
@@ -163,11 +131,14 @@ function rowToMessage(row: unknown[]): MessageRow {
 }
 
 class ChatDataService {
-  private sqlPromise: Promise<SqlJsStatic> | null = null;
-  private dbPromise: Promise<SqlJsDatabase> | null = null;
+  private initPromise: Promise<void> | null = null;
 
   async init(): Promise<void> {
-    await this.getDatabase();
+    await this.ensureInitialized();
+  }
+
+  async persist(): Promise<void> {
+    await dbService.persist();
   }
 
   async listChats(): Promise<ChatRow[]> {
@@ -240,7 +211,7 @@ class ChatDataService {
       `${CHAT_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
     );
     if (inserted) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
 
     return inserted ? rowToChat(inserted) : null;
@@ -268,7 +239,7 @@ class ChatDataService {
     }
 
     if (db.getRowsModified() > 0) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
   }
 
@@ -283,7 +254,7 @@ class ChatDataService {
     }
 
     if (db.getRowsModified() > 0) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
   }
 
@@ -329,56 +300,34 @@ class ChatDataService {
       `${MESSAGE_SELECT_SQL} WHERE id = last_insert_rowid() LIMIT 1`
     );
     if (inserted) {
-      this.persistDatabase(db);
+      await dbService.persist();
     }
 
     return inserted ? rowToMessage(inserted) : null;
   }
 
-  private async getDatabase(): Promise<SqlJsDatabase> {
-    if (!this.dbPromise) {
-      this.dbPromise = this.createDatabase();
+  private async ensureInitialized(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initializeSchema();
     }
 
-    return this.dbPromise;
+    await this.initPromise;
   }
 
-  private async getSqlJs(): Promise<SqlJsStatic> {
-    if (!this.sqlPromise) {
-      this.sqlPromise = initSqlJs({
-        locateFile: () => sqlWasmUrl
-      });
-    }
-
-    return this.sqlPromise;
-  }
-
-  private async createDatabase(): Promise<SqlJsDatabase> {
-    const SQL = await this.getSqlJs();
-    const persistedBytes = this.loadPersistedDatabase();
-    let db: SqlJsDatabase;
-
-    if (persistedBytes) {
-      try {
-        db = new SQL.Database(persistedBytes);
-      } catch (error) {
-        console.error('Failed to restore persisted chat database. Recreating a fresh database.', error);
-        this.clearPersistedDatabase();
-        db = new SQL.Database();
-      }
-    } else {
-      db = new SQL.Database();
-    }
-
+  private async initializeSchema(): Promise<void> {
+    const db = await dbService.getDatabase();
     db.run(CHATS_TABLE_SQL);
     db.run(MESSAGES_TABLE_SQL);
     db.run(CHAT_INDEXES_SQL);
     db.run(MESSAGE_INDEXES_SQL);
-
-    return db;
   }
 
-  private queryRows(db: SqlJsDatabase, sql: string, params?: SqlExecParams): unknown[][] {
+  async getDatabase(): Promise<AppDatabase> {
+    await this.ensureInitialized();
+    return dbService.getDatabase();
+  }
+
+  private queryRows(db: AppDatabase, sql: string, params?: SqlExecParams): unknown[][] {
     const statement = db.prepare(sql);
 
     try {
@@ -398,53 +347,12 @@ class ChatDataService {
   }
 
   private querySingleRow(
-    db: SqlJsDatabase,
+    db: AppDatabase,
     sql: string,
     params?: SqlExecParams
   ): unknown[] | null {
     const rows = this.queryRows(db, sql, params);
     return rows[0] ?? null;
-  }
-
-  private loadPersistedDatabase(): Uint8Array | null {
-    if (!canUseStorage()) {
-      return null;
-    }
-
-    const encoded = window.localStorage.getItem(CHAT_DB_STORAGE_KEY);
-    if (!encoded) {
-      return null;
-    }
-
-    try {
-      return base64ToBytes(encoded);
-    } catch (error) {
-      console.error('Failed to decode persisted chat database bytes.', error);
-      this.clearPersistedDatabase();
-      return null;
-    }
-  }
-
-  private persistDatabase(db: SqlJsDatabase): void {
-    if (!canUseStorage()) {
-      return;
-    }
-
-    try {
-      const bytes = db.export();
-      const encoded = bytesToBase64(bytes);
-      window.localStorage.setItem(CHAT_DB_STORAGE_KEY, encoded);
-    } catch (error) {
-      console.error('Failed to persist chat database.', error);
-    }
-  }
-
-  private clearPersistedDatabase(): void {
-    if (!canUseStorage()) {
-      return;
-    }
-
-    window.localStorage.removeItem(CHAT_DB_STORAGE_KEY);
   }
 }
 

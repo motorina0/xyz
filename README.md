@@ -1,6 +1,6 @@
-# Quasar Telegram-like UI
+# Nostr chat
 
-Telegram-style chat UI built with Quasar (Vue 3 + TypeScript + Pinia).
+Chat app for nostr.
 
 ## Features
 
