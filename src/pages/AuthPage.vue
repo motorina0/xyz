@@ -74,73 +74,33 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { nip19 } from '@nostr-dev-kit/ndk';
 import { useRouter } from 'vue-router';
-
-const NSEC_STORAGE_KEY = 'nsec';
+import { useNostrStore } from 'src/stores/nostrStore';
 
 const router = useRouter();
+const nostrStore = useNostrStore();
 const isLoginMode = ref(false);
 const privateKey = ref('');
-const privateKeyHex = computed(() => decodeNsecToHex(privateKey.value.trim()));
-const privateKeyError = computed(() => validateNsec(privateKey.value.trim()));
-const canLogin = computed(() => Boolean(privateKeyHex.value));
+const privateKeyValidation = computed(() => nostrStore.validateNsec(privateKey.value.trim()));
+const privateKeyError = computed(() =>
+  privateKey.value.trim() && !privateKeyValidation.value.isValid
+    ? 'Enter a valid nsec private key.'
+    : ''
+);
+const canLogin = computed(() => privateKeyValidation.value.isValid);
 
 function openLoginCard(): void {
   isLoginMode.value = true;
 }
 
 function handleLogin(): void {
-  if (!privateKeyHex.value) {
+  if (!canLogin.value) {
     return;
   }
 
-  if (hasStorage()) {
-    window.localStorage.setItem(NSEC_STORAGE_KEY, privateKeyHex.value);
-  }
+  nostrStore.savePrivateKeyFromNsec(privateKey.value);
 
   goToHome();
-}
-
-function validateNsec(value: string): string {
-  if (!value) {
-    return '';
-  }
-
-  return decodeNsecToHex(value) ? '' : 'Enter a valid nsec private key.';
-}
-
-function decodeNsecToHex(value: string): string | null {
-  try {
-    const decoded = nip19.decode(value);
-    if (decoded.type !== 'nsec') {
-      return null;
-    }
-
-    const data = decoded.data as unknown;
-
-    if (data instanceof Uint8Array) {
-      return data.length === 32 ? uint8ArrayToHex(data) : null;
-    }
-
-    if (typeof data === 'string') {
-      return /^[0-9a-fA-F]{64}$/.test(data) ? data.toLowerCase() : null;
-    }
-
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function uint8ArrayToHex(bytes: Uint8Array): string {
-  return Array.from(bytes)
-    .map((entry) => entry.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-function hasStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
 function goToHome(): void {

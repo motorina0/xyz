@@ -138,13 +138,14 @@ import ChatThread from 'src/components/ChatThread.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
+import { useNostrStore } from 'src/stores/nostrStore';
 import type { ContactMetadata, ContactRecord } from 'src/types/contact';
-import { resolveNostrIdentifier } from 'src/utils/nostrPublicKey';
 
 const $q = useQuasar();
 const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
+const nostrStore = useNostrStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const contactQuery = ref('');
@@ -377,7 +378,7 @@ async function handleAddContact(): Promise<void> {
   isCreatingContact.value = true;
 
   try {
-    const resolution = await resolveNostrIdentifier(newContactIdentifier.value);
+    const resolution = await nostrStore.resolveIdentifier(newContactIdentifier.value);
     if (!resolution.isValid || !resolution.normalizedPubkey) {
       if (resolution.identifierType === 'nip05') {
         newContactIdentifierError.value =
