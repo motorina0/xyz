@@ -18,7 +18,7 @@ export default configure(() => {
     },
 
     framework: {
-      plugins: ['Dark']
+      plugins: ['Dark', 'Notify']
     },
 
     animations: []

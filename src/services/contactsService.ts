@@ -25,7 +25,7 @@ const CONTACTS_TABLE_SQL = `
 `;
 
 const CONTACTS_INDEXES_SQL = `
-  CREATE INDEX IF NOT EXISTS idx_contacts_public_key ON contacts(public_key COLLATE NOCASE);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_public_key_unique ON contacts(public_key COLLATE NOCASE);
   CREATE INDEX IF NOT EXISTS idx_contacts_name ON contacts(name COLLATE NOCASE);
 `;
 
@@ -223,6 +223,21 @@ class ContactsService {
     return contact ? rowToContact(contact) : null;
   }
 
+  async publicKeyExists(publicKey: string): Promise<boolean> {
+    const normalized = publicKey.trim();
+    if (!normalized) {
+      return false;
+    }
+
+    const db = await this.getDatabase();
+    const result = db.exec(
+      'SELECT 1 FROM contacts WHERE LOWER(public_key) = LOWER(?) LIMIT 1',
+      [normalized]
+    );
+
+    return (result[0]?.values?.length ?? 0) > 0;
+  }
+
   async createContact(input: CreateContactInput): Promise<ContactRecord | null> {
     const publicKey = input.public_key.trim();
     const name = input.name.trim() || publicKey;
@@ -239,6 +254,9 @@ class ContactsService {
     );
     try {
       insertStatement.run([publicKey, name, givenName, serializeContactMeta(meta)]);
+    } catch (error) {
+      console.error('Failed to insert contact', error);
+      return null;
     } finally {
       insertStatement.free();
     }
@@ -253,6 +271,7 @@ class ContactsService {
   }
 
   async updateContact(id: number, input: UpdateContactInput): Promise<ContactRecord | null> {
+    const db = await this.getDatabase();
     const updates: Array<{
       field: 'public_key' | 'name' | 'given_name' | 'meta';
       value: string | null;
@@ -293,10 +312,12 @@ class ContactsService {
     const params: Array<number | string | null> = updates.map((update) => update.value);
     params.push(id);
 
-    const db = await this.getDatabase();
     const updateStatement = db.prepare(`UPDATE contacts SET ${setClause} WHERE id = ?`);
     try {
       updateStatement.run(params);
+    } catch (error) {
+      console.error('Failed to update contact', error);
+      return null;
     } finally {
       updateStatement.free();
     }

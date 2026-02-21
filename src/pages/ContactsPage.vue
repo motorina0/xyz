@@ -371,6 +371,21 @@ async function handleAddContact(): Promise<void> {
 
   newContactIdentifierError.value = '';
   const normalizedPublicKey = validation.normalizedPubkey;
+
+  const alreadyExists = await contactsService.publicKeyExists(normalizedPublicKey);
+  console.log('Public key exists:', alreadyExists);
+  if (alreadyExists) {
+    newContactIdentifierError.value = 'This public key already exists.';
+    $q.notify({
+      type: 'warning',
+      message: 'Contact already exists',
+      caption: 'This public key is already in your contacts.',
+      position: 'top',
+      timeout: 2600
+    });
+    return;
+  }
+
   isCreatingContact.value = true;
 
   try {
