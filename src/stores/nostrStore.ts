@@ -1,5 +1,15 @@
 import { defineStore } from 'pinia';
-import NDK, { NDKUser, isValidNip05, isValidPubkey, nip19 } from '@nostr-dev-kit/ndk';
+import NDK, {
+  NDKEvent,
+  NDKKind,
+  NDKPrivateKeySigner,
+  NDKUser,
+  giftWrap,
+  isValidNip05,
+  isValidPubkey,
+  nip19,
+  type NostrEvent
+} from '@nostr-dev-kit/ndk';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -229,15 +239,60 @@ export const useNostrStore = defineStore('nostrStore', () => {
     };
   }
 
+  async function sendMessage(recipientPublicKey: string, textMessage: string): Promise<NostrEvent> {
+    const message = textMessage.trim();
+    if (!message) {
+      throw new Error('Message cannot be empty.');
+    }
+
+    const recipientInput = recipientPublicKey.trim();
+    if (!recipientInput) {
+      throw new Error('Recipient public key is required.');
+    }
+
+    const senderPrivateKeyHex = getPrivateKeyHex();
+    if (!senderPrivateKeyHex) {
+      throw new Error('Missing private key in localStorage. Login is required.');
+    }
+
+    let normalizedRecipientPubkey: string | null = null;
+    if (isValidPubkey(recipientInput)) {
+      normalizedRecipientPubkey = recipientInput.toLowerCase();
+    } else {
+      normalizedRecipientPubkey = validateNpub(recipientInput).normalizedPubkey;
+    }
+
+    if (!normalizedRecipientPubkey) {
+      throw new Error('Recipient public key must be a valid hex pubkey or npub.');
+    }
+
+    const ndk = new NDK();
+    const signer = new NDKPrivateKeySigner(senderPrivateKeyHex, ndk);
+    ndk.signer = signer;
+
+    const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
+    const nip17Event = new NDKEvent(ndk, {
+      kind: NDKKind.PrivateDirectMessage,
+      content: message,
+      tags: [['p', normalizedRecipientPubkey]]
+    });
+
+    const nip59Event = await giftWrap(nip17Event, recipient, signer, {
+      rumorKind: NDKKind.PrivateDirectMessage
+    });
+
+    return nip59Event.toNostrEvent();
+  }
+
   return {
     clearPrivateKey,
     getNip05Data,
     getPrivateKeyHex,
     resolveIdentifier,
+    sendMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
     validateNpub,
     validateNsec
   };
 });
-
