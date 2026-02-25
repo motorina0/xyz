@@ -239,7 +239,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     };
   }
 
-  async function sendMessage(recipientPublicKey: string, textMessage: string): Promise<NostrEvent> {
+  async function sendDirectMessage(recipientPublicKey: string, textMessage: string): Promise<NostrEvent> {
     const message = textMessage.trim();
     if (!message) {
       throw new Error('Message cannot be empty.');
@@ -281,7 +281,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       rumorKind: NDKKind.PrivateDirectMessage
     });
 
-    return nip59Event.toNostrEvent();
+    const dmEvent = nip59Event.toNostrEvent();
+    console.log('Sending DM event:', dmEvent);
+
   }
 
   return {
@@ -289,7 +291,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getNip05Data,
     getPrivateKeyHex,
     resolveIdentifier,
-    sendMessage,
+    sendDirectMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
     validateNpub,
