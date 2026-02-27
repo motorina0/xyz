@@ -28,6 +28,17 @@
         </template>
       </q-input>
 
+      <div class="relays-content__actions q-mt-sm">
+        <q-btn
+          flat
+          color="primary"
+          label="Restore Default Relays"
+          icon="restart_alt"
+          :disable="!canRestoreDefaults"
+          @click="restoreDefaults"
+        />
+      </div>
+
       <q-list bordered separator class="relays-content__list q-mt-md">
         <q-item v-for="(relay, index) in relayStore.relays" :key="`${relay}-${index}`">
           <q-item-section>
@@ -54,6 +65,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+import { DEFAULT_RELAYS } from 'src/constants/relays';
 import { useRelayStore } from 'src/stores/relayStore';
 
 const relayStore = useRelayStore();
@@ -62,6 +74,13 @@ const relayValidationError = computed(() => validateRelayUrl(newRelay.value.trim
 const canAddRelay = computed(() => {
   const value = newRelay.value.trim();
   return value.length > 0 && relayValidationError.value.length === 0;
+});
+const canRestoreDefaults = computed(() => {
+  if (relayStore.relays.length !== DEFAULT_RELAYS.length) {
+    return true;
+  }
+
+  return relayStore.relays.some((relay, index) => relay !== DEFAULT_RELAYS[index]);
 });
 
 relayStore.init();
@@ -100,11 +119,20 @@ function validateRelayUrl(value: string): string {
 function removeRelay(index: number): void {
   relayStore.removeRelay(index);
 }
+
+function restoreDefaults(): void {
+  relayStore.restoreDefaults();
+}
 </script>
 
 <style scoped>
 .relays-content {
   max-width: 720px;
+}
+
+.relays-content__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .relays-content__list {

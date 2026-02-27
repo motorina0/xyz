@@ -57,8 +57,7 @@ export const useRelayStore = defineStore('relayStore', () => {
     }
 
     const storedRelays = readStoredRelays();
-    // don't restore if storage is empty; avoids overriding defaults
-    relays.value = storedRelays?.length === 0 ? [...storedRelays] : [...DEFAULT_RELAYS];
+    relays.value = storedRelays ? [...storedRelays] : [...DEFAULT_RELAYS];
     writeStoredRelays(relays.value);
     isInitialized.value = true;
   }
@@ -86,11 +85,20 @@ export const useRelayStore = defineStore('relayStore', () => {
     writeStoredRelays(relays.value);
   }
 
+  function restoreDefaults(): void {
+    if (!isInitialized.value) {
+      init();
+    }
+
+    relays.value = [...DEFAULT_RELAYS];
+    writeStoredRelays(relays.value);
+  }
+
   return {
     relays,
     init,
     addRelay,
-    removeRelay
+    removeRelay,
+    restoreDefaults
   };
 });
-
