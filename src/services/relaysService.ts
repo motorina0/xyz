@@ -4,24 +4,20 @@ type SqlExecParams = Parameters<AppDatabase['exec']>[1];
 
 const CONTACT_RELAYS_TABLE_SQL = `
   CREATE TABLE IF NOT EXISTS contact_relays (
-    contact_id INTEGER NOT NULL,
+    public_key TEXT NOT NULL,
     relay_ws TEXT NOT NULL,
-    PRIMARY KEY (contact_id, relay_ws),
-    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE
+    PRIMARY KEY (public_key, relay_ws)
   );
 `;
 
 const CONTACT_RELAYS_INDEXES_SQL = `
-  CREATE INDEX IF NOT EXISTS idx_contact_relays_contact_id ON contact_relays(contact_id);
+  CREATE INDEX IF NOT EXISTS idx_contact_relays_public_key ON contact_relays(public_key COLLATE NOCASE);
   CREATE INDEX IF NOT EXISTS idx_contact_relays_relay_ws ON contact_relays(relay_ws COLLATE NOCASE);
 `;
 
-function parseContactId(contactId: number): number | null {
-  if (!Number.isInteger(contactId) || contactId <= 0) {
-    return null;
-  }
-
-  return contactId;
+function normalizePublicKey(value: string): string | null {
+  const normalized = value.trim();
+  return normalized ? normalized : null;
 }
 
 function normalizeRelayWs(value: string): string | null {
@@ -51,9 +47,9 @@ class RelaysService {
     await this.ensureInitialized();
   }
 
-  async listRelaysByContactId(contactId: number): Promise<string[]> {
-    const normalizedContactId = parseContactId(contactId);
-    if (!normalizedContactId) {
+  async listRelaysByPublicKey(publicKey: string): Promise<string[]> {
+    const normalizedPublicKey = normalizePublicKey(publicKey);
+    if (!normalizedPublicKey) {
       return [];
     }
 
@@ -63,10 +59,10 @@ class RelaysService {
       `
         SELECT relay_ws
         FROM contact_relays
-        WHERE contact_id = ?
+        WHERE LOWER(public_key) = LOWER(?)
         ORDER BY relay_ws COLLATE NOCASE ASC
       `,
-      [normalizedContactId]
+      [normalizedPublicKey]
     );
 
     return rows.map((row) => String(row[0] ?? ''));
@@ -86,21 +82,20 @@ class RelaysService {
     return rows.map((row) => String(row[0] ?? ''));
   }
 
-  async createRelay(contactId: number, relayWs: string): Promise<boolean> {
-    console.log('Creating relay for contact', contactId, relayWs);
-    const normalizedContactId = parseContactId(contactId);
+  async createRelay(publicKey: string, relayWs: string): Promise<boolean> {
+    const normalizedPublicKey = normalizePublicKey(publicKey);
     const normalizedRelayWs = normalizeRelayWs(relayWs);
-    if (!normalizedContactId || !normalizedRelayWs) {
+    if (!normalizedPublicKey || !normalizedRelayWs) {
       return false;
     }
 
     const db = await this.getDatabase();
     const statement = db.prepare(
-      'INSERT OR IGNORE INTO contact_relays (contact_id, relay_ws) VALUES (?, ?)'
+      'INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)'
     );
 
     try {
-      statement.run([normalizedContactId, normalizedRelayWs]);
+      statement.run([normalizedPublicKey, normalizedRelayWs]);
     } catch (error) {
       console.error('Failed to create contact relay', error);
       return false;
@@ -109,7 +104,6 @@ class RelaysService {
     }
 
     const hasChanges = db.getRowsModified() > 0;
-    console.log('Create relay result for contact', contactId, relayWs, 'hasChanges:', hasChanges);
     if (hasChanges) {
       await dbService.persist();
     }
@@ -117,11 +111,11 @@ class RelaysService {
     return hasChanges;
   }
 
-  async updateRelay(contactId: number, previousRelayWs: string, nextRelayWs: string): Promise<boolean> {
-    const normalizedContactId = parseContactId(contactId);
+  async updateRelay(publicKey: string, previousRelayWs: string, nextRelayWs: string): Promise<boolean> {
+    const normalizedPublicKey = normalizePublicKey(publicKey);
     const normalizedPreviousRelayWs = normalizeRelayWs(previousRelayWs);
     const normalizedNextRelayWs = normalizeRelayWs(nextRelayWs);
-    if (!normalizedContactId || !normalizedPreviousRelayWs || !normalizedNextRelayWs) {
+    if (!normalizedPublicKey || !normalizedPreviousRelayWs || !normalizedNextRelayWs) {
       return false;
     }
 
@@ -130,12 +124,12 @@ class RelaysService {
       `
         UPDATE contact_relays
         SET relay_ws = ?
-        WHERE contact_id = ? AND relay_ws = ?
+        WHERE LOWER(public_key) = LOWER(?) AND relay_ws = ?
       `
     );
 
     try {
-      statement.run([normalizedNextRelayWs, normalizedContactId, normalizedPreviousRelayWs]);
+      statement.run([normalizedNextRelayWs, normalizedPublicKey, normalizedPreviousRelayWs]);
     } catch (error) {
       console.error('Failed to update contact relay', error);
       return false;
@@ -151,18 +145,20 @@ class RelaysService {
     return hasChanges;
   }
 
-  async deleteRelay(contactId: number, relayWs: string): Promise<boolean> {
-    const normalizedContactId = parseContactId(contactId);
+  async deleteRelay(publicKey: string, relayWs: string): Promise<boolean> {
+    const normalizedPublicKey = normalizePublicKey(publicKey);
     const normalizedRelayWs = normalizeRelayWs(relayWs);
-    if (!normalizedContactId || !normalizedRelayWs) {
+    if (!normalizedPublicKey || !normalizedRelayWs) {
       return false;
     }
 
     const db = await this.getDatabase();
-    const statement = db.prepare('DELETE FROM contact_relays WHERE contact_id = ? AND relay_ws = ?');
+    const statement = db.prepare(
+      'DELETE FROM contact_relays WHERE LOWER(public_key) = LOWER(?) AND relay_ws = ?'
+    );
 
     try {
-      statement.run([normalizedContactId, normalizedRelayWs]);
+      statement.run([normalizedPublicKey, normalizedRelayWs]);
     } finally {
       statement.free();
     }
@@ -175,26 +171,25 @@ class RelaysService {
     return hasChanges;
   }
 
-  async replaceRelaysForContact(contactId: number, relays: string[]): Promise<string[]> {
-    console.log('Replacing relays for contact', contactId, 'with relays:', relays);
-    const normalizedContactId = parseContactId(contactId);
-    if (!normalizedContactId) {
+  async replaceRelaysForPublicKey(publicKey: string, relays: string[]): Promise<string[]> {
+    const normalizedPublicKey = normalizePublicKey(publicKey);
+    if (!normalizedPublicKey) {
       return [];
     }
 
     const normalizedRelays = normalizeRelays(relays);
     const db = await this.getDatabase();
-    const deleteStatement = db.prepare('DELETE FROM contact_relays WHERE contact_id = ?');
+    const deleteStatement = db.prepare('DELETE FROM contact_relays WHERE LOWER(public_key) = LOWER(?)');
     const insertStatement = db.prepare(
-      'INSERT OR IGNORE INTO contact_relays (contact_id, relay_ws) VALUES (?, ?)'
+      'INSERT OR IGNORE INTO contact_relays (public_key, relay_ws) VALUES (?, ?)'
     );
 
     try {
       db.run('BEGIN TRANSACTION');
-      deleteStatement.run([normalizedContactId]);
+      deleteStatement.run([normalizedPublicKey]);
 
       for (const relayWs of normalizedRelays) {
-        insertStatement.run([normalizedContactId, relayWs]);
+        insertStatement.run([normalizedPublicKey, relayWs]);
       }
 
       db.run('COMMIT');
@@ -206,7 +201,7 @@ class RelaysService {
       }
 
       console.error('Failed to replace contact relays', error);
-      return this.listRelaysByContactId(normalizedContactId);
+      return this.listRelaysByPublicKey(normalizedPublicKey);
     } finally {
       deleteStatement.free();
       insertStatement.free();
@@ -216,17 +211,17 @@ class RelaysService {
     return normalizedRelays;
   }
 
-  async deleteRelaysForContact(contactId: number): Promise<boolean> {
-    const normalizedContactId = parseContactId(contactId);
-    if (!normalizedContactId) {
+  async deleteRelaysForPublicKey(publicKey: string): Promise<boolean> {
+    const normalizedPublicKey = normalizePublicKey(publicKey);
+    if (!normalizedPublicKey) {
       return false;
     }
 
     const db = await this.getDatabase();
-    const statement = db.prepare('DELETE FROM contact_relays WHERE contact_id = ?');
+    const statement = db.prepare('DELETE FROM contact_relays WHERE LOWER(public_key) = LOWER(?)');
 
     try {
-      statement.run([normalizedContactId]);
+      statement.run([normalizedPublicKey]);
     } finally {
       statement.free();
     }
@@ -249,16 +244,8 @@ class RelaysService {
 
   private async initializeSchema(): Promise<void> {
     const db = await dbService.getDatabase();
-    const hadTable = this.hasSchemaObject(db, 'table', 'contact_relays');
-    const hadContactIndex = this.hasSchemaObject(db, 'index', 'idx_contact_relays_contact_id');
-    const hadRelayIndex = this.hasSchemaObject(db, 'index', 'idx_contact_relays_relay_ws');
-
     db.run(CONTACT_RELAYS_TABLE_SQL);
     db.run(CONTACT_RELAYS_INDEXES_SQL);
-
-    if (!hadTable || !hadContactIndex || !hadRelayIndex) {
-      await dbService.persist();
-    }
   }
 
   private async getDatabase(): Promise<AppDatabase> {
@@ -283,21 +270,6 @@ class RelaysService {
     } finally {
       statement.free();
     }
-  }
-
-  private hasSchemaObject(db: AppDatabase, objectType: 'table' | 'index', objectName: string): boolean {
-    const rows = this.queryRows(
-      db,
-      `
-        SELECT 1
-        FROM sqlite_master
-        WHERE type = ? AND name = ?
-        LIMIT 1
-      `,
-      [objectType, objectName]
-    );
-
-    return rows.length > 0;
   }
 }
 

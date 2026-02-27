@@ -4,6 +4,9 @@ const { chatDataService } = await import('/src/services/chatDataService.ts');
 const { contactsService } = await import('/src/services/contactsService.ts');
 const { relaysService } = await import('/src/services/relaysService.ts');
 
+const { dbService } await import('src/services/dbService');
+
+
 
 console.table(await chatDataService.listChats());
 console.table(await chatDataService.listMessages(1));
@@ -11,6 +14,23 @@ console.table(await chatDataService.listMessages(1));
 console.table(await contactsService.listContacts());
 
 console.table(await relaysService.listAllRelays())
+```
+const { chatDataService } = await import('/src/services/chatDataService.ts');
+await chatDataService.init();
+const db = await chatDataService.getDatabase();
+
+window.sql = (query, params = []) => {
+  const stmt = db.prepare(query);
+  try {
+    stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    return rows;
+  } finally {
+    stmt.free();
+  }
+};
+```
 
 
 ### Test keys

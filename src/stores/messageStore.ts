@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
+import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { Message } from 'src/types/chat';
 
@@ -123,7 +124,8 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     loadedChatIds.add(chatId);
     messagesByChat.value[chatId] = [...messagesByChat.value[chatId], newMessage];
-    await nostrStore.sendDirectMessage(chat.public_key, newMessage.text);
+    const contactRelays = await relaysService.listRelaysByPublicKey(chat.public_key);
+    await nostrStore.sendDirectMessage(chat.public_key, newMessage.text, contactRelays);
     return newMessage;
   }
 

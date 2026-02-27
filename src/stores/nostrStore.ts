@@ -3,6 +3,7 @@ import NDK, {
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
+  NDKRelaySet,
   NDKUser,
   giftWrap,
   isValidNip05,
@@ -277,8 +278,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     };
   }
 
-  async function sendDirectMessage(recipientPublicKey: string, textMessage: string): Promise<NostrEvent> {
-    console.log('Preparing to send DM to', recipientPublicKey, 'with message:', textMessage);
+  async function sendDirectMessage(
+    recipientPublicKey: string,
+    textMessage: string,
+    relays: string[]
+  ): Promise<NostrEvent> {
+    console.log('### sendDirectMessage( to', recipientPublicKey, 'with message:', textMessage, 'relays:', relays);
     const message = textMessage.trim();
     if (!message) {
       throw new Error('Message cannot be empty.');
@@ -305,6 +310,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Recipient public key must be a valid hex pubkey or npub.');
     }
 
+    const relayUrls = normalizeRelays(relays);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot send DM without contact relays.');
+    }
+
     const ndk = new NDK();
     const signer = new NDKPrivateKeySigner(senderPrivateKeyHex, ndk);
     ndk.signer = signer;
@@ -325,6 +335,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const nip59Event = await giftWrap(nip17Event, recipient, signer, {
       rumorKind: NDKKind.PrivateDirectMessage
     });
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    await nip59Event.publish(relaySet);
 
     const dmEvent = await nip59Event.toNostrEvent();
     console.log('Sending DM event:', dmEvent);

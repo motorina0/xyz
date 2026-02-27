@@ -246,7 +246,7 @@ class ContactsService {
     }
 
     const contact = rowToContact(inserted);
-    const relays = await relaysService.replaceRelaysForContact(contact.id, input.relays ?? []);
+    const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, input.relays ?? []);
     await dbService.persist();
 
     return { ...contact, relays };
@@ -254,6 +254,12 @@ class ContactsService {
 
   async updateContact(id: number, input: UpdateContactInput): Promise<ContactRecord | null> {
     const db = await this.getDatabase();
+    const existingRow = this.querySingleRow(db, `${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
+    if (!existingRow) {
+      return null;
+    }
+
+    const previousContact = rowToContact(existingRow);
     const updates: Array<{
       field: 'public_key' | 'name' | 'given_name' | 'meta';
       value: string | null;
@@ -316,15 +322,34 @@ class ContactsService {
     }
 
     if (input.relays === undefined) {
-      return contact;
+      const didPublicKeyChange =
+        previousContact.public_key.toLowerCase() !== contact.public_key.toLowerCase();
+      if (!didPublicKeyChange) {
+        return contact;
+      }
+
+      const preservedRelays = await relaysService.listRelaysByPublicKey(previousContact.public_key);
+      const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, preservedRelays);
+      await relaysService.deleteRelaysForPublicKey(previousContact.public_key);
+      return { ...contact, relays };
     }
 
-    const relays = await relaysService.replaceRelaysForContact(id, input.relays);
+    const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, input.relays);
+    if (previousContact.public_key.toLowerCase() !== contact.public_key.toLowerCase()) {
+      await relaysService.deleteRelaysForPublicKey(previousContact.public_key);
+    }
+
     return { ...contact, relays };
   }
 
   async deleteContact(id: number): Promise<boolean> {
     const db = await this.getDatabase();
+    const existingRow = this.querySingleRow(db, `${CONTACT_SELECT_SQL} WHERE id = ? LIMIT 1`, [id]);
+    if (!existingRow) {
+      return false;
+    }
+
+    const existingPublicKey = String(existingRow[1] ?? '').trim();
     const deleteStatement = db.prepare('DELETE FROM contacts WHERE id = ?');
     try {
       deleteStatement.run([id]);
@@ -334,7 +359,10 @@ class ContactsService {
 
     const hasChanges = db.getRowsModified() > 0;
     if (hasChanges) {
-      await relaysService.deleteRelaysForContact(id);
+      if (existingPublicKey) {
+        await relaysService.deleteRelaysForPublicKey(existingPublicKey);
+      }
+
       await dbService.persist();
     }
 
@@ -393,7 +421,7 @@ class ContactsService {
     const withRelays = await Promise.all(
       contacts.map(async (contact) => ({
         ...contact,
-        relays: await relaysService.listRelaysByContactId(contact.id)
+        relays: await relaysService.listRelaysByPublicKey(contact.public_key)
       }))
     );
 
