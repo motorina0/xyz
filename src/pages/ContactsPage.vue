@@ -328,7 +328,10 @@ async function ensureChatForContact(contact: ContactRecord): Promise<string | nu
     avatar: createdChat.avatar
   };
 
-  const updatedContact = await contactsService.updateContact(contact.id, { meta: nextMeta });
+  const updatedContact = await contactsService.updateContact(contact.id, {
+    meta: nextMeta,
+    relays: contact.relays ?? []
+  });
   if (updatedContact) {
     const index = contacts.value.findIndex((entry) => entry.id === contact.id);
     if (index >= 0) {
@@ -415,7 +418,8 @@ async function handleAddContact(): Promise<void> {
       public_key: normalizedPublicKey,
       name: resolvedName,
       given_name: newContactGivenName.value.trim() || null,
-      meta: {}
+      meta: {},
+      relays: resolution.relays
     });
 
     if (!created) {

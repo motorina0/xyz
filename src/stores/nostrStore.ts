@@ -15,6 +15,7 @@ export interface NostrIdentifierResolutionResult {
   isValid: boolean;
   normalizedPubkey: string | null;
   resolvedName: string | null;
+  relays: string[];
   identifierType: 'pubkey' | 'nip05' | null;
   error: 'invalid' | 'nip05_unresolved' | null;
 }
@@ -33,6 +34,7 @@ export interface NostrNip05DataResult {
   isValid: boolean;
   normalizedPubkey: string | null;
   name: string | null;
+  relays: string[];
   error: 'invalid' | 'nip05_unresolved' | null;
 }
 
@@ -58,6 +60,28 @@ function extractNip05Name(identifier: string): string | null {
   const [namePart] = identifier.split('@');
   const normalized = namePart?.trim();
   return normalized || null;
+}
+
+function normalizeRelays(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const uniqueRelays = new Set<string>();
+  for (const entry of value) {
+    if (typeof entry !== 'string') {
+      continue;
+    }
+
+    const relay = entry.trim();
+    if (!relay) {
+      continue;
+    }
+
+    uniqueRelays.add(relay);
+  }
+
+  return Array.from(uniqueRelays);
 }
 
 export const useNostrStore = defineStore('nostrStore', () => {
@@ -166,6 +190,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         isValid: false,
         normalizedPubkey: null,
         name: null,
+        relays: [],
         error: 'invalid'
       };
     }
@@ -180,14 +205,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
           isValid: false,
           normalizedPubkey: null,
           name: null,
+          relays: [],
           error: 'nip05_unresolved'
         };
       }
+
+      const relays = normalizeRelays(user?.relayUrls ?? []);
 
       return {
         isValid: true,
         normalizedPubkey,
         name: user?.profile?.name?.trim() || extractNip05Name(value),
+        relays,
         error: null
       };
     } catch {
@@ -195,6 +224,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         isValid: false,
         normalizedPubkey: null,
         name: null,
+        relays: [],
         error: 'nip05_unresolved'
       };
     }
@@ -207,6 +237,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         isValid: false,
         normalizedPubkey: null,
         resolvedName: null,
+        relays: [],
         identifierType: null,
         error: 'invalid'
       };
@@ -218,6 +249,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         isValid: nip05Data.isValid,
         normalizedPubkey: nip05Data.normalizedPubkey,
         resolvedName: nip05Data.name,
+        relays: nip05Data.relays,
         identifierType: 'nip05',
         error: nip05Data.error
       };
@@ -228,6 +260,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         isValid: true,
         normalizedPubkey: value.toLowerCase(),
         resolvedName: null,
+        relays: [],
         identifierType: 'pubkey',
         error: null
       };
@@ -238,6 +271,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       isValid: npubValidation.isValid,
       normalizedPubkey: npubValidation.normalizedPubkey,
       resolvedName: null,
+      relays: [],
       identifierType: 'pubkey',
       error: npubValidation.isValid ? null : 'invalid'
     };
