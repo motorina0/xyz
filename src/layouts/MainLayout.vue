@@ -46,12 +46,14 @@ import { computed } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRoute, useRouter } from 'vue-router';
 import { useRelayStore } from 'src/stores/relayStore';
+import { useNostrStore } from 'src/stores/nostrStore';
 import { readDarkModePreference } from 'src/utils/themeStorage';
 
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
 const relayStore = useRelayStore();
+const nostrStore = useNostrStore();
 const savedDarkMode = readDarkModePreference();
 const isMobile = computed(() => $q.screen.lt.md);
 
@@ -75,6 +77,9 @@ if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
 relayStore.init();
+void nostrStore.syncLoggedInContactProfile(relayStore.relays).catch((error) => {
+  console.error('Failed to sync logged-in profile contact', error);
+});
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {

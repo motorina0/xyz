@@ -9,6 +9,8 @@ export interface ContactMetadata {
   about?: string;
   picture?: string;
   nip05?: string;
+  npub?: string;
+  nprofile?: string;
   lud06?: string;
   lud16?: string;
   display_name?: string;

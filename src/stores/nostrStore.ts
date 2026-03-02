@@ -17,6 +17,8 @@ import NDK, {
   normalizeRelayUrl,
   type NostrEvent
 } from '@nostr-dev-kit/ndk';
+import { contactsService } from 'src/services/contactsService';
+import type { ContactMetadata, ContactRelay } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -119,6 +121,149 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
+  let syncLoggedInContactProfilePromise: Promise<void> | null = null;
+
+  function getLoggedInPublicKeyHex(): string | null {
+    if (!hasStorage()) {
+      return null;
+    }
+
+    const stored = window.localStorage.getItem(PUBLIC_KEY_STORAGE_KEY)?.trim();
+    if (!stored) {
+      return null;
+    }
+
+    const fromHex = normalizeHexKey(stored);
+    if (fromHex) {
+      return fromHex;
+    }
+
+    return validateNpub(stored).normalizedPubkey;
+  }
+
+  function encodeNpub(pubkeyHex: string): string | null {
+    try {
+      return nip19.npubEncode(pubkeyHex);
+    } catch {
+      return null;
+    }
+  }
+
+  function encodeNprofile(pubkeyHex: string): string | null {
+    try {
+      return nip19.nprofileEncode({
+        pubkey: pubkeyHex
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  function normalizeRelayEntries(relayUrls: string[]): ContactRelay[] {
+    const uniqueRelays = new Set<string>();
+    for (const relayUrl of relayUrls) {
+      const normalizedRelay = relayUrl.trim();
+      if (!normalizedRelay) {
+        continue;
+      }
+
+      uniqueRelays.add(normalizedRelay);
+    }
+
+    return Array.from(uniqueRelays).map((url) => ({
+      url,
+      read: true,
+      write: true
+    }));
+  }
+
+  function readProfileField(
+    profile: NDKUserProfile | null,
+    keys: string[],
+    fallback = ''
+  ): string | undefined {
+    for (const key of keys) {
+      const rawValue = profile?.[key];
+      if (typeof rawValue !== 'string') {
+        continue;
+      }
+
+      const normalized = rawValue.trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    const normalizedFallback = fallback.trim();
+    return normalizedFallback || undefined;
+  }
+
+  function buildUpdatedContactMeta(
+    existingMeta: ContactMetadata | undefined,
+    profile: NDKUserProfile | null,
+    resolvedNpub: string | null,
+    resolvedNprofile: string | null
+  ): ContactMetadata {
+    const meta: ContactMetadata = {
+      ...(existingMeta ?? {})
+    };
+
+    const nextName = readProfileField(profile, ['name'], meta.name ?? '');
+    const nextAbout = readProfileField(profile, ['about', 'bio'], meta.about ?? '');
+    const nextPicture = readProfileField(profile, ['picture', 'image'], meta.picture ?? '');
+    const nextNip05 = readProfileField(profile, ['nip05'], meta.nip05 ?? '');
+    const nextLud06 = readProfileField(profile, ['lud06'], meta.lud06 ?? '');
+    const nextLud16 = readProfileField(profile, ['lud16'], meta.lud16 ?? '');
+    const nextDisplayName = readProfileField(profile, ['displayName', 'display_name'], meta.display_name ?? '');
+    const nextWebsite = readProfileField(profile, ['website'], meta.website ?? '');
+    const nextBanner = readProfileField(profile, ['banner'], meta.banner ?? '');
+
+    if (nextName) {
+      meta.name = nextName;
+    }
+
+    if (nextAbout) {
+      meta.about = nextAbout;
+    }
+
+    if (nextPicture) {
+      meta.picture = nextPicture;
+    }
+
+    if (nextNip05) {
+      meta.nip05 = nextNip05;
+    }
+
+    if (nextLud06) {
+      meta.lud06 = nextLud06;
+    }
+
+    if (nextLud16) {
+      meta.lud16 = nextLud16;
+    }
+
+    if (nextDisplayName) {
+      meta.display_name = nextDisplayName;
+    }
+
+    if (nextWebsite) {
+      meta.website = nextWebsite;
+    }
+
+    if (nextBanner) {
+      meta.banner = nextBanner;
+    }
+
+    if (resolvedNpub?.trim()) {
+      meta.npub = resolvedNpub.trim();
+    }
+
+    if (resolvedNprofile?.trim()) {
+      meta.nprofile = resolvedNprofile.trim();
+    }
+
+    return meta;
+  }
 
   function bumpRelayStatusVersion(): void {
     relayStatusVersion.value += 1;
@@ -255,6 +400,128 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ].map((relay) => String(relay));
 
     return normalizeRelays(combinedRelays);
+  }
+
+  async function syncLoggedInContactProfile(relayUrls: string[]): Promise<void> {
+    if (syncLoggedInContactProfilePromise) {
+      return syncLoggedInContactProfilePromise;
+    }
+
+    syncLoggedInContactProfilePromise = (async () => {
+      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+      if (!loggedInPubkeyHex) {
+        return;
+      }
+
+      await contactsService.init();
+
+      const existingContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
+      const nip05Identifier = existingContact?.meta.nip05?.trim() ?? '';
+      const nprofileIdentifier =
+        existingContact?.meta.nprofile?.trim() || encodeNprofile(loggedInPubkeyHex) || '';
+      const npubIdentifier = existingContact?.meta.npub?.trim() || encodeNpub(loggedInPubkeyHex) || '';
+      const hexIdentifier = loggedInPubkeyHex;
+
+      const activeRelays = normalizeRelays(relayUrls);
+      if (activeRelays.length > 0) {
+        try {
+          await ensureRelayConnections(activeRelays);
+        } catch (error) {
+          console.warn('Failed to connect relays before profile sync', error);
+        }
+      }
+
+      const identifiers = [nip05Identifier, nprofileIdentifier, npubIdentifier, hexIdentifier]
+        .map((identifier) => identifier.trim())
+        .filter((identifier, index, list) => identifier.length > 0 && list.indexOf(identifier) === index);
+
+      let resolvedUser: NDKUser | undefined;
+      for (const identifier of identifiers) {
+        try {
+          const user = await ndk.fetchUser(identifier, true);
+          if (!user) {
+            continue;
+          }
+
+          const resolvedPubkey = normalizeHexKey(user.pubkey);
+          if (!resolvedPubkey || resolvedPubkey !== loggedInPubkeyHex) {
+            continue;
+          }
+
+          resolvedUser = user;
+          break;
+        } catch {
+          continue;
+        }
+      }
+
+      if (!resolvedUser) {
+        return;
+      }
+
+      let fetchedProfile: NDKUserProfile | null = null;
+      try {
+        fetchedProfile = await resolvedUser.fetchProfile();
+      } catch (error) {
+        console.warn('Failed to fetch logged-in profile metadata', error);
+      }
+
+      let resolvedNpub = npubIdentifier;
+      if (!resolvedNpub) {
+        try {
+          resolvedNpub = resolvedUser.npub;
+        } catch {
+          resolvedNpub = '';
+        }
+      }
+
+      let resolvedNprofile = nprofileIdentifier;
+      if (!resolvedNprofile) {
+        try {
+          resolvedNprofile = resolvedUser.nprofile;
+        } catch {
+          resolvedNprofile = '';
+        }
+      }
+
+      const nextMeta = buildUpdatedContactMeta(
+        existingContact?.meta,
+        fetchedProfile,
+        resolvedNpub,
+        resolvedNprofile
+      );
+
+      const fallbackName = loggedInPubkeyHex.slice(0, 16);
+      const nextName =
+        nextMeta.display_name?.trim() ||
+        nextMeta.name?.trim() ||
+        existingContact?.name?.trim() ||
+        fallbackName;
+
+      const fetchedRelays = normalizeRelayEntries(resolvedUser.relayUrls ?? []);
+      const nextRelays = fetchedRelays.length > 0 ? fetchedRelays : existingContact?.relays ?? [];
+
+      if (existingContact) {
+        await contactsService.updateContact(existingContact.id, {
+          name: nextName,
+          meta: nextMeta,
+          relays: nextRelays
+        });
+        return;
+      }
+
+      await contactsService.createContact({
+        public_key: loggedInPubkeyHex,
+        name: nextName,
+        given_name: null,
+        meta: nextMeta,
+        relays: nextRelays
+      });
+    })().finally(() => {
+      syncLoggedInContactProfilePromise = null;
+    });
+
+    return syncLoggedInContactProfilePromise;
   }
 
   function getPrivateKeyHex(): string | null {
@@ -533,6 +800,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     sendDirectMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
+    syncLoggedInContactProfile,
     validateNpub,
     validateNsec
   };
