@@ -13,6 +13,10 @@
       />
       <q-icon v-if="icon" :name="icon" size="20px" class="settings-detail-layout__icon" />
       <div class="settings-detail-layout__title">{{ title }}</div>
+      <div class="settings-detail-layout__spacer" />
+      <div class="settings-detail-layout__actions">
+        <slot name="actions" />
+      </div>
     </div>
 
     <div class="settings-detail-layout__body">
@@ -63,6 +67,16 @@ function goBack(): void {
 .settings-detail-layout__title {
   font-size: 16px;
   font-weight: 600;
+}
+
+.settings-detail-layout__spacer {
+  flex: 1;
+}
+
+.settings-detail-layout__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .settings-detail-layout__icon {

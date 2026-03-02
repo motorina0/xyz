@@ -1,5 +1,16 @@
 <template>
   <SettingsDetailLayout title="Profile" icon="face">
+    <template #actions>
+      <q-btn
+        no-caps
+        unelevated
+        color="primary"
+        label="Publish"
+        :loading="isPublishing"
+        @click="handlePublish"
+      />
+    </template>
+
     <div class="profile-content">
       <q-card flat bordered class="profile-card">
         <q-card-section class="profile-card__section">
@@ -35,6 +46,36 @@
             rounded
             label="Picture URL (`picture`)"
             placeholder="https://example.com/avatar.png"
+          />
+
+          <q-input
+            v-model="profileMetadata.nip05"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            label="NIP-05 (`nip05`)"
+            placeholder="name@example.com"
+          />
+
+          <q-input
+            v-model="profileMetadata.lud16"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            label="Lightning Address (`lud16`)"
+            placeholder="name@domain.com"
+          />
+
+          <q-input
+            v-model="profileMetadata.lud06"
+            class="tg-input q-mt-sm"
+            outlined
+            dense
+            rounded
+            label="LNURL (`lud06`)"
+            placeholder="lnurl1..."
           />
         </q-card-section>
       </q-card>
@@ -139,13 +180,20 @@
 </template>
 
 <script setup lang="ts">
-import { reactive } from 'vue';
+import { reactive, ref } from 'vue';
+import { useQuasar } from 'quasar';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+import type { PublishUserMetadataInput } from 'src/stores/nostrStore';
+import { useNostrStore } from 'src/stores/nostrStore';
+import { useRelayStore } from 'src/stores/relayStore';
 
 interface ProfileMetadataForm {
   name: string;
   about: string;
   picture: string;
+  nip05: string;
+  lud06: string;
+  lud16: string;
   display_name: string;
   website: string;
   banner: string;
@@ -157,10 +205,18 @@ interface ProfileMetadataForm {
   };
 }
 
+const $q = useQuasar();
+const nostrStore = useNostrStore();
+const relayStore = useRelayStore();
+const isPublishing = ref(false);
+
 const profileMetadata = reactive<ProfileMetadataForm>({
   name: '',
   about: '',
   picture: '',
+  nip05: '',
+  lud06: '',
+  lud16: '',
   display_name: '',
   website: '',
   banner: '',
@@ -171,6 +227,89 @@ const profileMetadata = reactive<ProfileMetadataForm>({
     day: null
   }
 });
+
+relayStore.init();
+
+function cleanString(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeBirthday(input: ProfileMetadataForm['birthday']): PublishUserMetadataInput['birthday'] {
+  const normalized: NonNullable<PublishUserMetadataInput['birthday']> = {};
+
+  if (Number.isInteger(input.year) && Number(input.year) > 0) {
+    normalized.year = Number(input.year);
+  }
+
+  if (
+    Number.isInteger(input.month) &&
+    Number(input.month) >= 1 &&
+    Number(input.month) <= 12
+  ) {
+    normalized.month = Number(input.month);
+  }
+
+  if (Number.isInteger(input.day) && Number(input.day) >= 1 && Number(input.day) <= 31) {
+    normalized.day = Number(input.day);
+  }
+
+  return Object.keys(normalized).length > 0 ? normalized : undefined;
+}
+
+function buildPublishPayload(): PublishUserMetadataInput {
+  const payload: PublishUserMetadataInput = {
+    bot: profileMetadata.bot
+  };
+
+  const fields: Array<keyof Omit<ProfileMetadataForm, 'bot' | 'birthday'>> = [
+    'name',
+    'about',
+    'picture',
+    'nip05',
+    'lud06',
+    'lud16',
+    'display_name',
+    'website',
+    'banner'
+  ];
+
+  for (const field of fields) {
+    const value = cleanString(profileMetadata[field]);
+    if (value !== undefined) {
+      payload[field] = value;
+    }
+  }
+
+  const birthday = normalizeBirthday(profileMetadata.birthday);
+  if (birthday) {
+    payload.birthday = birthday;
+  }
+
+  return payload;
+}
+
+async function handlePublish(): Promise<void> {
+  if (isPublishing.value) {
+    return;
+  }
+
+  isPublishing.value = true;
+  try {
+    await nostrStore.publishUserMetadata(buildPublishPayload(), relayStore.relays);
+    $q.notify({
+      type: 'positive',
+      message: 'Profile metadata published.'
+    });
+  } catch (error) {
+    $q.notify({
+      type: 'negative',
+      message: error instanceof Error ? error.message : 'Failed to publish profile metadata.'
+    });
+  } finally {
+    isPublishing.value = false;
+  }
+}
 </script>
 
 <style scoped>

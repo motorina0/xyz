@@ -4,6 +4,7 @@ import NDK, {
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
+  type NDKUserProfile,
   type NDKRelayInformation,
   NDKRelayStatus,
   NDKRelaySet,
@@ -44,6 +45,22 @@ export interface NostrNip05DataResult {
 }
 
 export type RelayConnectionState = 'connected' | 'issue';
+
+export interface PublishUserMetadataInput {
+  [key: string]: unknown;
+  name?: string;
+  about?: string;
+  picture?: string;
+  display_name?: string;
+  website?: string;
+  banner?: string;
+  bot?: boolean;
+  birthday?: {
+    year?: number;
+    month?: number;
+    day?: number;
+  };
+}
 
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
@@ -179,6 +196,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
     const relay = ndk.pool.getRelay(normalizedRelayUrl, false);
     return relay.fetchInfo(force);
+  }
+
+  async function publishUserMetadata(
+    metadata: PublishUserMetadataInput,
+    relayUrls: string[]
+  ): Promise<void> {
+    const senderPrivateKeyHex = getPrivateKeyHex();
+    if (!senderPrivateKeyHex) {
+      throw new Error('Missing private key in localStorage. Login is required.');
+    }
+
+    const relayList = normalizeRelays(relayUrls);
+    if (relayList.length === 0) {
+      throw new Error('Cannot publish profile without at least one relay.');
+    }
+
+    await ensureRelayConnections(relayList);
+
+    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const user = await signer.user();
+    user.ndk = ndk;
+    user.profile = metadata as NDKUserProfile;
+    await user.publish();
   }
 
   function getPrivateKeyHex(): string | null {
@@ -450,6 +490,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getNip05Data,
     getPrivateKeyHex,
     getRelayConnectionState,
+    publishUserMetadata,
     relayStatusVersion,
     resolveIdentifier,
     sendDirectMessage,
