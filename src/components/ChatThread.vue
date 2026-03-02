@@ -16,6 +16,7 @@
           <div class="thread-header__name">{{ chat.name }}</div>
           <div class="thread-header__time">Last active {{ headerTime }}</div>
         </div>
+        <q-btn flat dense round icon="badge" aria-label="Badge" color="primary" class="thread-header__action" />
       </div>
 
       <div ref="threadBodyRef" class="thread-body">
@@ -104,6 +105,8 @@ watch(
 }
 
 .thread-header__meta {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -114,6 +117,10 @@ watch(
 .thread-header__time {
   font-size: 12px;
   opacity: 0.65;
+}
+
+.thread-header__action {
+  color: #64748b;
 }
 
 .thread-body {
