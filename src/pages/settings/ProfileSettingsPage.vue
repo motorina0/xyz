@@ -29,7 +29,7 @@ const $q = useQuasar();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
 const isPublishing = ref(false);
-const profilePubkey = ref('');
+const profilePubkey = ref(nostrStore.getLoggedInPublicKeyHex() ?? '');
 const profileMetadata = ref(createEmptyContactProfileForm());
 
 relayStore.init();

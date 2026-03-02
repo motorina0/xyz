@@ -792,6 +792,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchRelayNip11Info,
     fetchMyRelayList,
     getNip05Data,
+    getLoggedInPublicKeyHex,
     getPrivateKeyHex,
     getRelayConnectionState,
     publishUserMetadata,
