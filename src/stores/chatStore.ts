@@ -3,6 +3,13 @@ import { computed, ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import type { Chat } from 'src/types/chat';
+import type { ContactRecord } from 'src/types/contact';
+
+interface ChatContactContext {
+  picture: string;
+  givenName: string;
+  contactName: string;
+}
 
 function sortByLatest(chats: Chat[]): Chat[] {
   const toTimestamp = (value: string): number => {
@@ -66,14 +73,58 @@ function resolvePictureFromContactMeta(meta: Record<string, unknown>): string {
   return '';
 }
 
+function toContactContext(contact: ContactRecord): ChatContactContext {
+  return {
+    picture: resolvePictureFromContactMeta(contact.meta as Record<string, unknown>),
+    givenName: contact.given_name?.trim() ?? '',
+    contactName: contact.name.trim()
+  };
+}
+
+function enrichChatMeta(
+  meta: Record<string, unknown>,
+  contactContext?: ChatContactContext
+): Record<string, unknown> {
+  if (!contactContext) {
+    return meta;
+  }
+
+  let nextMeta = meta;
+  const resolvedPicture = resolveContactPicture(meta, contactContext.picture);
+  const hasPicture = readMetaString(meta, 'picture');
+
+  if (resolvedPicture && resolvedPicture !== hasPicture) {
+    nextMeta = { ...nextMeta, picture: resolvedPicture };
+  }
+
+  const hasGivenName = readMetaString(nextMeta, 'given_name');
+  if (!hasGivenName && contactContext.givenName) {
+    if (nextMeta === meta) {
+      nextMeta = { ...nextMeta };
+    }
+
+    nextMeta.given_name = contactContext.givenName;
+  }
+
+  const hasContactName = readMetaString(nextMeta, 'contact_name');
+  if (!hasContactName && contactContext.contactName) {
+    if (nextMeta === meta) {
+      nextMeta = { ...nextMeta };
+    }
+
+    nextMeta.contact_name = contactContext.contactName;
+  }
+
+  return nextMeta;
+}
+
 function mapChatRowToChat(
   row: Awaited<ReturnType<typeof chatDataService.listChats>>[number],
-  contactPicture = ''
+  contactContext?: ChatContactContext
 ): Chat {
   const rowMeta = row.meta;
   const avatarFromMeta = readMetaString(rowMeta, 'avatar');
-  const resolvedPicture = resolveContactPicture(rowMeta, contactPicture);
-  const nextMeta = resolvedPicture ? { ...rowMeta, picture: resolvedPicture } : rowMeta;
+  const nextMeta = enrichChatMeta(rowMeta, contactContext);
   const avatar = avatarFromMeta || buildAvatar(row.name || row.public_key);
 
   return {
@@ -108,24 +159,17 @@ export const useChatStore = defineStore('chatStore', () => {
             chatDataService.listChats(),
             contactsService.listContacts()
           ]);
-          const contactPictureByPublicKey = new Map<string, string>();
+          const contactContextByPublicKey = new Map<string, ChatContactContext>();
 
           for (const contact of contacts) {
-            const picture = resolvePictureFromContactMeta(
-              contact.meta as Record<string, unknown>
-            );
-            if (!picture) {
-              continue;
-            }
-
-            contactPictureByPublicKey.set(contact.public_key.toLowerCase(), picture);
+            contactContextByPublicKey.set(contact.public_key.toLowerCase(), toContactContext(contact));
           }
 
           chats.value = sortByLatest(
             rows.map((row) =>
               mapChatRowToChat(
                 row,
-                contactPictureByPublicKey.get(row.public_key.toLowerCase()) ?? ''
+                contactContextByPublicKey.get(row.public_key.toLowerCase())
               )
             )
           );
@@ -216,15 +260,14 @@ export const useChatStore = defineStore('chatStore', () => {
 
     await contactsService.init();
     const contact = await contactsService.getContactByPublicKey(cleanPublicKey);
-    const contactPicture = contact
-      ? resolvePictureFromContactMeta(contact.meta as Record<string, unknown>)
-      : '';
+    const contactContext = contact ? toContactContext(contact) : undefined;
 
     const existingInStore = chats.value.find(
       (chat) => chat.publicKey.toLowerCase() === cleanPublicKey.toLowerCase()
     );
     if (existingInStore) {
-      if (!contactPicture || typeof existingInStore.meta.picture === 'string') {
+      const nextMeta = enrichChatMeta(existingInStore.meta as Record<string, unknown>, contactContext);
+      if (nextMeta === existingInStore.meta) {
         return existingInStore;
       }
 
@@ -236,10 +279,7 @@ export const useChatStore = defineStore('chatStore', () => {
 
         nextChat = {
           ...chat,
-          meta: {
-            ...chat.meta,
-            picture: contactPicture
-          }
+          meta: nextMeta
         };
         return nextChat;
       });
@@ -249,7 +289,7 @@ export const useChatStore = defineStore('chatStore', () => {
 
     const existingInDb = await chatDataService.getChatByPublicKey(cleanPublicKey);
     if (existingInDb) {
-      const mapped = mapChatRowToChat(existingInDb, contactPicture);
+      const mapped = mapChatRowToChat(existingInDb, contactContext);
       if (!chats.value.some((chat) => chat.id === mapped.id)) {
         chats.value = sortByLatest([...chats.value, mapped]);
       }
@@ -266,14 +306,16 @@ export const useChatStore = defineStore('chatStore', () => {
       unread_count: 0,
       meta: {
         avatar: buildAvatar(cleanName),
-        ...(contactPicture ? { picture: contactPicture } : {})
+        ...(contactContext?.picture ? { picture: contactContext.picture } : {}),
+        ...(contactContext?.givenName ? { given_name: contactContext.givenName } : {}),
+        ...(contactContext?.contactName ? { contact_name: contactContext.contactName } : {})
       }
     });
     if (!created) {
       return null;
     }
 
-    const newChat = mapChatRowToChat(created, contactPicture);
+    const newChat = mapChatRowToChat(created, contactContext);
     chats.value = sortByLatest([...chats.value, newChat]);
     return newChat;
   }

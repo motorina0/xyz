@@ -7,11 +7,11 @@
     @click="$emit('select', chat.id)"
   >
     <q-item-section avatar>
-      <CachedAvatar :src="avatarImageUrl" :alt="chat.name" :fallback="chat.avatar" />
+      <CachedAvatar :src="avatarImageUrl" :alt="chatTitle" :fallback="chat.avatar" />
     </q-item-section>
 
     <q-item-section>
-      <q-item-label class="chat-item__name">{{ chat.name }}</q-item-label>
+      <q-item-label class="chat-item__name">{{ chatTitle }}</q-item-label>
       <q-item-label caption lines="1">{{ chat.lastMessage }}</q-item-label>
     </q-item-section>
 
@@ -38,11 +38,39 @@ defineEmits<{
   (event: 'select', chatId: string): void;
 }>();
 
+function readMetaString(key: string): string {
+  const value = props.chat.meta[key];
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function chatPubkeySnippet(value: string): string {
+  return value.trim().slice(0, 32);
+}
+
 const formattedTime = computed(() => {
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
     minute: '2-digit'
   }).format(new Date(props.chat.lastMessageAt));
+});
+
+const chatTitle = computed(() => {
+  const givenName = readMetaString('given_name');
+  if (givenName) {
+    return givenName;
+  }
+
+  const contactName = readMetaString('contact_name');
+  if (contactName) {
+    return contactName;
+  }
+
+  const name = props.chat.name.trim();
+  if (name) {
+    return name;
+  }
+
+  return chatPubkeySnippet(props.chat.publicKey);
 });
 
 const avatarImageUrl = computed(() => {
