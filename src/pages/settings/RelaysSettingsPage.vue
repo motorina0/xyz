@@ -114,7 +114,8 @@
                       <span class="relay-io-toggle__label">Read</span>
                       <q-toggle
                         dense
-                        size="sm"
+                        size="xs"
+                        class="relay-io-switch"
                         color="primary"
                         :model-value="relayReadEnabled(index)"
                         @click.stop
@@ -125,7 +126,8 @@
                       <span class="relay-io-toggle__label">Write</span>
                       <q-toggle
                         dense
-                        size="sm"
+                        size="xs"
+                        class="relay-io-switch"
                         color="primary"
                         :model-value="relayWriteEnabled(index)"
                         @click.stop
@@ -678,27 +680,32 @@ function restoreDefaults(): void {
 .relay-io-toggles {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: fit-content;
-  padding: 2px 8px;
+  padding: 1px 6px;
   border: 1px solid var(--tg-border);
   border-radius: 999px;
   background: color-mix(in srgb, var(--tg-sidebar) 84%, transparent);
-  margin-top: 6px;
+  margin-top: 4px;
 }
 
 .relay-io-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 3px;
 }
 
 .relay-io-toggle__label {
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.02em;
+}
+
+.relay-io-switch {
+  min-height: 16px;
+  padding: 0;
 }
 
 .relay-icon {
@@ -758,9 +765,9 @@ body.body--dark .relay-icon--fallback {
   }
 
   .relay-io-toggles {
-    gap: 6px;
-    padding: 1px 6px;
-    margin-top: 5px;
+    gap: 5px;
+    padding: 1px 5px;
+    margin-top: 4px;
   }
 
   .relay-io-toggle {
@@ -768,7 +775,7 @@ body.body--dark .relay-icon--fallback {
   }
 
   .relay-io-toggle__label {
-    font-size: 10px;
+    font-size: 9px;
   }
 }
 </style>
