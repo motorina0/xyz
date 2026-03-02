@@ -4,15 +4,14 @@
       <q-tabs
         v-model="activeTab"
         dense
-        no-caps
-        align="left"
+        align="justify"
         active-color="primary"
         indicator-color="primary"
         class="relays-tabs"
       >
-        <q-tab name="my" label="My Relays" />
-        <q-tab name="app" label="App Relays" />
-        <q-tab name="contacts" label="Contacts Relays" />
+        <q-tab name="my" label="My Relays" class="relays-tab" />
+        <q-tab name="app" label="App Relays" class="relays-tab" />
+        <q-tab name="contacts" label="Contacts Relays" class="relays-tab" />
       </q-tabs>
 
       <q-tab-panels v-model="activeTab" animated class="relays-panels">
@@ -599,7 +598,23 @@ function restoreDefaults(): void {
 }
 
 .relays-tabs {
+  width: 100%;
   border-bottom: 1px solid var(--tg-border);
+}
+
+.relays-tabs :deep(.q-tabs__content) {
+  width: 100%;
+}
+
+.relays-tabs :deep(.q-tab) {
+  flex: 1 1 0;
+  max-width: none;
+  min-width: 0;
+}
+
+.relays-tab {
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .relays-panels {
