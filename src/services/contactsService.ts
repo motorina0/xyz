@@ -225,6 +225,26 @@ class ContactsService {
     return mapped ?? null;
   }
 
+  async getContactByPublicKey(publicKey: string): Promise<ContactRecord | null> {
+    const normalized = publicKey.trim();
+    if (!normalized) {
+      return null;
+    }
+
+    const db = await this.getDatabase();
+    const contact = this.querySingleRow(
+      db,
+      `${CONTACT_SELECT_SQL} WHERE LOWER(public_key) = LOWER(?) LIMIT 1`,
+      [normalized]
+    );
+    if (!contact) {
+      return null;
+    }
+
+    const [mapped] = await this.attachRelays([rowToContact(contact)]);
+    return mapped ?? null;
+  }
+
   async publicKeyExists(publicKey: string): Promise<boolean> {
     const normalized = publicKey.trim();
     if (!normalized) {
