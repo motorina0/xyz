@@ -10,7 +10,7 @@
         :aria-label="item.label"
         @click="$emit('select', item.key)"
       >
-        <q-icon :name="item.icon" size="20px" />
+        <q-icon :name="item.icon" size="18px" />
 
         <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
           {{ item.label }}
@@ -25,7 +25,7 @@
       aria-label="Settings"
       @click="$emit('select', 'settings')"
     >
-      <q-icon name="settings" size="20px" />
+      <q-icon name="settings" size="18px" />
       <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
         Settings
       </q-tooltip>
@@ -54,19 +54,19 @@ defineEmits<{
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  padding: 10px 8px;
+  padding: 8px 6px;
   background: var(--tg-rail);
 }
 
 .nav-rail__group {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .nav-rail__btn {
-  border-radius: 12px;
-  min-height: 44px;
-  min-width: 56px;
+  border-radius: 10px;
+  min-height: 40px;
+  min-width: 48px;
   display: flex;
   align-items: center;
   justify-content: center;

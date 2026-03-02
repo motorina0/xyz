@@ -110,7 +110,7 @@ function goToSetting(
 
 .settings-shell {
   display: grid;
-  grid-template-columns: 88px 320px minmax(0, 1fr);
+  grid-template-columns: 76px 320px minmax(0, 1fr);
   gap: 10px;
   height: 100%;
 }

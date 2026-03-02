@@ -107,7 +107,7 @@ async function handleSend(text: string): Promise<void> {
 
 .home-shell {
   display: grid;
-  grid-template-columns: 88px 340px minmax(0, 1fr);
+  grid-template-columns: 76px 340px minmax(0, 1fr);
   gap: 10px;
   height: 100%;
 }
