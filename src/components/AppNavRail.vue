@@ -18,18 +18,20 @@
       </q-btn>
     </div>
 
-    <q-btn
-      unelevated
-      class="nav-rail__btn"
-      :class="{ 'nav-rail__btn--active': active === 'settings' }"
-      aria-label="Settings"
-      @click="$emit('select', 'settings')"
-    >
-      <q-icon name="settings" size="18px" />
-      <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
-        Settings
-      </q-tooltip>
-    </q-btn>
+    <div class="nav-rail__settings">
+      <q-btn
+        unelevated
+        class="nav-rail__btn"
+        :class="{ 'nav-rail__btn--active': active === 'settings' }"
+        aria-label="Settings"
+        @click="$emit('select', 'settings')"
+      >
+        <q-icon name="settings" size="18px" />
+        <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
+          Settings
+        </q-tooltip>
+      </q-btn>
+    </div>
   </aside>
 </template>
 
@@ -61,6 +63,20 @@ defineEmits<{
 .nav-rail__group {
   display: grid;
   gap: 6px;
+}
+
+.nav-rail__settings {
+  display: grid;
+  gap: 6px;
+  padding-top: 8px;
+}
+
+.nav-rail__settings::before {
+  content: '';
+  display: block;
+  height: 1px;
+  margin: 0 4px;
+  background: var(--tg-border);
 }
 
 .nav-rail__btn {
