@@ -82,7 +82,7 @@
             <q-item-label class="relay-url-label">{{ relay }}</q-item-label>
             <div class="relay-io-toggles" @click.stop>
               <div class="relay-io-toggle">
-                <span class="relay-io-toggle__label">Read</span>
+                
                 <q-toggle
                   dense
                   size="xs"
@@ -92,6 +92,7 @@
                   @click.stop
                   @update:model-value="(value) => emitRelayReadUpdate(index, value)"
                 />
+                <span class="relay-io-toggle__label">Read</span>
               </div>
               <q-separator vertical class="relay-io-toggle-separator" />
               <div class="relay-io-toggle">

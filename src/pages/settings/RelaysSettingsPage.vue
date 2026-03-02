@@ -119,7 +119,7 @@ interface RelayTogglePayload {
 const relayStore = useRelayStore();
 const nip65RelayStore = useNip65RelayStore();
 const nostrStore = useNostrStore();
-const activeTab = ref<RelayTab>('app');
+const activeTab = ref<RelayTab>('my');
 const appNewRelay = ref('');
 const myNewRelay = ref('');
 const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
