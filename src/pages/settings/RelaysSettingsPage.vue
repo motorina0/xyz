@@ -78,6 +78,7 @@
               v-for="(relay, index) in relaysForTab('app')"
               :key="`app-${relay}-${index}`"
               expand-separator
+              switch-toggle-side
               class="relay-expansion-item"
               @show="handleRelayExpand(relay)"
             >
@@ -106,34 +107,35 @@
                   </div>
                 </q-item-section>
 
-                <q-item-section>
-                  <q-item-label>{{ relay }}</q-item-label>
+                <q-item-section class="relay-url-section">
+                  <q-item-label class="relay-url-label">{{ relay }}</q-item-label>
+                  <div class="relay-io-toggles" @click.stop>
+                    <div class="relay-io-toggle">
+                      <span class="relay-io-toggle__label">Read</span>
+                      <q-toggle
+                        dense
+                        size="sm"
+                        color="primary"
+                        :model-value="relayReadEnabled(index)"
+                        @click.stop
+                        @update:model-value="updateRelayRead(index, $event)"
+                      />
+                    </div>
+                    <div class="relay-io-toggle">
+                      <span class="relay-io-toggle__label">Write</span>
+                      <q-toggle
+                        dense
+                        size="sm"
+                        color="primary"
+                        :model-value="relayWriteEnabled(index)"
+                        @click.stop
+                        @update:model-value="updateRelayWrite(index, $event)"
+                      />
+                    </div>
+                  </div>
                 </q-item-section>
 
                 <q-item-section side class="relay-header-actions">
-                  <div class="relay-io-toggles" @click.stop>
-                    <q-toggle
-                      dense
-                      size="sm"
-                      color="primary"
-                      label="read"
-                      class="relay-io-toggle"
-                      :model-value="relayReadEnabled(index)"
-                      @click.stop
-                      @update:model-value="updateRelayRead(index, $event)"
-                    />
-                    <q-toggle
-                      dense
-                      size="sm"
-                      color="primary"
-                      label="write"
-                      class="relay-io-toggle"
-                      :model-value="relayWriteEnabled(index)"
-                      @click.stop
-                      @update:model-value="updateRelayWrite(index, $event)"
-                    />
-                  </div>
-
                   <q-btn
                     flat
                     round
@@ -657,20 +659,46 @@ function restoreDefaults(): void {
   gap: 8px;
 }
 
+.relay-url-section {
+  min-width: 0;
+}
+
+.relay-url-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .relay-header-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  margin-left: 8px;
 }
 
 .relay-io-toggles {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
+  width: fit-content;
+  padding: 2px 8px;
+  border: 1px solid var(--tg-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tg-sidebar) 84%, transparent);
+  margin-top: 6px;
 }
 
 .relay-io-toggle {
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.relay-io-toggle__label {
+  font-size: 11px;
+  line-height: 1;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .relay-icon {
@@ -723,6 +751,24 @@ body.body--dark .relay-icon--fallback {
 
   .relays-toolbar__input {
     width: 100%;
+  }
+
+  .relay-header-actions {
+    margin-left: 6px;
+  }
+
+  .relay-io-toggles {
+    gap: 6px;
+    padding: 1px 6px;
+    margin-top: 5px;
+  }
+
+  .relay-io-toggle {
+    gap: 2px;
+  }
+
+  .relay-io-toggle__label {
+    font-size: 10px;
   }
 }
 </style>
