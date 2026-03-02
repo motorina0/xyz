@@ -1,10 +1,21 @@
 <template>
   <div class="contact-profile">
     <div v-if="showHeader" class="profile-header">
-      <CachedAvatar :src="headerPictureUrl" :alt="headerName" :fallback="headerAvatar" />
-      <div class="profile-header__meta">
-        <div class="profile-header__name">{{ headerName }}</div>
-        <div class="profile-header__subtitle">{{ headerSubtitle }}</div>
+      <div
+        class="profile-header__identity"
+        :class="{ 'profile-header__identity--disabled': !normalizedHeaderPubkey }"
+        @click="handleOpenChat"
+      >
+        <CachedAvatar
+          :src="headerPictureUrl"
+          :alt="headerName"
+          :fallback="headerAvatar"
+          class="profile-header__avatar"
+        />
+        <div class="profile-header__meta">
+          <div class="profile-header__name">{{ headerName }}</div>
+          <div class="profile-header__subtitle">{{ headerSubtitle }}</div>
+        </div>
       </div>
       <q-btn
         flat
@@ -15,7 +26,7 @@
         aria-label="Open Chat"
         class="profile-header__action"
         :disable="!normalizedHeaderPubkey"
-        @click="emit('open-chat')"
+        @click="handleOpenChat"
       />
     </div>
 
@@ -418,6 +429,14 @@ function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
   };
 }
 
+function handleOpenChat(): void {
+  if (!normalizedHeaderPubkey.value) {
+    return;
+  }
+
+  emit('open-chat');
+}
+
 function isSameProfile(a: ContactProfileForm, b: ContactProfileForm): boolean {
   return (
     a.name === b.name &&
@@ -506,6 +525,19 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   padding: 10px 14px;
   border-bottom: 1px solid var(--tg-border);
   background: var(--tg-sidebar);
+}
+
+.profile-header__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.profile-header__identity--disabled {
+  cursor: default;
 }
 
 .profile-header__meta {

@@ -11,10 +11,17 @@
           aria-label="Back"
           @click="$emit('back')"
         />
-        <CachedAvatar :src="avatarImageUrl" :alt="chat.name" :fallback="chat.avatar" />
-        <div class="thread-header__meta">
-          <div class="thread-header__name">{{ chat.name }}</div>
-          <div class="thread-header__time">Last active {{ headerTime }}</div>
+        <div class="thread-header__identity" @click="handleOpenProfile">
+          <CachedAvatar
+            :src="avatarImageUrl"
+            :alt="chat.name"
+            :fallback="chat.avatar"
+            class="thread-header__avatar"
+          />
+          <div class="thread-header__meta">
+            <div class="thread-header__name">{{ chat.name }}</div>
+            <div class="thread-header__time">Last active {{ headerTime }}</div>
+          </div>
         </div>
         <q-btn
           flat
@@ -134,6 +141,15 @@ watch(
   padding: 10px 14px;
   border-bottom: 1px solid var(--tg-border);
   background: var(--tg-sidebar);
+}
+
+.thread-header__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
 }
 
 .thread-header__meta {
