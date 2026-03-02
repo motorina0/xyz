@@ -17,6 +17,7 @@ import NDK, {
   normalizeRelayUrl,
   type NostrEvent
 } from '@nostr-dev-kit/ndk';
+import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import type { ContactMetadata, ContactRelay } from 'src/types/contact';
 
@@ -122,6 +123,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
+  let syncRecentChatContactsPromise: Promise<void> | null = null;
 
   function getLoggedInPublicKeyHex(): string | null {
     if (!hasStorage()) {
@@ -263,6 +265,124 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return meta;
+  }
+
+  function buildIdentifierFallbacks(
+    pubkeyHex: string,
+    existingMeta?: ContactMetadata
+  ): string[] {
+    const nip05Identifier = existingMeta?.nip05?.trim() ?? '';
+    const nprofileIdentifier = existingMeta?.nprofile?.trim() || encodeNprofile(pubkeyHex) || '';
+    const npubIdentifier = existingMeta?.npub?.trim() || encodeNpub(pubkeyHex) || '';
+    const hexIdentifier = pubkeyHex;
+
+    return [nip05Identifier, nprofileIdentifier, npubIdentifier, hexIdentifier]
+      .map((identifier) => identifier.trim())
+      .filter(
+        (identifier, index, list) => identifier.length > 0 && list.indexOf(identifier) === index
+      );
+  }
+
+  async function resolveUserByIdentifiers(
+    identifiers: string[],
+    expectedPubkeyHex: string
+  ): Promise<NDKUser | undefined> {
+    for (const identifier of identifiers) {
+      try {
+        const user = await ndk.fetchUser(identifier, true);
+        if (!user) {
+          continue;
+        }
+
+        const resolvedPubkey = normalizeHexKey(user.pubkey);
+        if (!resolvedPubkey || resolvedPubkey !== expectedPubkeyHex) {
+          continue;
+        }
+
+        return user;
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
+
+  async function refreshContactByPublicKey(
+    targetPubkeyHex: string,
+    fallbackName = ''
+  ): Promise<void> {
+    const normalizedTargetPubkey = normalizeHexKey(targetPubkeyHex);
+    if (!normalizedTargetPubkey) {
+      return;
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
+    const identifiers = buildIdentifierFallbacks(normalizedTargetPubkey, existingContact?.meta);
+    const resolvedUser = await resolveUserByIdentifiers(identifiers, normalizedTargetPubkey);
+    if (!resolvedUser) {
+      return;
+    }
+
+    let fetchedProfile: NDKUserProfile | null = null;
+    try {
+      fetchedProfile = await resolvedUser.fetchProfile();
+    } catch (error) {
+      console.warn('Failed to fetch profile metadata for contact', normalizedTargetPubkey, error);
+    }
+
+    let resolvedNpub = existingContact?.meta.npub?.trim() ?? '';
+    if (!resolvedNpub) {
+      try {
+        resolvedNpub = resolvedUser.npub;
+      } catch {
+        resolvedNpub = '';
+      }
+    }
+
+    let resolvedNprofile = existingContact?.meta.nprofile?.trim() ?? '';
+    if (!resolvedNprofile) {
+      try {
+        resolvedNprofile = resolvedUser.nprofile;
+      } catch {
+        resolvedNprofile = '';
+      }
+    }
+
+    const nextMeta = buildUpdatedContactMeta(
+      existingContact?.meta,
+      fetchedProfile,
+      resolvedNpub,
+      resolvedNprofile
+    );
+
+    const fallbackContactName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
+    const nextName =
+      nextMeta.display_name?.trim() ||
+      nextMeta.name?.trim() ||
+      existingContact?.name?.trim() ||
+      fallbackContactName;
+
+    const fetchedRelays = normalizeRelayEntries(resolvedUser.relayUrls ?? []);
+    const nextRelays = fetchedRelays.length > 0 ? fetchedRelays : existingContact?.relays ?? [];
+
+    if (existingContact) {
+      await contactsService.updateContact(existingContact.id, {
+        name: nextName,
+        meta: nextMeta,
+        relays: nextRelays
+      });
+      return;
+    }
+
+    await contactsService.createContact({
+      public_key: normalizedTargetPubkey,
+      name: nextName,
+      given_name: null,
+      meta: nextMeta,
+      relays: nextRelays
+    });
   }
 
   function bumpRelayStatusVersion(): void {
@@ -413,15 +533,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
         return;
       }
 
-      await contactsService.init();
-
-      const existingContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
-      const nip05Identifier = existingContact?.meta.nip05?.trim() ?? '';
-      const nprofileIdentifier =
-        existingContact?.meta.nprofile?.trim() || encodeNprofile(loggedInPubkeyHex) || '';
-      const npubIdentifier = existingContact?.meta.npub?.trim() || encodeNpub(loggedInPubkeyHex) || '';
-      const hexIdentifier = loggedInPubkeyHex;
-
       const activeRelays = normalizeRelays(relayUrls);
       if (activeRelays.length > 0) {
         try {
@@ -431,97 +542,76 @@ export const useNostrStore = defineStore('nostrStore', () => {
         }
       }
 
-      const identifiers = [nip05Identifier, nprofileIdentifier, npubIdentifier, hexIdentifier]
-        .map((identifier) => identifier.trim())
-        .filter((identifier, index, list) => identifier.length > 0 && list.indexOf(identifier) === index);
-
-      let resolvedUser: NDKUser | undefined;
-      for (const identifier of identifiers) {
-        try {
-          const user = await ndk.fetchUser(identifier, true);
-          if (!user) {
-            continue;
-          }
-
-          const resolvedPubkey = normalizeHexKey(user.pubkey);
-          if (!resolvedPubkey || resolvedPubkey !== loggedInPubkeyHex) {
-            continue;
-          }
-
-          resolvedUser = user;
-          break;
-        } catch {
-          continue;
-        }
-      }
-
-      if (!resolvedUser) {
-        return;
-      }
-
-      let fetchedProfile: NDKUserProfile | null = null;
-      try {
-        fetchedProfile = await resolvedUser.fetchProfile();
-      } catch (error) {
-        console.warn('Failed to fetch logged-in profile metadata', error);
-      }
-
-      let resolvedNpub = npubIdentifier;
-      if (!resolvedNpub) {
-        try {
-          resolvedNpub = resolvedUser.npub;
-        } catch {
-          resolvedNpub = '';
-        }
-      }
-
-      let resolvedNprofile = nprofileIdentifier;
-      if (!resolvedNprofile) {
-        try {
-          resolvedNprofile = resolvedUser.nprofile;
-        } catch {
-          resolvedNprofile = '';
-        }
-      }
-
-      const nextMeta = buildUpdatedContactMeta(
-        existingContact?.meta,
-        fetchedProfile,
-        resolvedNpub,
-        resolvedNprofile
-      );
-
-      const fallbackName = loggedInPubkeyHex.slice(0, 16);
-      const nextName =
-        nextMeta.display_name?.trim() ||
-        nextMeta.name?.trim() ||
-        existingContact?.name?.trim() ||
-        fallbackName;
-
-      const fetchedRelays = normalizeRelayEntries(resolvedUser.relayUrls ?? []);
-      const nextRelays = fetchedRelays.length > 0 ? fetchedRelays : existingContact?.relays ?? [];
-
-      if (existingContact) {
-        await contactsService.updateContact(existingContact.id, {
-          name: nextName,
-          meta: nextMeta,
-          relays: nextRelays
-        });
-        return;
-      }
-
-      await contactsService.createContact({
-        public_key: loggedInPubkeyHex,
-        name: nextName,
-        given_name: null,
-        meta: nextMeta,
-        relays: nextRelays
-      });
+      await refreshContactByPublicKey(loggedInPubkeyHex);
     })().finally(() => {
       syncLoggedInContactProfilePromise = null;
     });
 
     return syncLoggedInContactProfilePromise;
+  }
+
+  async function syncRecentChatContacts(relayUrls: string[], limit = 10): Promise<void> {
+    if (syncRecentChatContactsPromise) {
+      return syncRecentChatContactsPromise;
+    }
+
+    syncRecentChatContactsPromise = (async () => {
+      const normalizedLimit =
+        Number.isInteger(limit) && Number(limit) > 0 ? Math.min(Number(limit), 50) : 10;
+      if (normalizedLimit <= 0) {
+        return;
+      }
+
+      const activeRelays = normalizeRelays(relayUrls);
+      if (activeRelays.length > 0) {
+        try {
+          await ensureRelayConnections(activeRelays);
+        } catch (error) {
+          console.warn('Failed to connect relays before syncing recent chat contacts', error);
+        }
+      }
+
+      await chatDataService.init();
+      const recentChats = await chatDataService.listChats();
+      if (recentChats.length === 0) {
+        return;
+      }
+
+      const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+      const recentPublicKeys = new Set<string>();
+
+      for (const chat of recentChats) {
+        const normalizedPubkey = normalizeHexKey(chat.public_key);
+        if (!normalizedPubkey) {
+          continue;
+        }
+
+        if (loggedInPubkeyHex && normalizedPubkey === loggedInPubkeyHex) {
+          continue;
+        }
+
+        recentPublicKeys.add(normalizedPubkey);
+        if (recentPublicKeys.size >= normalizedLimit) {
+          break;
+        }
+      }
+
+      if (recentPublicKeys.size === 0) {
+        return;
+      }
+
+      for (const pubkeyHex of recentPublicKeys) {
+        const matchingChat = recentChats.find(
+          (chat) => normalizeHexKey(chat.public_key) === pubkeyHex
+        );
+        const fallbackName = matchingChat?.name?.trim() ?? '';
+        await refreshContactByPublicKey(pubkeyHex, fallbackName);
+      }
+    })().finally(() => {
+      syncRecentChatContactsPromise = null;
+    });
+
+    return syncRecentChatContactsPromise;
   }
 
   function getPrivateKeyHex(): string | null {
@@ -802,6 +892,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
     syncLoggedInContactProfile,
+    syncRecentChatContacts,
     validateNpub,
     validateNsec
   };

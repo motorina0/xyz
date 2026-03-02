@@ -77,9 +77,14 @@ if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
 relayStore.init();
-void nostrStore.syncLoggedInContactProfile(relayStore.relays).catch((error) => {
-  console.error('Failed to sync logged-in profile contact', error);
-});
+void (async () => {
+  try {
+    await nostrStore.syncLoggedInContactProfile(relayStore.relays);
+    await nostrStore.syncRecentChatContacts(relayStore.relays, 10);
+  } catch (error) {
+    console.error('Failed to sync contacts on startup', error);
+  }
+})();
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {
