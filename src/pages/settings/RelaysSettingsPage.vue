@@ -1,34 +1,34 @@
 <template>
   <SettingsDetailLayout title="Relays" icon="satellite_alt">
     <div class="relays-content">
-      <q-input
-        v-model="newRelay"
-        class="tg-input"
-        outlined
-        dense
-        rounded
-        label="Relay URL"
-        placeholder="wss://example-relay.io"
-        :error="Boolean(relayValidationError)"
-        :error-message="relayValidationError"
-        @keydown.enter.prevent="addRelay"
-      >
-        <template #append>
-          <q-btn
-            unelevated
-            round
-            dense
-            color="primary"
-            icon="add"
-            size="sm"
-            aria-label="Add relay"
-            :disable="!canAddRelay"
-            @click="addRelay"
-          />
-        </template>
-      </q-input>
+      <div class="relays-toolbar">
+        <q-input
+          v-model="newRelay"
+          class="tg-input relays-toolbar__input"
+          outlined
+          dense
+          rounded
+          label="Relay URL"
+          placeholder="wss://example-relay.io"
+          :error="Boolean(relayValidationError)"
+          :error-message="relayValidationError"
+          @keydown.enter.prevent="addRelay"
+        >
+          <template #append>
+            <q-btn
+              unelevated
+              round
+              dense
+              color="primary"
+              icon="add"
+              size="sm"
+              aria-label="Add relay"
+              :disable="!canAddRelay"
+              @click="addRelay"
+            />
+          </template>
+        </q-input>
 
-      <div class="relays-content__actions q-mt-sm">
         <q-btn
           flat
           color="primary"
@@ -313,12 +313,17 @@ function restoreDefaults(): void {
 
 <style scoped>
 .relays-content {
-  max-width: 720px;
+  width: 100%;
 }
 
-.relays-content__actions {
+.relays-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.relays-toolbar__input {
+  flex: 1;
 }
 
 .relays-content__list {
