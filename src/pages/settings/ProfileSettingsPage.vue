@@ -22,7 +22,7 @@
             outlined
             dense
             rounded
-            label="Name (`name`)"
+            label="Name"
             placeholder="Your profile name"
           />
 
@@ -34,7 +34,7 @@
             rounded
             type="textarea"
             autogrow
-            label="About (`about`)"
+            label="About"
             placeholder="Short bio"
           />
 
@@ -44,7 +44,7 @@
             outlined
             dense
             rounded
-            label="Picture URL (`picture`)"
+            label="Picture URL"
             placeholder="https://example.com/avatar.png"
           />
 
@@ -54,7 +54,7 @@
             outlined
             dense
             rounded
-            label="NIP-05 (`nip05`)"
+            label="NIP-05"
             placeholder="name@example.com"
           />
 
@@ -64,7 +64,7 @@
             outlined
             dense
             rounded
-            label="Lightning Address (`lud16`)"
+            label="Lightning Address"
             placeholder="name@domain.com"
           />
 
@@ -74,7 +74,7 @@
             outlined
             dense
             rounded
-            label="LNURL (`lud06`)"
+            label="LNURL"
             placeholder="lnurl1..."
           />
         </q-card-section>
@@ -90,7 +90,7 @@
             outlined
             dense
             rounded
-            label="Display Name (`display_name`)"
+            label="Display Name"
             placeholder="Alternative display name"
           />
 
@@ -100,7 +100,7 @@
             outlined
             dense
             rounded
-            label="Website (`website`)"
+            label="Website"
             placeholder="https://example.com"
           />
 
@@ -110,13 +110,13 @@
             outlined
             dense
             rounded
-            label="Banner URL (`banner`)"
+            label="Banner URL"
             placeholder="https://example.com/banner.png"
           />
 
           <div class="profile-card__bot-row q-mt-sm">
             <div>
-              <div class="text-body2">Bot (`bot`)</div>
+              <div class="text-body2">Bot</div>
               <div class="text-caption text-grey-6">
                 Mark true if content is partially or fully automated.
               </div>
@@ -130,7 +130,7 @@
             />
           </div>
 
-          <div class="profile-card__subtitle q-mt-md">Birthday (`birthday`)</div>
+          <div class="profile-card__subtitle q-mt-md">Birthday</div>
           <div class="profile-card__birthday-grid q-mt-sm">
             <q-input
               v-model.number="profileMetadata.birthday.year"
