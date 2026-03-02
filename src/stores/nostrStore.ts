@@ -1,8 +1,10 @@
 import { defineStore } from 'pinia';
+import { ref } from 'vue';
 import NDK, {
   NDKEvent,
   NDKKind,
   NDKPrivateKeySigner,
+  NDKRelayStatus,
   NDKRelaySet,
   NDKUser,
   giftWrap,
@@ -39,6 +41,8 @@ export interface NostrNip05DataResult {
   relays: string[];
   error: 'invalid' | 'nip05_unresolved' | null;
 }
+
+export type RelayConnectionState = 'connected' | 'issue';
 
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
@@ -89,11 +93,30 @@ function normalizeRelays(value: unknown): string[] {
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
   const INITIAL_CONNECT_TIMEOUT_MS = 3000;
+  const relayStatusVersion = ref(0);
   let cachedSigner: NDKPrivateKeySigner | null = null;
   let cachedSignerPrivateKeyHex: string | null = null;
   const configuredRelayUrls = new Set<string>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
+  let hasRelayStatusListeners = false;
+
+  function bumpRelayStatusVersion(): void {
+    relayStatusVersion.value += 1;
+  }
+
+  function ensureRelayStatusListeners(): void {
+    if (hasRelayStatusListeners) {
+      return;
+    }
+
+    ndk.pool.on('relay:connecting', () => bumpRelayStatusVersion());
+    ndk.pool.on('relay:connect', () => bumpRelayStatusVersion());
+    ndk.pool.on('relay:ready', () => bumpRelayStatusVersion());
+    ndk.pool.on('relay:disconnect', () => bumpRelayStatusVersion());
+    ndk.pool.on('flapping', () => bumpRelayStatusVersion());
+    hasRelayStatusListeners = true;
+  }
 
   function getOrCreateSigner(privateKeyHex: string): NDKPrivateKeySigner {
     if (!cachedSigner || cachedSignerPrivateKeyHex !== privateKeyHex) {
@@ -106,6 +129,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function ensureRelayConnections(relayUrls: string[]): Promise<void> {
+    ensureRelayStatusListeners();
+
     for (const relayUrl of relayUrls) {
       const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
       if (configuredRelayUrls.has(normalizedRelayUrl)) {
@@ -114,6 +139,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
       configuredRelayUrls.add(normalizedRelayUrl);
+      bumpRelayStatusVersion();
     }
 
     if (hasActivatedPool) {
@@ -132,6 +158,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await connectPromise;
+    bumpRelayStatusVersion();
+  }
+
+  function getRelayConnectionState(relayUrl: string): RelayConnectionState {
+    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+    const relay = ndk.pool.relays.get(normalizedRelayUrl);
+    if (!relay) {
+      return 'issue';
+    }
+
+    return relay.status >= NDKRelayStatus.CONNECTED ? 'connected' : 'issue';
   }
 
   function getPrivateKeyHex(): string | null {
@@ -385,6 +422,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    console.log('### relayUrls', relaySet);
+    console.log('### relaySet', relaySet);
     await nip59Event.publish(relaySet);
 
     const dmEvent = await nip59Event.toNostrEvent();
@@ -396,8 +435,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   return {
     clearPrivateKey,
+    ensureRelayConnections,
     getNip05Data,
     getPrivateKeyHex,
+    getRelayConnectionState,
+    relayStatusVersion,
     resolveIdentifier,
     sendDirectMessage,
     savePrivateKeyFromNsec,
