@@ -1,15 +1,8 @@
 <template>
-  <q-layout view="lHh Lpr lFf" class="main-layout">
+  <q-layout view="lHh Lpr lFf">
     <q-page-container>
       <router-view />
     </q-page-container>
-
-    <AppConsolePanel
-      v-if="consoleStore.isOpen"
-      :entries="consoleStore.entries"
-      @close="consoleStore.close"
-      @clear="consoleStore.clear"
-    />
 
     <q-footer v-if="isMobile" bordered class="mobile-nav">
       <div class="mobile-nav__inner">
@@ -49,22 +42,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, watchEffect } from 'vue';
+import { computed } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRoute, useRouter } from 'vue-router';
-import AppConsolePanel from 'src/components/AppConsolePanel.vue';
-import { useConsoleStore } from 'src/stores/consoleStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { readDarkModePreference } from 'src/utils/themeStorage';
 
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
-const consoleStore = useConsoleStore();
 const relayStore = useRelayStore();
 const savedDarkMode = readDarkModePreference();
 const isMobile = computed(() => $q.screen.lt.md);
-const CONSOLE_PANEL_HEIGHT = 260;
 
 type NavigationSection = 'chats' | 'contacts' | 'settings';
 
@@ -86,25 +75,6 @@ if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
 relayStore.init();
-consoleStore.initCapture();
-watchEffect(() => {
-  if (typeof document === 'undefined') {
-    return;
-  }
-
-  document.documentElement.style.setProperty(
-    '--app-console-height',
-    consoleStore.isOpen ? `${CONSOLE_PANEL_HEIGHT}px` : '0px'
-  );
-});
-
-onBeforeUnmount(() => {
-  if (typeof document === 'undefined') {
-    return;
-  }
-
-  document.documentElement.style.setProperty('--app-console-height', '0px');
-});
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {
@@ -128,17 +98,6 @@ function goToSection(section: NavigationSection): void {
 </script>
 
 <style scoped>
-.main-layout {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.main-layout :deep(.q-page-container) {
-  flex: 1;
-  min-height: 0;
-}
-
 .mobile-nav {
   background: var(--tg-sidebar);
   border-top: 1px solid var(--tg-border);

@@ -18,58 +18,34 @@
       </q-btn>
     </div>
 
-    <div class="nav-rail__group nav-rail__group--bottom">
-      <q-btn
-        unelevated
-        class="nav-rail__btn"
-        :class="{ 'nav-rail__btn--active': active === 'settings' }"
-        aria-label="Settings"
-        @click="$emit('select', 'settings')"
-      >
-        <q-icon name="settings" size="20px" />
-        <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
-          Settings
-        </q-tooltip>
-      </q-btn>
-
-      <q-btn
-        unelevated
-        class="nav-rail__btn"
-        :class="{ 'nav-rail__btn--active': isConsoleOpen }"
-        aria-label="Console"
-        @click="handleConsoleClick"
-      >
-        <q-icon name="terminal" size="20px" />
-        <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
-          Console
-        </q-tooltip>
-      </q-btn>
-    </div>
+    <q-btn
+      unelevated
+      class="nav-rail__btn"
+      :class="{ 'nav-rail__btn--active': active === 'settings' }"
+      aria-label="Settings"
+      @click="$emit('select', 'settings')"
+    >
+      <q-icon name="settings" size="20px" />
+      <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
+        Settings
+      </q-tooltip>
+    </q-btn>
   </aside>
 </template>
 
 <script setup lang="ts">
-import { useConsoleStore } from 'src/stores/consoleStore';
-
 const topItems = [
   { key: 'chats', label: 'Chats', icon: 'chat' },
   { key: 'contacts', label: 'Contacts', icon: 'contacts' }
 ] as const;
 
-const consoleStore = useConsoleStore();
-
 defineProps<{
   active: 'chats' | 'contacts' | 'settings';
-  isConsoleOpen: boolean;
 }>();
 
 defineEmits<{
   (event: 'select', value: 'chats' | 'contacts' | 'settings'): void;
 }>();
-
-function handleConsoleClick(): void {
-  consoleStore.toggle();
-}
 </script>
 
 <style scoped>
@@ -85,10 +61,6 @@ function handleConsoleClick(): void {
 .nav-rail__group {
   display: grid;
   gap: 8px;
-}
-
-.nav-rail__group--bottom {
-  align-content: end;
 }
 
 .nav-rail__btn {

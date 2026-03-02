@@ -2,11 +2,7 @@
   <q-page class="home-page">
     <div class="home-shell" :class="{ 'home-shell--mobile': isMobile }">
       <aside v-if="!isMobile" class="rail-panel">
-        <AppNavRail
-          active="chats"
-          :is-console-open="consoleStore.isOpen"
-          @select="handleRailSelect"
-        />
+        <AppNavRail active="chats" @select="handleRailSelect" />
       </aside>
 
       <aside class="sidebar">
@@ -48,13 +44,11 @@ import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatList from 'src/components/ChatList.vue';
 import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
-import { useConsoleStore } from 'src/stores/consoleStore';
 import { useMessageStore } from 'src/stores/messageStore';
 
 const $q = useQuasar();
 const router = useRouter();
 const chatStore = useChatStore();
-const consoleStore = useConsoleStore();
 const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
@@ -107,7 +101,7 @@ async function handleSend(text: string): Promise<void> {
 
 <style scoped>
 .home-page {
-  height: calc(100vh - env(safe-area-inset-top) - var(--app-console-height, 0px));
+  height: calc(100vh - env(safe-area-inset-top));
   padding: 10px;
 }
 

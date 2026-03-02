@@ -2,11 +2,7 @@
   <q-page class="contacts-page">
     <div class="contacts-shell" :class="{ 'contacts-shell--mobile': isMobile }">
       <aside v-if="!isMobile" class="rail-panel">
-        <AppNavRail
-          active="contacts"
-          :is-console-open="consoleStore.isOpen"
-          @select="handleRailSelect"
-        />
+        <AppNavRail active="contacts" @select="handleRailSelect" />
       </aside>
 
       <aside class="contacts-sidebar">
@@ -141,7 +137,6 @@ import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatThread from 'src/components/ChatThread.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
-import { useConsoleStore } from 'src/stores/consoleStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { ContactMetadata, ContactRecord } from 'src/types/contact';
@@ -149,7 +144,6 @@ import type { ContactMetadata, ContactRecord } from 'src/types/contact';
 const $q = useQuasar();
 const router = useRouter();
 const chatStore = useChatStore();
-const consoleStore = useConsoleStore();
 const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
 
@@ -458,7 +452,7 @@ async function handleSend(text: string): Promise<void> {
 
 <style scoped>
 .contacts-page {
-  height: calc(100vh - env(safe-area-inset-top) - var(--app-console-height, 0px));
+  height: calc(100vh - env(safe-area-inset-top));
   padding: 10px;
 }
 
