@@ -484,7 +484,7 @@ class ChatDataService {
     return new Promise<IDBDatabase>((resolve, reject) => {
       const request = window.indexedDB.open(CHAT_DATA_DB_NAME, CHAT_DATA_DB_VERSION);
 
-      request.onupgradeneeded = (event) => {
+      request.onupgradeneeded = () => {
         const db = request.result;
         const transaction = request.transaction;
         if (!transaction) {
@@ -506,9 +506,6 @@ class ChatDataService {
         const messagesStore = db.objectStoreNames.contains(MESSAGES_STORE)
           ? transaction.objectStore(MESSAGES_STORE)
           : db.createObjectStore(MESSAGES_STORE, { keyPath: 'id', autoIncrement: true });
-        if (messagesStore.indexNames.contains('chat_it')) {
-          messagesStore.deleteIndex('chat_it');
-        }
         if (!messagesStore.indexNames.contains(MESSAGES_CHAT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_CHAT_ID_INDEX, MESSAGES_CHAT_ID_INDEX, { unique: false });
         }
@@ -521,9 +518,6 @@ class ChatDataService {
           messagesStore.createIndex(MESSAGES_EVENT_ID_INDEX, MESSAGES_EVENT_ID_INDEX, {
             unique: true
           });
-        }
-        if (event.oldVersion < 2) {
-          this.migrateLegacyMessageChatField(messagesStore);
         }
       };
 
@@ -543,44 +537,6 @@ class ChatDataService {
         console.error('IndexedDB chat database open request is blocked by another tab.');
       };
     });
-  }
-
-  private migrateLegacyMessageChatField(messagesStore: IDBObjectStore): void {
-    const cursorRequest = messagesStore.openCursor();
-
-    cursorRequest.onsuccess = () => {
-      const cursor = cursorRequest.result;
-      if (!cursor) {
-        return;
-      }
-
-      const currentValue = cursor.value as Record<string, unknown>;
-      const currentChatId = Number(currentValue.chat_id ?? 0);
-      const legacyChatId = Number(currentValue.chat_it ?? 0);
-      const hasCurrentChatId = Number.isInteger(currentChatId) && currentChatId > 0;
-      const hasLegacyChatId = Number.isInteger(legacyChatId) && legacyChatId > 0;
-
-      if (!hasCurrentChatId && hasLegacyChatId) {
-        const nextValue: Record<string, unknown> = {
-          ...currentValue,
-          chat_id: legacyChatId
-        };
-        delete nextValue.chat_it;
-        cursor.update(nextValue);
-      } else if ('chat_it' in currentValue) {
-        const nextValue: Record<string, unknown> = {
-          ...currentValue
-        };
-        delete nextValue.chat_it;
-        cursor.update(nextValue);
-      }
-
-      cursor.continue();
-    };
-
-    cursorRequest.onerror = () => {
-      console.error('Failed to migrate legacy message chat field in IndexedDB.', cursorRequest.error);
-    };
   }
 
 }
