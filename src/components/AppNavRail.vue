@@ -12,9 +12,9 @@
       >
         <q-icon :name="item.icon" size="18px" />
 
-        <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
+        <AppTooltip anchor="center right" self="center left" :offset="[8, 0]">
           {{ item.label }}
-        </q-tooltip>
+        </AppTooltip>
       </q-btn>
     </div>
 
@@ -27,15 +27,17 @@
         @click="$emit('select', 'settings')"
       >
         <q-icon name="settings" size="18px" />
-        <q-tooltip anchor="center right" self="center left" :offset="[8, 0]">
+        <AppTooltip anchor="center right" self="center left" :offset="[8, 0]">
           Settings
-        </q-tooltip>
+        </AppTooltip>
       </q-btn>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
+import AppTooltip from 'src/components/AppTooltip.vue';
+
 const topItems = [
   { key: 'chats', label: 'Chats', icon: 'chat' },
   { key: 'contacts', label: 'Contacts', icon: 'contacts' }

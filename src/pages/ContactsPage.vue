@@ -17,7 +17,7 @@
               aria-label="Add Contact"
               @click="openAddContactDialog"
             >
-              <q-tooltip>Add Contact</q-tooltip>
+              <AppTooltip>Add Contact</AppTooltip>
             </q-btn>
           </div>
 
@@ -149,6 +149,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import AppNavRail from 'src/components/AppNavRail.vue';
+import AppTooltip from 'src/components/AppTooltip.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { contactsService } from 'src/services/contactsService';

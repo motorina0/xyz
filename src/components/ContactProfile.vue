@@ -39,7 +39,9 @@
         :disable="!normalizedHeaderPubkey || isRefreshingContact"
         :loading="isRefreshingContact"
         @click="handleRefreshContactProfile"
-      />
+      >
+        <AppTooltip>Refresh Profile</AppTooltip>
+      </q-btn>
     </div>
 
     <div class="profile-content" :class="{ 'profile-content--with-header': showHeader }">
@@ -299,6 +301,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { isValidPubkey, normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
+import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import { contactsService } from 'src/services/contactsService';
