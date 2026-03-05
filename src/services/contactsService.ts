@@ -1,8 +1,8 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
-import { relaysService } from 'src/services/relaysService';
 import type {
   ContactMetadata,
   ContactRecord,
+  ContactRelay,
   CreateContactInput,
   UpdateContactInput
 } from 'src/types/contact';
@@ -15,6 +15,7 @@ interface RawContactStoreRecord {
   name_normalized?: string;
   given_name?: string | null;
   given_name_normalized?: string;
+  relays?: unknown;
   meta: unknown;
 }
 
@@ -26,6 +27,7 @@ interface ContactStoreRecord {
   name_normalized: string;
   given_name: string | null;
   given_name_normalized: string;
+  relays: ContactRelay[];
   meta: ContactMetadata;
 }
 
@@ -105,6 +107,98 @@ function parseStoredMeta(value: unknown): ContactMetadata {
   return inputSanitizerService.normalizeContactMetadata(value);
 }
 
+function normalizeRelayValue(value: unknown): ContactRelay | null {
+  if (typeof value === 'string') {
+    const relayWs = inputSanitizerService.normalizeRelayWs(value);
+    if (!relayWs) {
+      return null;
+    }
+
+    return {
+      url: relayWs,
+      read: true,
+      write: true
+    };
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const relay = value as Partial<ContactRelay>;
+  const relayWs = inputSanitizerService.normalizeRelayWs(String(relay.url ?? ''));
+  if (!relayWs) {
+    return null;
+  }
+
+  const normalizedRelay: ContactRelay = {
+    url: relayWs,
+    read: relay.read !== false,
+    write: relay.write !== false
+  };
+
+  if (!normalizedRelay.read && !normalizedRelay.write) {
+    return null;
+  }
+
+  return normalizedRelay;
+}
+
+function compareRelayUrls(first: string, second: string): number {
+  const byValue = first.localeCompare(second, undefined, { sensitivity: 'base' });
+  if (byValue !== 0) {
+    return byValue;
+  }
+
+  return first.localeCompare(second);
+}
+
+function normalizeRelayList(value: unknown): ContactRelay[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const byUrl = new Map<string, ContactRelay>();
+  for (const entry of value) {
+    const relay = normalizeRelayValue(entry);
+    if (!relay) {
+      continue;
+    }
+
+    const key = relay.url.toLowerCase();
+    const existingRelay = byUrl.get(key);
+    if (existingRelay) {
+      existingRelay.read = existingRelay.read || relay.read;
+      existingRelay.write = existingRelay.write || relay.write;
+      continue;
+    }
+
+    byUrl.set(key, relay);
+  }
+
+  return Array.from(byUrl.values()).sort((first, second) => compareRelayUrls(first.url, second.url));
+}
+
+function relayListsEqual(first: ContactRelay[], second: ContactRelay[]): boolean {
+  if (first.length !== second.length) {
+    return false;
+  }
+
+  for (let index = 0; index < first.length; index += 1) {
+    const firstRelay = first[index];
+    const secondRelay = second[index];
+    if (
+      firstRelay.url !== secondRelay.url ||
+      firstRelay.read !== secondRelay.read ||
+      firstRelay.write !== secondRelay.write
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null {
   const id = Number(raw.id ?? 0);
   const publicKey = String(raw.public_key ?? '').trim();
@@ -123,6 +217,7 @@ function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null 
     name_normalized: normalizeNameValue(name),
     given_name: givenName,
     given_name_normalized: normalizeNameValue(givenName ?? ''),
+    relays: normalizeRelayList(raw.relays),
     meta: parseStoredMeta(raw.meta)
   };
 }
@@ -133,6 +228,7 @@ function toContactRecord(record: ContactStoreRecord): ContactRecord {
     public_key: record.public_key,
     name: record.name,
     given_name: record.given_name,
+    relays: normalizeRelayList(record.relays),
     meta: parseStoredMeta(record.meta)
   };
 }
@@ -167,8 +263,7 @@ class ContactsService {
 
   async listContacts(): Promise<ContactRecord[]> {
     const records = await this.listNormalizedStoreRecords();
-    const contacts = records.sort(compareContactsByName).map((record) => toContactRecord(record));
-    return this.attachRelays(contacts);
+    return records.sort(compareContactsByName).map((record) => toContactRecord(record));
   }
 
   async searchContacts(searchText: string): Promise<ContactRecord[]> {
@@ -186,8 +281,7 @@ class ContactsService {
       );
     });
 
-    const contacts = filteredRecords.sort(compareContactsByName).map((record) => toContactRecord(record));
-    return this.attachRelays(contacts);
+    return filteredRecords.sort(compareContactsByName).map((record) => toContactRecord(record));
   }
 
   async getContactById(id: number): Promise<ContactRecord | null> {
@@ -204,12 +298,7 @@ class ContactsService {
     await waitForTransaction(transaction);
 
     const record = rawRecord ? normalizeRecord(rawRecord) : null;
-    if (!record) {
-      return null;
-    }
-
-    const [contact] = await this.attachRelays([toContactRecord(record)]);
-    return contact ?? null;
+    return record ? toContactRecord(record) : null;
   }
 
   async getContactByPublicKey(publicKey: string): Promise<ContactRecord | null> {
@@ -228,12 +317,7 @@ class ContactsService {
     await waitForTransaction(transaction);
 
     const record = rawRecord ? normalizeRecord(rawRecord) : null;
-    if (!record) {
-      return null;
-    }
-
-    const [contact] = await this.attachRelays([toContactRecord(record)]);
-    return contact ?? null;
+    return record ? toContactRecord(record) : null;
   }
 
   async publicKeyExists(publicKey: string): Promise<boolean> {
@@ -263,6 +347,7 @@ class ContactsService {
     const name = input.name.trim() || publicKey;
     const givenName = input.given_name?.trim() || null;
     const meta = inputSanitizerService.normalizeContactMetadata(input.meta);
+    const relays = normalizeRelayList(input.relays ?? []);
 
     const record: Omit<ContactStoreRecord, 'id'> = {
       public_key: publicKey,
@@ -271,6 +356,7 @@ class ContactsService {
       name_normalized: normalizeNameValue(name),
       given_name: givenName,
       given_name_normalized: normalizeNameValue(givenName ?? ''),
+      relays,
       meta
     };
 
@@ -284,12 +370,10 @@ class ContactsService {
       );
       await waitForTransaction(transaction);
 
-      const contact = toContactRecord({
+      return toContactRecord({
         ...record,
         id: Number(insertedId)
       });
-      const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, input.relays ?? []);
-      return { ...contact, relays };
     } catch (error) {
       if (isConstraintError(error)) {
         return null;
@@ -317,7 +401,6 @@ class ContactsService {
       return null;
     }
 
-    const previousContact = toContactRecord(existingRecord);
     const nextRecord: ContactStoreRecord = {
       ...existingRecord
     };
@@ -369,6 +452,14 @@ class ContactsService {
       }
     }
 
+    if (input.relays !== undefined) {
+      const nextRelays = normalizeRelayList(input.relays);
+      if (!relayListsEqual(nextRecord.relays, nextRelays)) {
+        nextRecord.relays = nextRelays;
+        didUpdateRecord = true;
+      }
+    }
+
     if (input.meta !== undefined) {
       const nextMeta = inputSanitizerService.normalizeContactMetadata(input.meta);
       if (!contactMetaEquals(nextRecord.meta, nextMeta)) {
@@ -392,28 +483,7 @@ class ContactsService {
       return null;
     }
 
-    const contact = toContactRecord(nextRecord);
-
-    if (input.relays === undefined) {
-      const didPublicKeyChange =
-        previousContact.public_key.toLowerCase() !== contact.public_key.toLowerCase();
-      if (!didPublicKeyChange) {
-        const [mapped] = await this.attachRelays([contact]);
-        return mapped ?? contact;
-      }
-
-      const preservedRelays = await relaysService.listRelaysByPublicKey(previousContact.public_key);
-      const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, preservedRelays);
-      await relaysService.deleteRelaysForPublicKey(previousContact.public_key);
-      return { ...contact, relays };
-    }
-
-    const relays = await relaysService.replaceRelaysForPublicKey(contact.public_key, input.relays);
-    if (previousContact.public_key.toLowerCase() !== contact.public_key.toLowerCase()) {
-      await relaysService.deleteRelaysForPublicKey(previousContact.public_key);
-    }
-
-    return { ...contact, relays };
+    return toContactRecord(nextRecord);
   }
 
   async deleteContact(id: number): Promise<boolean> {
@@ -437,13 +507,11 @@ class ContactsService {
 
     try {
       await waitForTransaction(transaction);
+      return true;
     } catch (error) {
       console.error('Failed to delete contact in IndexedDB.', error);
       return false;
     }
-
-    await relaysService.deleteRelaysForPublicKey(existingRecord.public_key);
-    return true;
   }
 
   async debugExec(sql: string, params?: unknown): Promise<DebugExecResult> {
@@ -479,7 +547,7 @@ class ContactsService {
   }
 
   private async initializeDatabase(): Promise<void> {
-    const [db] = await Promise.all([this.openDatabase(), relaysService.init()]);
+    const db = await this.openDatabase();
     this.dbPromise = Promise.resolve(db);
   }
 
@@ -559,19 +627,6 @@ class ContactsService {
     return rawRecords
       .map((record) => normalizeRecord(record))
       .filter((record): record is ContactStoreRecord => record !== null);
-  }
-
-  private async attachRelays(contacts: ContactRecord[]): Promise<ContactRecord[]> {
-    if (contacts.length === 0) {
-      return contacts;
-    }
-
-    return Promise.all(
-      contacts.map(async (contact) => ({
-        ...contact,
-        relays: await relaysService.listRelaysByPublicKey(contact.public_key)
-      }))
-    );
   }
 }
 

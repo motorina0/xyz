@@ -350,6 +350,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const fetchedRelays = inputSanitizerService.normalizeRelayEntriesFromUrls(resolvedUser.relayUrls ?? []);
     const nextRelays = fetchedRelays.length > 0 ? fetchedRelays : existingContact?.relays ?? [];
 
+    console.log('### Syncing contact profile, relays:', nextRelays);
     if (existingContact) {
       await contactsService.updateContact(existingContact.id, {
         name: nextName,
@@ -672,6 +673,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await contactsService.init();
     const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
+    console.log("### loggedInContact", loggedInContact)
     const relayUrls = inputSanitizerService.normalizeReadableRelayUrls(loggedInContact?.relays);
     console.log('### Subscribing to private messages using relays:', relayUrls);
     if (relayUrls.length === 0) {
@@ -747,6 +749,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function syncLoggedInContactProfile(relayUrls: string[]): Promise<void> {
+    console.log('### Syncing logged-in contact profile, relays:', relayUrls);
     if (syncLoggedInContactProfilePromise) {
       return syncLoggedInContactProfilePromise;
     }
@@ -781,6 +784,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function syncRecentChatContacts(relayUrls: string[], limit = 10): Promise<void> {
+    console.log("### Syncing recent chat contacts, relays:", relayUrls, "limit:", limit);
     if (syncRecentChatContactsPromise) {
       return syncRecentChatContactsPromise;
     }
