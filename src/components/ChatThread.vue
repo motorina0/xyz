@@ -48,12 +48,18 @@
       </div>
 
       <div ref="threadBodyRef" class="thread-body">
-        <MessageBubble
-          v-for="message in messages"
-          :key="message.id"
-          :message="message"
-          :contact-name="chat.name"
-        />
+        <template v-for="item in threadItems" :key="item.key">
+          <div v-if="item.type === 'separator'" class="thread-day-separator" aria-hidden="true">
+            <span class="thread-day-separator__line" />
+            <span class="thread-day-separator__label">{{ item.label }}</span>
+            <span class="thread-day-separator__line" />
+          </div>
+          <MessageBubble
+            v-else
+            :message="item.message"
+            :contact-name="chat.name"
+          />
+        </template>
       </div>
 
       <MessageComposer @send="handleSend" />
@@ -95,6 +101,18 @@ const emit = defineEmits<{
 
 const threadBodyRef = ref<HTMLElement | null>(null);
 
+type ThreadItem =
+  | {
+      type: 'separator';
+      key: string;
+      label: string;
+    }
+  | {
+      type: 'message';
+      key: string;
+      message: Message;
+    };
+
 const headerTime = computed(() => {
   if (!props.chat) {
     return '';
@@ -119,6 +137,57 @@ const avatarImageUrl = computed(() => {
   }
 
   return '';
+});
+
+function getDayKey(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function formatDayLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const isCurrentYear = date.getFullYear() === new Date().getFullYear();
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'long',
+    ...(isCurrentYear ? {} : { year: 'numeric' })
+  }).format(date);
+}
+
+const threadItems = computed<ThreadItem[]>(() => {
+  const items: ThreadItem[] = [];
+  let lastDayKey = '';
+
+  for (const message of props.messages) {
+    const dayKey = getDayKey(message.sentAt);
+    if (dayKey !== lastDayKey) {
+      items.push({
+        type: 'separator',
+        key: `separator-${dayKey}`,
+        label: formatDayLabel(message.sentAt)
+      });
+      lastDayKey = dayKey;
+    }
+
+    items.push({
+      type: 'message',
+      key: message.id,
+      message
+    });
+  }
+
+  return items;
 });
 
 async function scrollToBottom(): Promise<void> {
@@ -227,6 +296,32 @@ watch(
   flex: 1;
   overflow-y: auto;
   padding: 14px;
+}
+
+.thread-day-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 12px;
+}
+
+.thread-day-separator__line {
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--tg-border) 76%, transparent);
+}
+
+.thread-day-separator__label {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tg-sidebar) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--tg-border) 70%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--q-primary) 45%, var(--tg-text) 55%);
+  white-space: nowrap;
 }
 
 .thread-empty {
