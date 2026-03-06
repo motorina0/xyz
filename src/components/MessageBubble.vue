@@ -15,46 +15,87 @@
             class="bubble__status-segment"
             :class="segment.className"
             :style="{ flex: `${segment.weight} 1 0` }"
-          >
-            <AppTooltip max-width="360px">
-              <div class="bubble__status-tooltip">
-                <div class="bubble__status-tooltip-title">{{ segment.title }}</div>
-                <div v-if="segment.items.length === 0" class="bubble__status-tooltip-empty">
-                  {{ segment.emptyText }}
-                </div>
-                <div
-                  v-for="item in segment.items"
-                  :key="`${segment.key}-${item}`"
-                  class="bubble__status-tooltip-item"
-                >
-                  {{ item }}
-                </div>
-              </div>
-            </AppTooltip>
-          </span>
+            tabindex="0"
+            role="button"
+            :aria-expanded="activeStatusSegment?.key === segment.key ? 'true' : 'false'"
+            @click.stop="toggleStatusSegment(segment.key)"
+            @keydown.enter.prevent="toggleStatusSegment(segment.key)"
+            @keydown.space.prevent="toggleStatusSegment(segment.key)"
+          />
         </div>
+      </div>
+      <div
+        v-if="activeStatusSegment"
+        class="bubble__status-panel"
+        :class="`bubble__status-panel--${activeStatusSegment.key}`"
+      >
+        <div v-if="!activeStatusSegment.hasItems" class="bubble__status-panel-empty">
+          {{ activeStatusSegment.emptyText }}
+        </div>
+        <template v-else>
+          <div class="bubble__status-section">
+            <div class="bubble__status-section-title">
+              {{ contactRelaysTitle }}
+            </div>
+            <ul class="bubble__status-list">
+              <li
+                v-for="item in activeStatusSegment.recipientItems"
+                :key="`${activeStatusSegment.key}-panel-recipient-${item}`"
+                class="bubble__status-list-item bubble__status-panel-item"
+              >
+                {{ item }}
+              </li>
+              <li
+                v-if="activeStatusSegment.recipientItems.length === 0"
+                class="bubble__status-list-item bubble__status-list-item--empty bubble__status-panel-item"
+              >
+                No relays
+              </li>
+            </ul>
+          </div>
+          <div class="bubble__status-section-separator" />
+          <div class="bubble__status-section">
+            <div class="bubble__status-section-title">My Relays:</div>
+            <ul class="bubble__status-list">
+              <li
+                v-for="item in activeStatusSegment.selfItems"
+                :key="`${activeStatusSegment.key}-panel-self-${item}`"
+                class="bubble__status-list-item bubble__status-panel-item"
+              >
+                {{ item }}
+              </li>
+              <li
+                v-if="activeStatusSegment.selfItems.length === 0"
+                class="bubble__status-list-item bubble__status-list-item--empty bubble__status-panel-item"
+              >
+                No relays
+              </li>
+            </ul>
+          </div>
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import AppTooltip from 'src/components/AppTooltip.vue';
+import { computed, ref } from 'vue';
 import type { Message, MessageRelayStatus } from 'src/types/chat';
 
 const props = defineProps<{
   message: Message;
+  contactName?: string;
 }>();
 
 const isMine = computed(() => props.message.sender === 'me');
 
 interface StatusSegment {
   key: 'published' | 'pending' | 'failed';
-  title: string;
   className: string;
   weight: number;
-  items: string[];
+  recipientItems: string[];
+  selfItems: string[];
+  hasItems: boolean;
   emptyText: string;
 }
 
@@ -76,8 +117,7 @@ function isMessageRelayStatus(value: unknown): value is MessageRelayStatus {
 }
 
 function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
-  const scopeLabel = relayStatus.scope === 'self' ? 'Self' : 'Recipient';
-  return `${scopeLabel}: ${relayStatus.relay_url}`;
+  return relayStatus.relay_url;
 }
 
 const outboundRelayStatuses = computed(() => {
@@ -103,58 +143,89 @@ const hasPendingRelayStatuses = computed(() => {
   return outboundRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
 });
 
+const contactRelaysTitle = computed(() => {
+  const label = props.contactName?.trim();
+  return `${label || 'Contact'} Relays:`;
+});
+
+const activeStatusSegmentKey = ref<StatusSegment['key'] | null>(null);
+
 const statusSegments = computed<StatusSegment[]>(() => {
   const relayStatuses = outboundRelayStatuses.value;
   if (relayStatuses.length === 0) {
     return [
       {
         key: 'pending',
-        title: 'In Work',
         className: 'bubble__status-segment--gray',
         weight: 1,
-        items: [],
+        recipientItems: [],
+        selfItems: [],
+        hasItems: false,
         emptyText: 'No relay status recorded yet.'
       }
     ];
   }
 
-  const published = relayStatuses
-    .filter((relayStatus) => relayStatus.status === 'published')
-    .map((relayStatus) => formatRelayStatusItem(relayStatus));
-  const pending = relayStatuses
-    .filter((relayStatus) => relayStatus.status === 'pending')
-    .map((relayStatus) => formatRelayStatusItem(relayStatus));
-  const failed = relayStatuses
-    .filter((relayStatus) => relayStatus.status === 'failed')
-    .map((relayStatus) => formatRelayStatusItem(relayStatus));
+  function splitItemsByScope(status: MessageRelayStatus['status']) {
+    const matchingRelayStatuses = relayStatuses.filter((relayStatus) => relayStatus.status === status);
+
+    return {
+      recipientItems: matchingRelayStatuses
+        .filter((relayStatus) => relayStatus.scope === 'recipient')
+        .map((relayStatus) => formatRelayStatusItem(relayStatus)),
+      selfItems: matchingRelayStatuses
+        .filter((relayStatus) => relayStatus.scope === 'self')
+        .map((relayStatus) => formatRelayStatusItem(relayStatus))
+    };
+  }
+
+  const published = splitItemsByScope('published');
+  const pending = splitItemsByScope('pending');
+  const failed = splitItemsByScope('failed');
 
   return [
     {
       key: 'published',
-      title: 'OK',
       className: 'bubble__status-segment--green',
-      weight: published.length,
-      items: published,
+      weight: published.recipientItems.length + published.selfItems.length,
+      recipientItems: published.recipientItems,
+      selfItems: published.selfItems,
+      hasItems: published.recipientItems.length + published.selfItems.length > 0,
       emptyText: 'No relays confirmed.'
     },
     {
       key: 'pending',
-      title: 'In Work',
       className: 'bubble__status-segment--gray',
-      weight: pending.length,
-      items: pending,
+      weight: pending.recipientItems.length + pending.selfItems.length,
+      recipientItems: pending.recipientItems,
+      selfItems: pending.selfItems,
+      hasItems: pending.recipientItems.length + pending.selfItems.length > 0,
       emptyText: 'No relays pending.'
     },
     {
       key: 'failed',
-      title: 'Failed',
       className: 'bubble__status-segment--red',
-      weight: failed.length,
-      items: failed,
+      weight: failed.recipientItems.length + failed.selfItems.length,
+      recipientItems: failed.recipientItems,
+      selfItems: failed.selfItems,
+      hasItems: failed.recipientItems.length + failed.selfItems.length > 0,
       emptyText: 'No relays failed.'
     }
   ].filter((segment) => segment.weight > 0);
 });
+
+const activeStatusSegment = computed(() => {
+  if (!activeStatusSegmentKey.value) {
+    return null;
+  }
+
+  return statusSegments.value.find((segment) => segment.key === activeStatusSegmentKey.value) ?? null;
+});
+
+function toggleStatusSegment(segmentKey: StatusSegment['key']): void {
+  activeStatusSegmentKey.value =
+    activeStatusSegmentKey.value === segmentKey ? null : segmentKey;
+}
 
 const formattedTime = computed(() => {
   return new Intl.DateTimeFormat('en-US', {
@@ -252,27 +323,65 @@ const formattedTime = computed(() => {
   background: #dc2626;
 }
 
-.bubble__status-tooltip {
-  text-transform: none;
-  letter-spacing: 0;
-  min-width: 180px;
-}
-
-.bubble__status-tooltip-title {
+.bubble__status-section-title {
   font-size: 10px;
-  font-weight: 800;
-  margin-bottom: 6px;
-  opacity: 0.92;
+  font-weight: 700;
+  margin-bottom: 4px;
 }
 
-.bubble__status-tooltip-empty,
-.bubble__status-tooltip-item {
+.bubble__status-section-separator {
+  height: 1px;
+  margin: 7px 0;
+  background: rgba(226, 232, 240, 0.24);
+}
+
+.bubble__status-list {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.bubble__status-list-item {
   font-size: 10px;
   line-height: 1.35;
 }
 
-.bubble__status-tooltip-item + .bubble__status-tooltip-item {
-  margin-top: 3px;
+.bubble__status-list-item--empty {
+  list-style: disc;
+  opacity: 0.72;
+}
+
+.bubble__status-panel {
+  margin-top: 8px;
+  border-radius: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  background: rgba(255, 255, 255, 0.48);
+  backdrop-filter: blur(8px);
+}
+
+.bubble__status-panel--published {
+  border-color: rgba(22, 163, 74, 0.34);
+  box-shadow: inset 3px 0 0 #16a34a;
+}
+
+.bubble__status-panel--pending {
+  border-color: rgba(100, 116, 139, 0.34);
+  box-shadow: inset 3px 0 0 rgba(100, 116, 139, 0.7);
+}
+
+.bubble__status-panel--failed {
+  border-color: rgba(220, 38, 38, 0.34);
+  box-shadow: inset 3px 0 0 #dc2626;
+}
+
+.bubble__status-panel-empty,
+.bubble__status-panel-item {
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.bubble__status-panel .bubble__status-section-separator {
+  background: rgba(148, 163, 184, 0.2);
 }
 
 @keyframes bubble-in {

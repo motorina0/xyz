@@ -48,7 +48,12 @@
       </div>
 
       <div ref="threadBodyRef" class="thread-body">
-        <MessageBubble v-for="message in messages" :key="message.id" :message="message" />
+        <MessageBubble
+          v-for="message in messages"
+          :key="message.id"
+          :message="message"
+          :contact-name="chat.name"
+        />
       </div>
 
       <MessageComposer @send="handleSend" />
