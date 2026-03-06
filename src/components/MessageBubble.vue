@@ -6,8 +6,7 @@
         <span class="bubble__time">{{ formattedTime }}</span>
         <div
           v-if="isMine"
-          class="bubble__status"
-          :class="{ 'bubble__status--pending': hasPendingRelayStatuses }"
+          class="bubble__status-hitbox"
           tabindex="0"
           role="button"
           aria-haspopup="dialog"
@@ -16,13 +15,18 @@
           @keydown.enter.prevent="openStatusDialog"
           @keydown.space.prevent="openStatusDialog"
         >
-          <span
-            v-for="segment in statusSegments"
-            :key="segment.key"
-            class="bubble__status-segment"
-            :class="segment.className"
-            :style="{ flex: `${segment.weight} 1 0` }"
-          />
+          <div
+            class="bubble__status"
+            :class="{ 'bubble__status--pending': hasPendingRelayStatuses }"
+          >
+            <span
+              v-for="segment in statusSegments"
+              :key="segment.key"
+              class="bubble__status-segment"
+              :class="segment.className"
+              :style="{ flex: `${segment.weight} 1 0` }"
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -31,7 +35,6 @@
   <AppDialog
     v-model="isStatusDialogOpen"
     title="Relay Status"
-    subtitle="Success first, failures next, pending relays last."
     max-width="460px"
   >
     <div
@@ -42,7 +45,7 @@
     </div>
     <template v-else>
       <div class="bubble__status-section">
-        <div class="bubble__status-section-title">Contact Relays</div>
+        <div class="bubble__status-section-title">{{ contactRelaysTitle }}</div>
         <ul class="bubble__status-list bubble__status-list--dialog">
           <li
             v-for="item in contactStatusListItems"
@@ -64,7 +67,7 @@
       <div class="bubble__status-section-separator" />
 
       <div class="bubble__status-section">
-        <div class="bubble__status-section-title">My Relays</div>
+        <div class="bubble__status-section-title">My Relays (message backup)</div>
         <ul class="bubble__status-list bubble__status-list--dialog">
           <li
             v-for="item in myStatusListItems"
@@ -93,6 +96,7 @@ import type { Message, MessageRelayStatus } from 'src/types/chat';
 
 const props = defineProps<{
   message: Message;
+  contactName?: string;
 }>();
 
 const isMine = computed(() => props.message.sender === 'me');
@@ -151,6 +155,11 @@ const outboundRelayStatuses = computed(() => {
 
 const hasPendingRelayStatuses = computed(() => {
   return outboundRelayStatuses.value.some((relayStatus) => relayStatus.status === 'pending');
+});
+
+const contactRelaysTitle = computed(() => {
+  const label = props.contactName?.trim();
+  return `${label || 'Contact'} Relays`;
 });
 
 const isStatusDialogOpen = ref(false);
@@ -305,6 +314,17 @@ const formattedTime = computed(() => {
   border-radius: 999px;
   overflow: hidden;
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+}
+
+.bubble__status-hitbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 16px;
+  padding: 5px 0;
+  margin: -5px 0;
   cursor: pointer;
 }
 

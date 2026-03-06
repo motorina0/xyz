@@ -52,6 +52,7 @@
           v-for="message in messages"
           :key="message.id"
           :message="message"
+          :contact-name="chat.name"
         />
       </div>
 
