@@ -2,7 +2,14 @@
   <div class="bubble-row" :class="isMine ? 'bubble-row--mine' : 'bubble-row--their'">
     <div class="bubble" :class="isMine ? 'bubble--mine' : 'bubble--their'">
       <p class="bubble__text">{{ message.text }}</p>
-      <span class="bubble__time">{{ formattedTime }}</span>
+      <div class="bubble__meta">
+        <span class="bubble__time">{{ formattedTime }}</span>
+        <div v-if="isMine" class="bubble__status" aria-hidden="true">
+          <span class="bubble__status-segment bubble__status-segment--green"></span>
+          <span class="bubble__status-segment bubble__status-segment--gray"></span>
+          <span class="bubble__status-segment bubble__status-segment--red"></span>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -63,12 +70,47 @@ const formattedTime = computed(() => {
   word-break: break-word;
 }
 
-.bubble__time {
-  display: block;
+.bubble__meta {
   margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.bubble__time {
   font-size: 11px;
-  text-align: right;
   opacity: 0.65;
+}
+
+.bubble__status {
+  display: inline-flex;
+  align-items: center;
+  width: 28px;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.bubble__status-segment {
+  display: block;
+  height: 100%;
+}
+
+.bubble__status-segment--green {
+  flex: 2 1 0;
+  background: #16a34a;
+}
+
+.bubble__status-segment--gray {
+  flex: 1 1 0;
+  background: rgba(100, 116, 139, 0.5);
+}
+
+.bubble__status-segment--red {
+  flex: 1 1 0;
+  background: #dc2626;
 }
 
 @keyframes bubble-in {
