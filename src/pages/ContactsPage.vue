@@ -50,12 +50,13 @@
                 />
               </q-item-section>
 
-              <q-item-section>
-                <q-item-label class="contact-item__name">{{ contactListTitle(contact) }}</q-item-label>
+              <q-item-section class="contact-item__main">
+                <q-item-label class="contact-item__name" lines="1">{{ contactListTitle(contact) }}</q-item-label>
                 <q-item-label
                   v-if="contactListCaption(contact)"
                   caption
                   class="contact-item__caption"
+                  lines="1"
                 >
                   {{ contactListCaption(contact) }}
                 </q-item-label>
@@ -67,13 +68,12 @@
                   dense
                   round
                   icon="more_vert"
-                  color="primary"
                   class="contact-item__more"
                   aria-label="Contact actions"
                   @click.stop
                 >
-                  <q-menu anchor="bottom right" self="top right">
-                    <q-list dense separator class="contact-item__menu">
+                  <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
+                    <q-list dense separator class="tg-pop-menu__list">
                       <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
                         <q-item-section>Chat</q-item-section>
                       </q-item>
@@ -711,11 +711,24 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contact-item__more {
-  color: #64748b;
+  color: color-mix(in srgb, var(--tg-border) 20%, #5f718a 80%);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.contact-item__menu {
-  min-width: 176px;
+.contact-item__more:hover {
+  color: color-mix(in srgb, var(--tg-border) 10%, #4f637e 90%);
+  background: color-mix(in srgb, var(--tg-sidebar) 86%, #dce8f9 14%);
+}
+
+.contact-item__main {
+  min-width: 0;
+}
+
+.contact-item__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .contact-item:hover {
@@ -725,12 +738,11 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
 }
 
-.contact-item__name {
-  font-weight: 600;
-}
-
 .contact-item__caption {
   opacity: 0.78;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .contact-item--active {

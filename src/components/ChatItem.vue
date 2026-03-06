@@ -10,12 +10,12 @@
       <CachedAvatar :src="avatarImageUrl" :alt="chatTitle" :fallback="chat.avatar" />
     </q-item-section>
 
-    <q-item-section>
-      <q-item-label class="chat-item__name">{{ chatTitle }}</q-item-label>
-      <q-item-label caption lines="1">{{ chat.lastMessage }}</q-item-label>
+    <q-item-section class="chat-item__main">
+      <q-item-label class="chat-item__name" lines="1">{{ chatTitle }}</q-item-label>
+      <q-item-label class="chat-item__caption" caption lines="1">{{ chat.lastMessage }}</q-item-label>
     </q-item-section>
 
-    <q-item-section side top>
+    <q-item-section side top class="chat-item__meta">
       <q-item-label caption>{{ formattedTime }}</q-item-label>
       <q-badge v-if="chat.unreadCount > 0" rounded color="primary" class="q-mt-xs">
         {{ chat.unreadCount }}
@@ -28,13 +28,12 @@
         dense
         round
         icon="more_vert"
-        color="primary"
         class="chat-item__more"
         aria-label="Chat actions"
         @click.stop
       >
-        <q-menu anchor="bottom right" self="top right">
-          <q-list dense separator class="chat-item__menu">
+        <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
+          <q-list dense separator class="tg-pop-menu__list">
             <q-item clickable v-close-popup @click="emitViewProfile">
               <q-item-section>View Profile</q-item-section>
             </q-item>
@@ -170,13 +169,32 @@ function emitDeleteChat(): void {
 
 .chat-item__name {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-item__caption {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-item__main {
+  min-width: 0;
+}
+
+.chat-item__meta {
+  flex: 0 0 auto;
 }
 
 .chat-item__more {
-  color: #64748b;
+  color: color-mix(in srgb, var(--tg-border) 20%, #5f718a 80%);
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-.chat-item__menu {
-  min-width: 176px;
+.chat-item__more:hover {
+  color: color-mix(in srgb, var(--tg-border) 10%, #4f637e 90%);
+  background: color-mix(in srgb, var(--tg-sidebar) 86%, #dce8f9 14%);
 }
 </style>
