@@ -940,6 +940,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
+          console.log('Received private contact list event', event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
           queuePrivateContactListEventApplication(wrappedEvent);
         }
@@ -1099,6 +1100,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
+          console.log('Received private message gift wrap event', event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
           queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
         }
