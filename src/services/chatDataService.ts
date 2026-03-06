@@ -64,7 +64,7 @@ interface MessageRecord {
 }
 
 const CHAT_DATA_DB_NAME = 'chat-data-indexeddb-v1';
-const CHAT_DATA_DB_VERSION = 2;
+const CHAT_DATA_DB_VERSION = 3;
 
 const CHATS_STORE = 'chats';
 const MESSAGES_STORE = 'messages';
@@ -73,8 +73,8 @@ const CHATS_PUBLIC_KEY_INDEX = 'public_key_normalized';
 const CHATS_LAST_MESSAGE_AT_INDEX = 'last_message_at';
 
 const MESSAGES_CHAT_ID_INDEX = 'chat_id';
-const MESSAGES_CREATED_AT_INDEX = 'created_at';
 const MESSAGES_EVENT_ID_INDEX = 'event_id_normalized';
+const LEGACY_MESSAGES_CREATED_AT_INDEX = 'created_at';
 
 function canUseIndexedDb(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
@@ -693,10 +693,8 @@ class ChatDataService {
         if (!messagesStore.indexNames.contains(MESSAGES_CHAT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_CHAT_ID_INDEX, MESSAGES_CHAT_ID_INDEX, { unique: false });
         }
-        if (!messagesStore.indexNames.contains(MESSAGES_CREATED_AT_INDEX)) {
-          messagesStore.createIndex(MESSAGES_CREATED_AT_INDEX, MESSAGES_CREATED_AT_INDEX, {
-            unique: false
-          });
+        if (messagesStore.indexNames.contains(LEGACY_MESSAGES_CREATED_AT_INDEX)) {
+          messagesStore.deleteIndex(LEGACY_MESSAGES_CREATED_AT_INDEX);
         }
         if (!messagesStore.indexNames.contains(MESSAGES_EVENT_ID_INDEX)) {
           messagesStore.createIndex(MESSAGES_EVENT_ID_INDEX, MESSAGES_EVENT_ID_INDEX, {
