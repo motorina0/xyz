@@ -75,6 +75,11 @@ export interface RelayListMetadataEntry {
   write?: boolean;
 }
 
+interface SendDirectMessageOptions {
+  localMessageId?: number;
+  createdAt?: string;
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
@@ -163,6 +168,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return new Date(Number(value) * 1000).toISOString();
   }
 
+  function toUnixTimestamp(value: string | undefined): number {
+    if (typeof value === 'string') {
+      const parsed = Date.parse(value);
+      if (!Number.isNaN(parsed)) {
+        return Math.floor(parsed / 1000);
+      }
+    }
+
+    return Math.floor(Date.now() / 1000);
+  }
+
   function deriveChatName(contact: ContactRecord | null, publicKey: string): string {
     const displayName = contact?.meta.display_name?.trim() ?? '';
     if (displayName) {
@@ -180,6 +196,35 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return publicKey.slice(0, 16);
+  }
+
+  function createDirectMessageRumorEvent(
+    senderPubkey: string,
+    recipientPubkey: string,
+    message: string,
+    createdAt: number
+  ): NDKEvent {
+    return new NDKEvent(ndk, {
+      kind: NDKKind.PrivateDirectMessage,
+      created_at: createdAt,
+      pubkey: senderPubkey,
+      content: message,
+      tags: [['p', recipientPubkey]]
+    });
+  }
+
+  async function resolveEventId(event: NDKEvent): Promise<string | null> {
+    const existingEventId = event.id?.trim();
+    if (existingEventId) {
+      return existingEventId;
+    }
+
+    try {
+      const nostrEvent = await event.toNostrEvent();
+      return nostrEvent.id?.trim() || null;
+    } catch {
+      return null;
+    }
   }
 
   function readProfileField(
@@ -1128,7 +1173,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const senderPubkeyHex = inputSanitizerService.normalizeHexKey(rumorEvent.pubkey ?? '');
-    if (!senderPubkeyHex || senderPubkeyHex === loggedInPubkeyHex) {
+    if (!senderPubkeyHex) {
       return;
     }
 
@@ -1136,7 +1181,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
       .getMatchingTags('p')
       .map((tag) => inputSanitizerService.normalizeHexKey(tag[1] ?? ''))
       .filter((value): value is string => Boolean(value));
-    if (!recipients.includes(loggedInPubkeyHex)) {
+    const isSelfSentMessage = senderPubkeyHex === loggedInPubkeyHex;
+    if (!isSelfSentMessage && !recipients.includes(loggedInPubkeyHex)) {
+      return;
+    }
+
+    const chatPubkey = isSelfSentMessage
+      ? recipients.find((pubkey) => pubkey !== loggedInPubkeyHex) ?? null
+      : senderPubkeyHex;
+    if (!chatPubkey) {
       return;
     }
 
@@ -1155,14 +1208,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
     }
 
-    const contact = await contactsService.getContactByPublicKey(senderPubkeyHex);
-    const existingChat = await chatDataService.getChatByPublicKey(senderPubkeyHex);
+    const contact = await contactsService.getContactByPublicKey(chatPubkey);
+    const existingChat = await chatDataService.getChatByPublicKey(chatPubkey);
     const createdChat =
       existingChat
         ? null
         : await chatDataService.createChat({
-            public_key: senderPubkeyHex,
-            name: deriveChatName(contact, senderPubkeyHex),
+            public_key: chatPubkey,
+            name: deriveChatName(contact, chatPubkey),
             last_message: '',
             last_message_at: toIsoTimestampFromUnix(rumorEvent.created_at),
             unread_count: 0,
@@ -1173,7 +1226,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const chat =
       existingChat ??
       createdChat ??
-      (await chatDataService.getChatByPublicKey(senderPubkeyHex));
+      (await chatDataService.getChatByPublicKey(chatPubkey));
     if (!chat) {
       return;
     }
@@ -1199,7 +1252,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       chat.id,
       messageText,
       createdAt,
-      Number(chat.unread_count ?? 0) + 1
+      isSelfSentMessage ? Number(chat.unread_count ?? 0) : Number(chat.unread_count ?? 0) + 1
     );
   }
 
@@ -1514,7 +1567,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   async function sendDirectMessage(
     recipientPublicKey: string,
     textMessage: string,
-    relays: string[]
+    relays: string[],
+    options: SendDirectMessageOptions = {}
   ): Promise<NostrEvent> {
     const message = textMessage.trim();
     if (!message) {
@@ -1549,23 +1603,51 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await ensureRelayConnections(relayUrls);
 
     const signer = getOrCreateSigner(senderPrivateKeyHex);
-    const createdAt = Math.floor(Date.now() / 1000);
+    const createdAt = toUnixTimestamp(options.createdAt);
 
     const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
-    const nip17Event = new NDKEvent(ndk, {
-      kind: NDKKind.PrivateDirectMessage,
-      created_at: createdAt,
-      pubkey: signer.pubkey,
-      content: message,
-      tags: [['p', normalizedRecipientPubkey]]
-    });
+    const recipientRumorEvent = createDirectMessageRumorEvent(
+      signer.pubkey,
+      normalizedRecipientPubkey,
+      message,
+      createdAt
+    );
+    const rumorEventId = await resolveEventId(recipientRumorEvent);
+    if (options.localMessageId && rumorEventId) {
+      try {
+        await chatDataService.updateMessageEventId(options.localMessageId, rumorEventId);
+      } catch (error) {
+        console.warn('Failed to persist direct message event id before publish', error);
+      }
+    }
 
-    const nip59Event = await giftWrap(nip17Event, recipient, signer, {
+    const nip59Event = await giftWrap(recipientRumorEvent, recipient, signer, {
       rumorKind: NDKKind.PrivateDirectMessage
     });
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     await nip59Event.publish(relaySet);
+
+    const selfRelayUrls = await resolveLoggedInPublishRelayUrls();
+    if (selfRelayUrls.length > 0) {
+      try {
+        await ensureRelayConnections(selfRelayUrls);
+        const senderRecipient = new NDKUser({ pubkey: signer.pubkey });
+        const selfRumorEvent = createDirectMessageRumorEvent(
+          signer.pubkey,
+          normalizedRecipientPubkey,
+          message,
+          createdAt
+        );
+        const selfGiftWrapEvent = await giftWrap(selfRumorEvent, senderRecipient, signer, {
+          rumorKind: NDKKind.PrivateDirectMessage
+        });
+        const selfRelaySet = NDKRelaySet.fromRelayUrls(selfRelayUrls, ndk);
+        await selfGiftWrapEvent.publish(selfRelaySet);
+      } catch (error) {
+        console.warn('Failed to publish direct message self-copy', error);
+      }
+    }
 
     const dmEvent = await nip59Event.toNostrEvent();
     console.log('Sending DM event:', dmEvent);

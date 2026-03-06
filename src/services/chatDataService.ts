@@ -528,6 +528,49 @@ class ChatDataService {
     }
   }
 
+  async updateMessageEventId(messageId: number, eventId: string): Promise<MessageRow | null> {
+    const normalizedMessageId = Number(messageId);
+    const normalizedEventId = normalizeEventId(eventId);
+    if (!Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0 || !normalizedEventId) {
+      return null;
+    }
+
+    const existingMessage = await this.getMessageByEventId(normalizedEventId);
+    if (existingMessage) {
+      return existingMessage;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readwrite');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const record = await requestToPromise<MessageRecord | undefined>(
+      store.get(normalizedMessageId) as IDBRequest<MessageRecord | undefined>
+    );
+    if (!record) {
+      await waitForTransaction(transaction);
+      return null;
+    }
+
+    const nextRecord: MessageRecord = {
+      ...record,
+      event_id: normalizedEventId,
+      event_id_normalized: normalizedEventId.toLowerCase()
+    };
+
+    try {
+      await requestToPromise<IDBValidKey>(store.put(nextRecord) as IDBRequest<IDBValidKey>);
+      await waitForTransaction(transaction);
+      return toMessageRow(nextRecord);
+    } catch (error) {
+      if (isConstraintError(error)) {
+        return this.getMessageByEventId(normalizedEventId);
+      }
+
+      console.error('Failed to update message event id in IndexedDB.', error);
+      return null;
+    }
+  }
+
   async getMessageByEventId(eventId: string): Promise<MessageRow | null> {
     const normalizedEventId = eventId.trim().toLowerCase();
     if (!normalizedEventId) {

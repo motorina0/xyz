@@ -130,7 +130,11 @@ export const useMessageStore = defineStore('messageStore', () => {
     await nostrStore.sendDirectMessage(
       chat.public_key,
       newMessage.text,
-      preferredRelays.length > 0 ? preferredRelays : fallbackRelays
+      preferredRelays.length > 0 ? preferredRelays : fallbackRelays,
+      {
+        localMessageId: created.id,
+        createdAt: created.created_at
+      }
     );
     return newMessage;
   }
