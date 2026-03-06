@@ -144,18 +144,17 @@ function emitDeleteChat(): void {
 
 <style scoped>
 .chat-item {
+  min-width: 0;
   border-radius: 14px;
   margin: 6px 8px;
   border: 1px solid transparent;
   transition:
     background-color 0.2s ease,
-    transform 0.2s ease,
     border-color 0.2s ease,
     box-shadow 0.2s ease;
 }
 
 .chat-item:hover {
-  transform: translateX(3px);
   background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
   border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
   box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
@@ -181,6 +180,7 @@ function emitDeleteChat(): void {
 }
 
 .chat-item__main {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

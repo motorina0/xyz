@@ -39,5 +39,14 @@ defineEmits<{
 <style scoped>
 .chat-list-scroll {
   height: 100%;
+  overflow-x: hidden;
+}
+
+.chat-list-scroll :deep(.q-scrollarea__container),
+.chat-list-scroll :deep(.q-scrollarea__content),
+.chat-list-scroll :deep(.q-list) {
+  overflow-x: hidden !important;
+  min-width: 0;
+  width: 100%;
 }
 </style>

@@ -697,14 +697,23 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contacts-list {
   flex: 1;
+  overflow-x: hidden;
+}
+
+.contacts-list :deep(.q-scrollarea__container),
+.contacts-list :deep(.q-scrollarea__content),
+.contacts-list :deep(.q-list) {
+  overflow-x: hidden !important;
+  min-width: 0;
+  width: 100%;
 }
 
 .contact-item {
+  min-width: 0;
   border-radius: 14px;
   margin: 6px 8px;
   border: 1px solid transparent;
   transition:
-    transform 0.2s ease,
     background-color 0.2s ease,
     border-color 0.2s ease,
     box-shadow 0.2s ease;
@@ -721,6 +730,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contact-item__main {
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -732,7 +742,6 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contact-item:hover {
-  transform: translateX(3px);
   background: linear-gradient(130deg, rgba(52, 137, 255, 0.1), rgba(28, 186, 137, 0.08));
   border-color: color-mix(in srgb, var(--tg-border) 78%, #8aa5c5 22%);
   box-shadow: 0 8px 16px rgba(53, 110, 186, 0.1);
