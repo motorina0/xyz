@@ -11,6 +11,16 @@ interface ChatContactContext {
   contactName: string;
 }
 
+interface LiveChatPreviewInput {
+  chatId: string;
+  publicKey: string;
+  fallbackName: string;
+  messageText: string;
+  at: string;
+  unreadCount: number;
+  meta?: Record<string, unknown>;
+}
+
 function sortByLatest(chats: Chat[]): Chat[] {
   const toTimestamp = (value: string): number => {
     const parsed = new Date(value).getTime();
@@ -159,6 +169,7 @@ function mapChatRowToChat(
 export const useChatStore = defineStore('chatStore', () => {
   const chats = ref<Chat[]>([]);
   const selectedChatId = ref<string | null>(null);
+  const visibleChatId = ref<string | null>(null);
   const searchQuery = ref('');
   const isLoaded = ref(false);
   let initPromise: Promise<void> | null = null;
@@ -235,6 +246,15 @@ export const useChatStore = defineStore('chatStore', () => {
   function selectChat(chatId: string): void {
     selectedChatId.value = chatId;
     void markAsRead(chatId);
+  }
+
+  function setVisibleChatId(chatId: string | null): void {
+    const nextChatId = chatId?.trim() || null;
+    visibleChatId.value = nextChatId;
+
+    if (nextChatId) {
+      void markAsRead(nextChatId);
+    }
   }
 
   async function markAsRead(chatId: string): Promise<void> {
@@ -329,7 +349,7 @@ export const useChatStore = defineStore('chatStore', () => {
           return chat;
         }
 
-        nextUnreadCount = selectedChatId.value === chatId ? 0 : chat.unreadCount;
+        nextUnreadCount = visibleChatId.value === chatId ? 0 : chat.unreadCount;
         return {
           ...chat,
           lastMessage: text,
@@ -349,6 +369,50 @@ export const useChatStore = defineStore('chatStore', () => {
     } catch (error) {
       console.error('Failed to update chat preview', error);
     }
+  }
+
+  function applyIncomingMessage(input: LiveChatPreviewInput): void {
+    const nextChatId = input.chatId.trim();
+    const nextPublicKey = input.publicKey.trim();
+    const fallbackName = input.fallbackName.trim() || nextPublicKey;
+
+    if (!nextChatId || !nextPublicKey) {
+      return;
+    }
+
+    const existingChat = chats.value.find((chat) => chat.id === nextChatId) ?? null;
+    const currentMeta =
+      (existingChat?.meta as Record<string, unknown> | undefined) ??
+      (input.meta ? { ...input.meta } : {});
+    const nextName = existingChat?.name || fallbackName;
+    const nextMeta = syncChatMeta(
+      currentMeta,
+      undefined,
+      nextName || nextPublicKey
+    );
+    const nextAvatar =
+      readMetaString(nextMeta, 'avatar') ||
+      existingChat?.avatar ||
+      buildAvatar(nextName || nextPublicKey);
+    const nextChat: Chat = {
+      id: nextChatId,
+      publicKey: existingChat?.publicKey || nextPublicKey,
+      name: nextName,
+      avatar: nextAvatar,
+      lastMessage: input.messageText,
+      lastMessageAt: input.at,
+      unreadCount: visibleChatId.value === nextChatId ? 0 : Math.max(0, input.unreadCount),
+      meta: nextMeta
+    };
+
+    if (existingChat) {
+      chats.value = sortByLatest(
+        chats.value.map((chat) => (chat.id === nextChatId ? nextChat : chat))
+      );
+      return;
+    }
+
+    chats.value = sortByLatest([...chats.value, nextChat]);
   }
 
   async function addContact(
@@ -502,14 +566,17 @@ export const useChatStore = defineStore('chatStore', () => {
     searchQuery,
     selectedChat,
     selectedChatId,
+    visibleChatId,
     markAsRead,
     muteChat,
     deleteChat,
     init,
     reload,
     selectChat,
+    setVisibleChatId,
     setSearchQuery,
     updateChatPreview,
+    applyIncomingMessage,
     addContact,
     syncContactProfile
   };

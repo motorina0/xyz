@@ -42,9 +42,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import { useRoute, useRouter } from 'vue-router';
+import { useChatStore } from 'src/stores/chatStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { readDarkModePreference } from 'src/utils/themeStorage';
@@ -52,6 +53,7 @@ import { readDarkModePreference } from 'src/utils/themeStorage';
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
+const chatStore = useChatStore();
 const relayStore = useRelayStore();
 const nostrStore = useNostrStore();
 const savedDarkMode = readDarkModePreference();
@@ -92,6 +94,27 @@ const showMobileNav = computed(() => {
 
   return false;
 });
+
+const visibleChatId = computed(() => {
+  if (route.name !== 'chats') {
+    return null;
+  }
+
+  if (typeof route.params.chatId !== 'string') {
+    return null;
+  }
+
+  const chatId = route.params.chatId.trim();
+  return chatId || null;
+});
+
+watch(
+  visibleChatId,
+  (chatId) => {
+    chatStore.setVisibleChatId(chatId);
+  },
+  { immediate: true }
+);
 
 if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);

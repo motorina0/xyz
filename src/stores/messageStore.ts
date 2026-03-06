@@ -53,6 +53,23 @@ export const useMessageStore = defineStore('messageStore', () => {
   const loadedChatIds = new Set<string>();
   const loadingChatPromises = new Map<string, Promise<void>>();
 
+  function compareMessages(first: Message, second: Message): number {
+    const firstTimestamp = new Date(first.sentAt).getTime();
+    const secondTimestamp = new Date(second.sentAt).getTime();
+
+    if (firstTimestamp !== secondTimestamp) {
+      return firstTimestamp - secondTimestamp;
+    }
+
+    const firstId = Number.parseInt(first.id, 10);
+    const secondId = Number.parseInt(second.id, 10);
+    if (Number.isInteger(firstId) && Number.isInteger(secondId) && firstId !== secondId) {
+      return firstId - secondId;
+    }
+
+    return first.id.localeCompare(second.id);
+  }
+
   function getMessages(chatId: string | null): Message[] {
     if (!chatId) {
       return [];
@@ -71,8 +88,58 @@ export const useMessageStore = defineStore('messageStore', () => {
 
   function replaceMessageInState(chatId: string, message: Message): void {
     const existingMessages = messagesByChat.value[chatId] ?? [];
-    const nextMessages = existingMessages.map((entry) => (entry.id === message.id ? message : entry));
+    const existingIndex = existingMessages.findIndex((entry) => entry.id === message.id);
+    if (existingIndex === -1) {
+      return;
+    }
+
+    const nextMessages = [...existingMessages];
+    nextMessages[existingIndex] = message;
     messagesByChat.value[chatId] = nextMessages;
+  }
+
+  function upsertMessageInState(chatId: string, message: Message): void {
+    const existingMessages = messagesByChat.value[chatId] ?? [];
+    const existingIndex = existingMessages.findIndex((entry) => entry.id === message.id);
+    if (existingIndex >= 0) {
+      const nextMessages = [...existingMessages];
+      nextMessages[existingIndex] = message;
+      messagesByChat.value[chatId] = nextMessages;
+      return;
+    }
+
+    const lastMessage = existingMessages[existingMessages.length - 1] ?? null;
+    if (!lastMessage || compareMessages(lastMessage, message) <= 0) {
+      messagesByChat.value[chatId] = [...existingMessages, message];
+      return;
+    }
+
+    messagesByChat.value[chatId] = [...existingMessages, message].sort(compareMessages);
+  }
+
+  function upsertPersistedMessage(
+    row: Awaited<ReturnType<typeof chatDataService.listMessages>>[number]
+  ): void {
+    const chatId = String(row.chat_id);
+    if (!loadedChatIds.has(chatId) && !messagesByChat.value[chatId]) {
+      return;
+    }
+
+    upsertMessageInState(chatId, mapMessageRowToMessage(row));
+  }
+
+  async function refreshPersistedMessage(messageId: number): Promise<void> {
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      return;
+    }
+
+    await chatDataService.init();
+    const row = await chatDataService.getMessageById(messageId);
+    if (!row) {
+      return;
+    }
+
+    upsertPersistedMessage(row);
   }
 
   async function loadMessages(chatId: string, force = false): Promise<void> {
@@ -209,6 +276,8 @@ export const useMessageStore = defineStore('messageStore', () => {
     loadMessages,
     getMessages,
     sendMessage,
-    removeChatMessages
+    removeChatMessages,
+    upsertPersistedMessage,
+    refreshPersistedMessage
   };
 });

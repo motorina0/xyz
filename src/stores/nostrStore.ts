@@ -98,6 +98,7 @@ function hasStorage(): boolean {
 
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
+  const chatStore = useChatStore();
   const INITIAL_CONNECT_TIMEOUT_MS = 3000;
   const relayStatusVersion = ref(0);
   const contactListVersion = ref(0);
@@ -1512,6 +1513,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
           receivedRelayStatuses,
           existingMessage.meta
         );
+        try {
+          const { useMessageStore } = await import('src/stores/messageStore');
+          await useMessageStore().refreshPersistedMessage(existingMessage.id);
+        } catch (error) {
+          console.error('Failed to sync existing incoming message into live state', error);
+        }
         return;
       }
     }
@@ -1557,12 +1564,38 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
+    const nextUnreadCount = isSelfSentMessage
+      ? Number(chat.unread_count ?? 0)
+      : chatStore.visibleChatId === String(chat.id)
+        ? 0
+        : Number(chat.unread_count ?? 0) + 1;
+
     await chatDataService.updateChatPreview(
       chat.id,
       messageText,
       createdAt,
-      isSelfSentMessage ? Number(chat.unread_count ?? 0) : Number(chat.unread_count ?? 0) + 1
+      nextUnreadCount
     );
+
+    try {
+      chatStore.applyIncomingMessage({
+        chatId: String(chat.id),
+        publicKey: chat.public_key,
+        fallbackName: deriveChatName(contact, chatPubkey),
+        messageText,
+        at: createdAt,
+        unreadCount: nextUnreadCount,
+        meta: {
+          ...(chat.meta ?? {}),
+          ...(contact?.meta.picture ? { picture: contact.meta.picture } : {})
+        }
+      });
+
+      const { useMessageStore } = await import('src/stores/messageStore');
+      useMessageStore().upsertPersistedMessage(createdMessage);
+    } catch (error) {
+      console.error('Failed to sync incoming private message into live state', error);
+    }
   }
 
   async function subscribePrivateMessagesForLoggedInUser(force = false): Promise<void> {
