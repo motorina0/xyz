@@ -47,18 +47,27 @@
         </q-btn>
       </div>
 
-      <div ref="threadBodyRef" class="thread-body">
+      <div ref="threadBodyRef" class="thread-body" @scroll="handleThreadScroll">
+        <div v-if="stickyDayLabel" class="thread-day-sticky" aria-hidden="true">
+          <span class="thread-day-sticky__label">{{ stickyDayLabel }}</span>
+        </div>
         <template v-for="item in threadItems" :key="item.key">
           <div v-if="item.type === 'separator'" class="thread-day-separator" aria-hidden="true">
             <span class="thread-day-separator__line" />
             <span class="thread-day-separator__label">{{ item.label }}</span>
             <span class="thread-day-separator__line" />
           </div>
-          <MessageBubble
+          <div
             v-else
-            :message="item.message"
-            :contact-name="chat.name"
-          />
+            class="thread-message-entry"
+            :data-day-key="item.dayKey"
+            :data-day-label="item.dayLabel"
+          >
+            <MessageBubble
+              :message="item.message"
+              :contact-name="chat.name"
+            />
+          </div>
         </template>
       </div>
 
@@ -73,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
@@ -100,6 +109,8 @@ const emit = defineEmits<{
 }>();
 
 const threadBodyRef = ref<HTMLElement | null>(null);
+const stickyDayLabel = ref('');
+let scrollFrameId: number | null = null;
 
 type ThreadItem =
   | {
@@ -110,6 +121,8 @@ type ThreadItem =
   | {
       type: 'message';
       key: string;
+      dayKey: string;
+      dayLabel: string;
       message: Message;
     };
 
@@ -171,11 +184,12 @@ const threadItems = computed<ThreadItem[]>(() => {
 
   for (const message of props.messages) {
     const dayKey = getDayKey(message.sentAt);
+    const dayLabel = formatDayLabel(message.sentAt);
     if (dayKey !== lastDayKey) {
       items.push({
         type: 'separator',
         key: `separator-${dayKey}`,
-        label: formatDayLabel(message.sentAt)
+        label: dayLabel
       });
       lastDayKey = dayKey;
     }
@@ -183,6 +197,8 @@ const threadItems = computed<ThreadItem[]>(() => {
     items.push({
       type: 'message',
       key: message.id,
+      dayKey,
+      dayLabel,
       message
     });
   }
@@ -196,6 +212,41 @@ async function scrollToBottom(): Promise<void> {
   if (threadBodyRef.value) {
     threadBodyRef.value.scrollTop = threadBodyRef.value.scrollHeight;
   }
+
+  updateStickyDayLabel();
+}
+
+function updateStickyDayLabel(): void {
+  const threadBody = threadBodyRef.value;
+  if (!threadBody) {
+    stickyDayLabel.value = '';
+    return;
+  }
+
+  const threadRect = threadBody.getBoundingClientRect();
+  const messageEntries = threadBody.querySelectorAll<HTMLElement>('.thread-message-entry');
+
+  for (const entry of messageEntries) {
+    const rect = entry.getBoundingClientRect();
+    if (rect.bottom > threadRect.top) {
+      stickyDayLabel.value = entry.dataset.dayLabel?.trim() ?? '';
+      return;
+    }
+  }
+
+  stickyDayLabel.value =
+    messageEntries[messageEntries.length - 1]?.dataset.dayLabel?.trim() ?? '';
+}
+
+function handleThreadScroll(): void {
+  if (scrollFrameId !== null) {
+    cancelAnimationFrame(scrollFrameId);
+  }
+
+  scrollFrameId = window.requestAnimationFrame(() => {
+    scrollFrameId = null;
+    updateStickyDayLabel();
+  });
 }
 
 function handleBack(): void {
@@ -245,6 +296,12 @@ watch(
   },
   { immediate: true }
 );
+
+onBeforeUnmount(() => {
+  if (scrollFrameId !== null) {
+    cancelAnimationFrame(scrollFrameId);
+  }
+});
 </script>
 
 <style scoped>
@@ -296,6 +353,39 @@ watch(
   flex: 1;
   overflow-y: auto;
   padding: 14px;
+  position: relative;
+}
+
+.thread-day-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 8px;
+  pointer-events: none;
+}
+
+.thread-day-sticky__label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 94%, #dbe8ff 6%),
+      color-mix(in srgb, var(--tg-sidebar) 98%, #ffffff 2%)
+    );
+  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ca3bf 16%);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.14);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--q-primary) 40%, var(--tg-text) 60%);
+  backdrop-filter: blur(10px);
 }
 
 .thread-day-separator {
