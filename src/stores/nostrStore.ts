@@ -13,6 +13,7 @@ import NDK, {
   NDKUser,
   giftUnwrap,
   giftWrap,
+  getRelayListForUser,
   isValidNip05,
   isValidPubkey,
   nip19,
@@ -26,7 +27,7 @@ import {
   type NpubValidationResult,
   type NsecValidationResult
 } from 'src/services/inputSanitizerService';
-import type { ContactMetadata, ContactRecord } from 'src/types/contact';
+import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -266,6 +267,40 @@ export const useNostrStore = defineStore('nostrStore', () => {
       );
   }
 
+  function relayEntriesFromRelayList(relayList: NDKRelayList | null | undefined): ContactRelay[] {
+    if (!relayList) {
+      return [];
+    }
+
+    return inputSanitizerService.normalizeRelayListMetadataEntries([
+      ...Array.from(relayList.readRelayUrls ?? [], (relay) => ({
+        url: String(relay),
+        read: true,
+        write: false
+      })),
+      ...Array.from(relayList.writeRelayUrls ?? [], (relay) => ({
+        url: String(relay),
+        read: false,
+        write: true
+      })),
+      ...Array.from(relayList.bothRelayUrls ?? [], (relay) => ({
+        url: String(relay),
+        read: true,
+        write: true
+      }))
+    ]);
+  }
+
+  async function fetchContactRelayEntries(pubkeyHex: string): Promise<ContactRelay[]> {
+    try {
+      const relayList = await getRelayListForUser(pubkeyHex, ndk);
+      return relayEntriesFromRelayList(relayList);
+    } catch (error) {
+      console.warn('Failed to fetch relay list for contact', pubkeyHex, error);
+      return [];
+    }
+  }
+
   async function resolveUserByIdentifiers(
     identifiers: string[],
     expectedPubkeyHex: string
@@ -350,9 +385,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
       fallbackContactName;
 
     console.log('### Resolved contact profile for pubkey:', normalizedTargetPubkey, resolvedUser);
-    const fetchedRelays = inputSanitizerService.normalizeRelayEntriesFromUrls(resolvedUser.relayUrls ?? []);
-    
-    const nextRelays = fetchedRelays.length > 0 ? fetchedRelays : existingContact?.relays ?? [];
+    const explicitRelayEntries = await fetchContactRelayEntries(normalizedTargetPubkey);
+    const fallbackRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
+      resolvedUser.relayUrls ?? []
+    );
+    const nextRelays =
+      explicitRelayEntries.length > 0
+        ? explicitRelayEntries
+        : fallbackRelayEntries.length > 0
+          ? fallbackRelayEntries
+          : existingContact?.relays ?? [];
 
     console.log('### Syncing contact profile, relays:', targetPubkeyHex, nextRelays);
     if (existingContact) {
