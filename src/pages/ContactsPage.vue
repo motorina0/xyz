@@ -504,10 +504,27 @@ async function handleAddContact(): Promise<void> {
       return;
     }
 
+    let nextSelectedContact = created;
+
+    try {
+      await nostrStore.refreshContactByPublicKey(normalizedPublicKey, resolvedName);
+
+      const refreshedContact = await contactsService.getContactByPublicKey(normalizedPublicKey);
+      if (refreshedContact) {
+        nextSelectedContact = refreshedContact;
+      }
+    } catch (error) {
+      reportUiError(
+        'Failed to refresh new contact profile after create',
+        error,
+        'Contact added, but profile refresh failed.'
+      );
+    }
+
     closeAddContactDialog();
     contactQuery.value = '';
     await loadContacts();
-    handleSelectContact(created, true);
+    handleSelectContact(nextSelectedContact, true);
   } catch (error) {
     reportUiError('Failed to create contact', error, 'Failed to add contact.');
   } finally {

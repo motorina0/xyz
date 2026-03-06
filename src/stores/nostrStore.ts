@@ -259,7 +259,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const npubIdentifier = existingMeta?.npub?.trim() || encodeNpub(pubkeyHex) || '';
     const hexIdentifier = pubkeyHex;
 
-    return [nip05Identifier, nprofileIdentifier, npubIdentifier, hexIdentifier]
+    return [nip05Identifier, npubIdentifier, hexIdentifier, nprofileIdentifier]
       .map((identifier) => identifier.trim())
       .filter(
         (identifier, index, list) => identifier.length > 0 && list.indexOf(identifier) === index
@@ -270,6 +270,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     identifiers: string[],
     expectedPubkeyHex: string
   ): Promise<NDKUser | undefined> {
+    console.log('### Resolving user for identifiers:', identifiers, 'expected pubkey:', expectedPubkeyHex);
     for (const identifier of identifiers) {
       try {
         const user = await ndk.fetchUser(identifier, true);
