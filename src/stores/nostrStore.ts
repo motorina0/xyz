@@ -88,10 +88,21 @@ interface RelayPublishStatusesResult {
   error: Error | null;
 }
 
+interface SubscribePrivateMessagesOptions {
+  restoreThrottleMs?: number;
+}
+
+interface QueuePrivateMessageUiRefreshOptions {
+  throttleMs?: number;
+  reloadChats?: boolean;
+  reloadMessages?: boolean;
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
+const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -124,6 +135,87 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let privateMessagesSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let privateMessagesSubscriptionSignature = '';
   let privateMessagesIngestQueue = Promise.resolve();
+  let privateMessagesRestoreThrottleMs = 0;
+  let privateMessagesUiRefreshQueue = Promise.resolve();
+  let privateMessagesUiRefreshTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let shouldReloadChatsOnPrivateMessagesUiRefresh = false;
+  let shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
+
+  function normalizeThrottleMs(value: number | undefined): number {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
+      return 0;
+    }
+
+    return Math.floor(value);
+  }
+
+  async function flushPrivateMessagesUiRefresh(): Promise<void> {
+    const shouldReloadChats = shouldReloadChatsOnPrivateMessagesUiRefresh;
+    const shouldReloadMessages = shouldReloadMessagesOnPrivateMessagesUiRefresh;
+    shouldReloadChatsOnPrivateMessagesUiRefresh = false;
+    shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
+
+    if (!shouldReloadChats && !shouldReloadMessages) {
+      return;
+    }
+
+    try {
+      const tasks: Promise<unknown>[] = [];
+
+      if (shouldReloadChats) {
+        tasks.push(chatStore.reload());
+      }
+
+      if (shouldReloadMessages) {
+        const { useMessageStore } = await import('src/stores/messageStore');
+        tasks.push(useMessageStore().reloadLoadedMessages());
+      }
+
+      await Promise.all(tasks);
+    } catch (error) {
+      console.error('Failed to flush private message UI refresh', error);
+    }
+  }
+
+  function queuePrivateMessagesUiRefresh(options: QueuePrivateMessageUiRefreshOptions = {}): void {
+    if (options.reloadChats) {
+      shouldReloadChatsOnPrivateMessagesUiRefresh = true;
+    }
+
+    if (options.reloadMessages) {
+      shouldReloadMessagesOnPrivateMessagesUiRefresh = true;
+    }
+
+    const throttleMs = normalizeThrottleMs(options.throttleMs);
+    if (throttleMs <= 0) {
+      privateMessagesUiRefreshQueue = privateMessagesUiRefreshQueue.then(() =>
+        flushPrivateMessagesUiRefresh()
+      );
+      return;
+    }
+
+    if (privateMessagesUiRefreshTimeoutId !== null) {
+      return;
+    }
+
+    privateMessagesUiRefreshTimeoutId = globalThis.setTimeout(() => {
+      privateMessagesUiRefreshTimeoutId = null;
+      privateMessagesUiRefreshQueue = privateMessagesUiRefreshQueue.then(() =>
+        flushPrivateMessagesUiRefresh()
+      );
+    }, throttleMs);
+  }
+
+  function flushPrivateMessagesUiRefreshNow(): void {
+    if (privateMessagesUiRefreshTimeoutId !== null) {
+      globalThis.clearTimeout(privateMessagesUiRefreshTimeoutId);
+      privateMessagesUiRefreshTimeoutId = null;
+    }
+
+    privateMessagesUiRefreshQueue = privateMessagesUiRefreshQueue.then(() =>
+      flushPrivateMessagesUiRefresh()
+    );
+  }
 
   function getLoggedInPublicKeyHex(): string | null {
     if (!hasStorage()) {
@@ -310,6 +402,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       event?: NostrEvent;
       direction?: NostrEventDirection;
       eventId?: string;
+      uiThrottleMs?: number;
     } = {}
   ): Promise<void> {
     if (!Number.isInteger(messageId) || messageId <= 0 || relayStatuses.length === 0) {
@@ -341,6 +434,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
         : undefined,
       direction: options.direction
     });
+
+    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+    if (uiThrottleMs > 0) {
+      queuePrivateMessagesUiRefresh({
+        throttleMs: uiThrottleMs,
+        reloadMessages: true
+      });
+      return;
+    }
+
     await refreshMessageInLiveState(currentMessage.id);
   }
 
@@ -1387,15 +1490,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
       privateMessagesSubscription = null;
     }
 
+    if (privateMessagesUiRefreshTimeoutId !== null) {
+      globalThis.clearTimeout(privateMessagesUiRefreshTimeoutId);
+      privateMessagesUiRefreshTimeoutId = null;
+    }
+
     privateMessagesSubscriptionSignature = '';
+    privateMessagesRestoreThrottleMs = 0;
+    shouldReloadChatsOnPrivateMessagesUiRefresh = false;
+    shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
   }
 
   function queuePrivateMessageIngestion(
     wrappedEvent: NDKEvent,
     loggedInPubkeyHex: string
   ): void {
+    const uiThrottleMs = privateMessagesRestoreThrottleMs;
+
     privateMessagesIngestQueue = privateMessagesIngestQueue
-      .then(() => processIncomingPrivateMessage(wrappedEvent, loggedInPubkeyHex))
+      .then(() =>
+        processIncomingPrivateMessage(wrappedEvent, loggedInPubkeyHex, {
+          uiThrottleMs
+        })
+      )
       .catch((error) => {
         console.error('Failed to process incoming private message', error);
       });
@@ -1403,7 +1520,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   async function processIncomingPrivateMessage(
     wrappedEvent: NDKEvent,
-    loggedInPubkeyHex: string
+    loggedInPubkeyHex: string,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
   ): Promise<void> {
     if (wrappedEvent.kind !== NDKKind.GiftWrap) {
       return;
@@ -1446,6 +1566,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (!messageText) {
       return;
     }
+    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
 
     await Promise.all([chatDataService.init(), contactsService.init(), nostrEventDataService.init()]);
 
@@ -1461,7 +1582,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
           {
             event: rumorNostrEvent ?? undefined,
             direction: isSelfSentMessage ? 'out' : 'in',
-            eventId: rumorEventId
+            eventId: rumorEventId,
+            uiThrottleMs
           }
         );
         return;
@@ -1529,6 +1651,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
       nextUnreadCount
     );
 
+    if (uiThrottleMs > 0) {
+      queuePrivateMessagesUiRefresh({
+        throttleMs: uiThrottleMs,
+        reloadChats: true,
+        reloadMessages: true
+      });
+      return;
+    }
+
     try {
       chatStore.applyIncomingMessage({
         chatId: String(chat.id),
@@ -1550,7 +1681,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  async function subscribePrivateMessagesForLoggedInUser(force = false): Promise<void> {
+  async function subscribePrivateMessagesForLoggedInUser(
+    force = false,
+    options: SubscribePrivateMessagesOptions = {}
+  ): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     const senderPrivateKeyHex = getPrivateKeyHex();
 
@@ -1574,6 +1708,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await ensureRelayConnections(relayUrls);
     getOrCreateSigner(senderPrivateKeyHex);
     stopPrivateMessagesSubscription();
+    privateMessagesRestoreThrottleMs = normalizeThrottleMs(options.restoreThrottleMs);
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     privateMessagesSubscription = ndk.subscribe(
@@ -1588,6 +1723,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
           console.log('Received private message gift wrap event', event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
           queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
+        },
+        onEose: () => {
+          privateMessagesRestoreThrottleMs = 0;
+          flushPrivateMessagesUiRefreshNow();
         }
       }
     );
@@ -1629,7 +1768,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
         console.warn('Failed to refresh logged-in contact profile', error);
       }
 
-      await subscribePrivateMessagesForLoggedInUser(true);
+      await subscribePrivateMessagesForLoggedInUser(true, {
+        restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
+      });
     })().finally(() => {
       syncLoggedInContactProfilePromise = null;
     });

@@ -184,6 +184,15 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
   }
 
+  async function reloadLoadedMessages(): Promise<void> {
+    const chatIds = Array.from(loadedChatIds);
+    if (chatIds.length === 0) {
+      return;
+    }
+
+    await Promise.all(chatIds.map((chatId) => loadMessages(chatId, true)));
+  }
+
   async function sendMessage(chatId: string, text: string): Promise<Message | null> {
     const cleanText = text.trim();
 
@@ -270,6 +279,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     messagesByChat,
     init,
     loadMessages,
+    reloadLoadedMessages,
     getMessages,
     sendMessage,
     removeChatMessages,
