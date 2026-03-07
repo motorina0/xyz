@@ -114,12 +114,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const INITIAL_CONNECT_TIMEOUT_MS = 3000;
   const relayStatusVersion = ref(0);
   const contactListVersion = ref(0);
+  const isRestoringStartupState = ref(false);
   let cachedSigner: NDKPrivateKeySigner | null = null;
   let cachedSignerPrivateKeyHex: string | null = null;
   const configuredRelayUrls = new Set<string>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
+  let restoreStartupStatePromise: Promise<void> | null = null;
   let restoreMyRelayListPromise: Promise<void> | null = null;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let restorePrivateContactListPromise: Promise<void> | null = null;
@@ -215,6 +217,55 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesUiRefreshQueue = privateMessagesUiRefreshQueue.then(() =>
       flushPrivateMessagesUiRefresh()
     );
+  }
+
+  async function restoreStartupState(seedRelayUrls: string[] = []): Promise<void> {
+    if (restoreStartupStatePromise) {
+      return restoreStartupStatePromise;
+    }
+
+    const runStartupTask = async (
+      errorMessage: string,
+      task: () => Promise<void>
+    ): Promise<void> => {
+      try {
+        await task();
+      } catch (error) {
+        console.error(errorMessage, error);
+      }
+    };
+
+    isRestoringStartupState.value = true;
+    restoreStartupStatePromise = (async () => {
+      try {
+        await runStartupTask('Failed to sync logged-in contact on startup', () =>
+          syncLoggedInContactProfile(seedRelayUrls)
+        );
+        await runStartupTask('Failed to restore My Relays on startup', () =>
+          restoreMyRelayList(seedRelayUrls)
+        );
+        await runStartupTask('Failed to subscribe to My Relays updates on startup', () =>
+          subscribeMyRelayListUpdates(seedRelayUrls)
+        );
+        await runStartupTask('Failed to restore private contact list on startup', () =>
+          restorePrivateContactList(seedRelayUrls)
+        );
+        await runStartupTask('Failed to subscribe to private contact list updates on startup', () =>
+          subscribePrivateContactListUpdates(seedRelayUrls)
+        );
+        await runStartupTask('Failed to subscribe to private messages on startup', () =>
+          subscribePrivateMessagesForLoggedInUser()
+        );
+        await runStartupTask('Failed to sync recent chat contacts on startup', () =>
+          syncRecentChatContacts(seedRelayUrls, 10)
+        );
+      } finally {
+        isRestoringStartupState.value = false;
+        restoreStartupStatePromise = null;
+      }
+    })();
+
+    return restoreStartupStatePromise;
   }
 
   function getLoggedInPublicKeyHex(): string | null {
@@ -2259,6 +2310,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     getPrivateKeyHex,
     getRelayConnectionState,
+    isRestoringStartupState,
     publishPrivateContactList,
     publishUserMetadata,
     publishMyRelayList,
@@ -2267,6 +2319,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshContactByPublicKey,
     restoreMyRelayList,
     restorePrivateContactList,
+    restoreStartupState,
     retryDirectMessageRelay,
     sendDirectMessage,
     savePrivateKeyFromNsec,

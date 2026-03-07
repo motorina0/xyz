@@ -43,6 +43,7 @@
         <ChatThread
           :chat="activeChat"
           :messages="currentMessages"
+          :is-initializing="isThreadInitializing"
           :show-back-button="isMobile"
           @send="handleSend"
           @back="handleBackToChatList"
@@ -88,6 +89,9 @@ const activeChat = computed(() => {
 const selectedChatId = computed(() => activeChatId.value || null);
 const isMobileThreadOpen = computed(() => isMobile.value && Boolean(activeChatId.value));
 const chatIdSignature = computed(() => chatStore.chats.map((chat) => chat.id).join('|'));
+const isThreadInitializing = computed(() => {
+  return !chatStore.isLoaded || nostrStore.isRestoringStartupState;
+});
 
 const currentMessages = computed(() => {
   return messageStore.getMessages(activeChatId.value || null);

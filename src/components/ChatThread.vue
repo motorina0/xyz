@@ -74,9 +74,22 @@
       <MessageComposer @send="handleSend" />
     </template>
 
-    <div v-else class="thread-empty">
-      <div class="thread-empty__mark q-mb-md">...</div>
-      <div>Select a chat to start messaging.</div>
+    <div v-else class="thread-empty" :class="{ 'thread-empty--loading': isInitializing }">
+      <template v-if="isInitializing">
+        <div class="thread-empty__progress">
+          <q-linear-progress
+            indeterminate
+            rounded
+            color="primary"
+            track-color="grey-4"
+          />
+        </div>
+        <div class="thread-empty__status">Restoring chats and messages...</div>
+      </template>
+      <template v-else>
+        <div class="thread-empty__mark q-mb-md">...</div>
+        <div>Select a chat to start messaging.</div>
+      </template>
     </div>
   </div>
 </template>
@@ -94,9 +107,11 @@ const props = withDefaults(
   defineProps<{
     chat: Chat | null;
     messages: Message[];
+    isInitializing?: boolean;
     showBackButton?: boolean;
   }>(),
   {
+    isInitializing: false,
     showBackButton: false
   }
 );
@@ -419,12 +434,28 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 10px;
   height: 100%;
+  padding: 24px;
+  text-align: center;
   opacity: 0.7;
+}
+
+.thread-empty--loading {
+  opacity: 1;
 }
 
 .thread-empty__mark {
   font-size: 48px;
   line-height: 1;
+}
+
+.thread-empty__progress {
+  width: min(220px, 72%);
+}
+
+.thread-empty__status {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--q-primary) 55%, currentColor 45%);
 }
 </style>

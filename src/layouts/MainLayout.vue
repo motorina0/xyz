@@ -120,49 +120,9 @@ if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
 relayStore.init();
-void (async () => {
-  try {
-    await nostrStore.syncLoggedInContactProfile(relayStore.relays);
-  } catch (error) {
-    console.error('Failed to sync logged-in contact on startup', error);
-  }
-
-  try {
-    await nostrStore.restoreMyRelayList(relayStore.relays);
-  } catch (error) {
-    console.error('Failed to restore My Relays on startup', error);
-  }
-
-  try {
-    await nostrStore.subscribeMyRelayListUpdates(relayStore.relays);
-  } catch (error) {
-    console.error('Failed to subscribe to My Relays updates on startup', error);
-  }
-
-  try {
-    await nostrStore.restorePrivateContactList(relayStore.relays);
-  } catch (error) {
-    console.error('Failed to restore private contact list on startup', error);
-  }
-
-  try {
-    await nostrStore.subscribePrivateContactListUpdates(relayStore.relays);
-  } catch (error) {
-    console.error('Failed to subscribe to private contact list updates on startup', error);
-  }
-
-  try {
-    await nostrStore.subscribePrivateMessagesForLoggedInUser();
-  } catch (error) {
-    console.error('Failed to subscribe to private messages on startup', error);
-  }
-
-  try {
-    await nostrStore.syncRecentChatContacts(relayStore.relays, 10);
-  } catch (error) {
-    console.error('Failed to sync recent chat contacts on startup', error);
-  }
-})();
+void nostrStore.restoreStartupState(relayStore.relays).catch((error) => {
+  console.error('Failed to restore app state on startup', error);
+});
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {

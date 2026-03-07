@@ -4,6 +4,7 @@
       <ChatThread
         :chat="activeChat"
         :messages="messages"
+        :is-initializing="isThreadInitializing"
         :show-back-button="true"
         @send="handleSend"
         @back="goBack"
@@ -38,6 +39,9 @@ const activeChat = computed(() => {
 });
 
 const messages = computed(() => messageStore.getMessages(activeChatId.value));
+const isThreadInitializing = computed(() => {
+  return !chatStore.isLoaded || nostrStore.isRestoringStartupState;
+});
 
 watch(
   activeChatId,
