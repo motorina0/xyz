@@ -3,10 +3,12 @@ import { ref } from 'vue';
 import NDK, {
   NDKEvent,
   NDKKind,
+  NDKNip07Signer,
   NDKPublishError,
   NDKPrivateKeySigner,
   NDKRelayList,
   NDKSubscriptionCacheUsage,
+  type NDKSigner,
   type NDKUserProfile,
   type NDKRelayInformation,
   NDKRelayStatus,
@@ -80,6 +82,8 @@ export interface RelayListMetadataEntry {
   write?: boolean;
 }
 
+export type AuthMethod = 'nsec' | 'nip07';
+
 interface SendDirectMessageOptions {
   localMessageId?: number;
   createdAt?: string;
@@ -102,6 +106,7 @@ interface QueuePrivateMessageUiRefreshOptions {
 
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
+const AUTH_METHOD_STORAGE_KEY = 'auth-method';
 const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
 const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
@@ -118,8 +123,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const relayStatusVersion = ref(0);
   const contactListVersion = ref(0);
   const isRestoringStartupState = ref(false);
-  let cachedSigner: NDKPrivateKeySigner | null = null;
-  let cachedSignerPrivateKeyHex: string | null = null;
+  let cachedSigner: NDKSigner | null = null;
+  let cachedSignerSessionKey: string | null = null;
   const configuredRelayUrls = new Set<string>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
@@ -271,6 +276,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return restoreStartupStatePromise;
   }
 
+  function getStoredAuthMethod(): AuthMethod | null {
+    if (!hasStorage()) {
+      return null;
+    }
+
+    const stored = window.localStorage.getItem(AUTH_METHOD_STORAGE_KEY)?.trim().toLowerCase();
+    if (stored === 'nsec' || stored === 'nip07') {
+      return stored;
+    }
+
+    return getPrivateKeyHex() ? 'nsec' : null;
+  }
+
   function getLoggedInPublicKeyHex(): string | null {
     if (!hasStorage()) {
       return null;
@@ -287,6 +305,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return validateNpub(stored).normalizedPubkey;
+  }
+
+  function hasNip07Extension(): boolean {
+    return (
+      typeof window !== 'undefined' &&
+      typeof window.nostr?.getPublicKey === 'function' &&
+      typeof window.nostr?.signEvent === 'function'
+    );
   }
 
   function encodeNpub(pubkeyHex: string): string | null {
@@ -879,12 +905,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function getLoggedInSignerUser(): Promise<NDKUser> {
-    const senderPrivateKeyHex = getPrivateKeyHex();
-    if (!senderPrivateKeyHex) {
-      throw new Error('Missing private key in localStorage. Login is required.');
-    }
-
-    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const signer = await getOrCreateSigner();
     const user = await signer.user();
     user.ndk = ndk;
     return user;
@@ -1160,13 +1181,49 @@ export const useNostrStore = defineStore('nostrStore', () => {
     hasRelayStatusListeners = true;
   }
 
-  function getOrCreateSigner(privateKeyHex: string): NDKPrivateKeySigner {
-    if (!cachedSigner || cachedSignerPrivateKeyHex !== privateKeyHex) {
-      cachedSigner = new NDKPrivateKeySigner(privateKeyHex, ndk);
-      cachedSignerPrivateKeyHex = privateKeyHex;
+  async function getOrCreateSigner(): Promise<NDKSigner> {
+    const authMethod = getStoredAuthMethod();
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!authMethod || !loggedInPubkeyHex) {
+      throw new Error('Missing signer session. Login is required.');
+    }
+
+    const sessionKey = `${authMethod}:${loggedInPubkeyHex}`;
+    if (!cachedSigner || cachedSignerSessionKey !== sessionKey) {
+      if (authMethod === 'nip07') {
+        if (!hasNip07Extension()) {
+          throw new Error('No NIP-07 extension detected. Install or enable one to continue.');
+        }
+
+        cachedSigner = new NDKNip07Signer(undefined, ndk);
+      } else {
+        const privateKeyHex = getPrivateKeyHex();
+        if (!privateKeyHex) {
+          throw new Error('Missing private key for local signer. Login is required.');
+        }
+
+        cachedSigner = new NDKPrivateKeySigner(privateKeyHex, ndk);
+      }
+
+      cachedSignerSessionKey = sessionKey;
     }
 
     ndk.signer = cachedSigner;
+    const user = await cachedSigner.blockUntilReady();
+    user.ndk = ndk;
+    const signerPubkey = inputSanitizerService.normalizeHexKey(user.pubkey ?? cachedSigner.pubkey);
+    if (!signerPubkey) {
+      throw new Error('Signer did not provide a valid public key.');
+    }
+
+    if (signerPubkey !== loggedInPubkeyHex) {
+      throw new Error(
+        authMethod === 'nip07'
+          ? 'The connected NIP-07 extension account does not match the current login.'
+          : 'The stored signer does not match the current login.'
+      );
+    }
+
     return cachedSigner;
   }
 
@@ -1226,11 +1283,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     metadata: PublishUserMetadataInput,
     relayUrls: string[]
   ): Promise<void> {
-    const senderPrivateKeyHex = getPrivateKeyHex();
-    if (!senderPrivateKeyHex) {
-      throw new Error('Missing private key in localStorage. Login is required.');
-    }
-
     const relayList = inputSanitizerService.normalizeStringArray(relayUrls);
     if (relayList.length === 0) {
       throw new Error('Cannot publish profile without at least one relay.');
@@ -1238,7 +1290,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await ensureRelayConnections(relayList);
 
-    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const signer = await getOrCreateSigner();
     const user = await signer.user();
     user.ndk = ndk;
     user.profile = metadata as NDKUserProfile;
@@ -1249,11 +1301,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayEntries: RelayListMetadataEntry[],
     publishRelayUrls: string[] = []
   ): Promise<void> {
-    const senderPrivateKeyHex = getPrivateKeyHex();
-    if (!senderPrivateKeyHex) {
-      throw new Error('Missing private key in localStorage. Login is required.');
-    }
-
     const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
     const relayUrls = await resolveLoggedInPublishRelayUrls([
       ...publishRelayUrls,
@@ -1264,7 +1311,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await ensureRelayConnections(relayUrls);
-    getOrCreateSigner(senderPrivateKeyHex);
+    await getOrCreateSigner();
 
     const relayListEvent = new NDKRelayList(ndk);
     relayListEvent.content = '';
@@ -1318,8 +1365,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   async function fetchMyRelayListEntries(seedRelayUrls: string[] = []): Promise<ContactRelay[] | null> {
-    const senderPrivateKeyHex = getPrivateKeyHex();
-    if (!senderPrivateKeyHex) {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex || !getStoredAuthMethod()) {
       return null;
     }
 
@@ -1330,7 +1377,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await ensureRelayConnections(relayUrls);
 
-    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const signer = await getOrCreateSigner();
     const user = await signer.user();
     user.ndk = ndk;
 
@@ -1781,9 +1828,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     options: SubscribePrivateMessagesOptions = {}
   ): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    const senderPrivateKeyHex = getPrivateKeyHex();
 
-    if (!loggedInPubkeyHex || !senderPrivateKeyHex) {
+    if (!loggedInPubkeyHex || !getStoredAuthMethod()) {
       stopPrivateMessagesSubscription();
       return;
     }
@@ -1801,7 +1847,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await ensureRelayConnections(relayUrls);
-    getOrCreateSigner(senderPrivateKeyHex);
+    await getOrCreateSigner();
     stopPrivateMessagesSubscription();
     privateMessagesRestoreThrottleMs = normalizeThrottleMs(options.restoreThrottleMs);
 
@@ -1955,32 +2001,75 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return inputSanitizerService.normalizeHexKey(stored);
   }
 
+  function setStoredAuthSession(authMethod: AuthMethod, pubkeyHex: string, privateKeyHex?: string): void {
+    if (!hasStorage()) {
+      return;
+    }
+
+    window.localStorage.setItem(AUTH_METHOD_STORAGE_KEY, authMethod);
+    window.localStorage.setItem(PUBLIC_KEY_STORAGE_KEY, pubkeyHex);
+
+    if (authMethod === 'nsec' && privateKeyHex) {
+      window.localStorage.setItem(PRIVATE_KEY_STORAGE_KEY, privateKeyHex);
+      return;
+    }
+
+    window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+  }
+
   function savePrivateKeyHex(hexPrivateKey: string): boolean {
     const normalized = inputSanitizerService.normalizeHexKey(hexPrivateKey);
     if (!normalized || !hasStorage()) {
       return false;
     }
 
-    const signer = new NDKPrivateKeySigner(normalized);
-    window.localStorage.setItem(PRIVATE_KEY_STORAGE_KEY, normalized);
-    window.localStorage.setItem(PUBLIC_KEY_STORAGE_KEY, signer.pubkey);
+    const signer = new NDKPrivateKeySigner(normalized, ndk);
+    clearPrivateKey();
+    setStoredAuthSession('nsec', signer.pubkey, normalized);
+    cachedSigner = signer;
+    cachedSignerSessionKey = `nsec:${signer.pubkey}`;
+    ndk.signer = signer;
     return true;
   }
 
-  function clearPrivateKey(): void {
-    if (!hasStorage()) {
-      return;
+  async function loginWithExtension(): Promise<string> {
+    if (!hasNip07Extension()) {
+      throw new Error('No NIP-07 extension detected. Install or enable one to continue.');
     }
 
-    window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
-    window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
+    const signer = new NDKNip07Signer(undefined, ndk);
+    const user = await signer.blockUntilReady();
+    user.ndk = ndk;
+    const pubkeyHex = inputSanitizerService.normalizeHexKey(user.pubkey ?? signer.pubkey);
+    if (!pubkeyHex) {
+      throw new Error('Failed to read a valid public key from the NIP-07 extension.');
+    }
+
+    clearPrivateKey();
+    setStoredAuthSession('nip07', pubkeyHex);
+    cachedSigner = signer;
+    cachedSignerSessionKey = `nip07:${pubkeyHex}`;
+    ndk.signer = signer;
+    return pubkeyHex;
+  }
+
+  function clearPrivateKey(): void {
     cachedSigner = null;
-    cachedSignerPrivateKeyHex = null;
+    cachedSignerSessionKey = null;
+    ndk.signer = undefined;
     lastPrivateContactListCreatedAt = 0;
     lastPrivateContactListEventId = '';
     stopMyRelayListSubscription();
     stopPrivateContactListSubscription();
     stopPrivateMessagesSubscription();
+
+    if (!hasStorage()) {
+      return;
+    }
+
+    window.localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
+    window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+    window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
   }
 
   async function logout(): Promise<void> {
@@ -2142,11 +2231,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Recipient public key is required.');
     }
 
-    const senderPrivateKeyHex = getPrivateKeyHex();
-    if (!senderPrivateKeyHex) {
-      throw new Error('Missing private key in localStorage. Login is required.');
-    }
-
     let normalizedRecipientPubkey: string | null = null;
     if (isValidPubkey(recipientInput)) {
       normalizedRecipientPubkey = recipientInput.toLowerCase();
@@ -2164,7 +2248,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
     await ensureRelayConnections(relayUrls);
 
-    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const signer = await getOrCreateSigner();
     const createdAt = toUnixTimestamp(options.createdAt);
 
     const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
@@ -2268,11 +2352,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Invalid relay retry input.');
     }
 
-    const senderPrivateKeyHex = getPrivateKeyHex();
-    if (!senderPrivateKeyHex) {
-      throw new Error('Missing private key in localStorage. Login is required.');
-    }
-
     await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
 
     const message = await chatDataService.getMessageById(normalizedMessageId);
@@ -2290,7 +2369,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Failed to rebuild the direct message event for retry.');
     }
 
-    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const signer = await getOrCreateSigner();
     const recipientPubkey = readDirectMessageRecipientPubkey(storedEvent.event);
     if (!recipientPubkey) {
       throw new Error('Stored direct message event is missing a recipient.');
@@ -2343,10 +2422,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchRelayNip11Info,
     fetchMyRelayList,
     getNip05Data,
+    hasNip07Extension,
     getLoggedInPublicKeyHex,
     getPrivateKeyHex,
     getRelayConnectionState,
     isRestoringStartupState,
+    loginWithExtension,
     logout,
     publishPrivateContactList,
     publishUserMetadata,

@@ -1,7 +1,7 @@
 <template>
   <div class="auth-page">
     <div class="auth-shell">
-      <q-card v-if="!isLoginMode" flat bordered class="auth-card">
+      <q-card v-if="loginStep === 'welcome'" flat bordered class="auth-card">
         <q-card-section class="auth-card__header">
           <div class="auth-card__title">Welcome</div>
           <div class="auth-card__subtitle">Choose how you want to continue</div>
@@ -15,7 +15,7 @@
             icon="login"
             label="Login"
             class="auth-card__button"
-            @click="openLoginCard"
+            @click="openLoginOptions"
           />
 
           <q-btn
@@ -30,9 +30,49 @@
         </q-card-section>
       </q-card>
 
-      <q-card v-else flat bordered class="auth-card">
+      <q-card v-else-if="loginStep === 'methods'" flat bordered class="auth-card">
         <q-card-section class="auth-card__header">
           <div class="auth-card__title">Login</div>
+          <div class="auth-card__subtitle">Choose a login method</div>
+        </q-card-section>
+
+        <q-card-section class="auth-card__actions">
+          <q-btn
+            unelevated
+            color="primary"
+            no-caps
+            icon="extension"
+            label="Login with Extension"
+            class="auth-card__button"
+            :loading="isExtensionLoginInProgress"
+            @click="handleExtensionLogin"
+          />
+
+          <q-btn
+            outline
+            color="primary"
+            no-caps
+            icon="vpn_key"
+            label="Login with Key (not recommended)"
+            class="auth-card__button"
+            @click="openKeyLogin"
+          />
+
+          <q-btn
+            flat
+            color="primary"
+            no-caps
+            label="Back"
+            class="auth-card__button"
+            @click="goBackToWelcome"
+          />
+        </q-card-section>
+      </q-card>
+
+      <q-card v-else flat bordered class="auth-card">
+        <q-card-section class="auth-card__header">
+          <div class="auth-card__title">Login with Key</div>
+          <div class="auth-card__subtitle">Enter your private key to continue</div>
         </q-card-section>
 
         <q-card-section class="auth-card__actions">
@@ -40,7 +80,6 @@
             <q-card-section class="auth-warning__content">
               <q-icon name="warning" size="20px" class="auth-warning__icon" />
               <div>Entering your private key strongly discouraged. Use a Nostr Remote Signer.</div>
-           
             </q-card-section>
           </q-card>
 
@@ -54,18 +93,31 @@
             label="Private Key (nsec)"
             :error="Boolean(privateKeyError)"
             :error-message="privateKeyError"
-            @keydown.enter.prevent="handleLogin"
+            @keydown.enter.prevent="handleKeyLogin"
           />
-         
-          <q-btn
-            unelevated
-            color="primary"
-            no-caps
-            label="Login"
-            class="auth-card__button"
-            :disable="!canLogin"
-            @click="handleLogin"
-          />
+
+          <div class="auth-card__button-row">
+            <q-btn
+              flat
+              color="primary"
+              no-caps
+              label="Back"
+              class="auth-card__button"
+              :disable="isKeyLoginInProgress"
+              @click="goBackToLoginOptions"
+            />
+
+            <q-btn
+              unelevated
+              color="primary"
+              no-caps
+              label="Login"
+              class="auth-card__button"
+              :disable="!canLoginWithKey"
+              :loading="isKeyLoginInProgress"
+              @click="handleKeyLogin"
+            />
+          </div>
         </q-card-section>
       </q-card>
     </div>
@@ -80,41 +132,97 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const router = useRouter();
 const nostrStore = useNostrStore();
-const isLoginMode = ref(false);
+type AuthStep = 'welcome' | 'methods' | 'key';
+
+const loginStep = ref<AuthStep>('welcome');
 const privateKey = ref('');
+const isExtensionLoginInProgress = ref(false);
+const isKeyLoginInProgress = ref(false);
 const privateKeyValidation = computed(() => nostrStore.validateNsec(privateKey.value.trim()));
 const privateKeyError = computed(() =>
   privateKey.value.trim() && !privateKeyValidation.value.isValid
     ? 'Enter a valid nsec private key.'
     : ''
 );
-const canLogin = computed(() => privateKeyValidation.value.isValid);
+const canLoginWithKey = computed(() => privateKeyValidation.value.isValid && !isKeyLoginInProgress.value);
 
-function openLoginCard(): void {
+function openLoginOptions(): void {
   try {
-    isLoginMode.value = true;
+    loginStep.value = 'methods';
   } catch (error) {
-    reportUiError('Failed to open login card', error);
+    reportUiError('Failed to open login options', error);
   }
 }
 
-function handleLogin(): void {
+function openKeyLogin(): void {
   try {
-    if (!canLogin.value) {
+    loginStep.value = 'key';
+  } catch (error) {
+    reportUiError('Failed to open key login', error);
+  }
+}
+
+function goBackToWelcome(): void {
+  try {
+    loginStep.value = 'welcome';
+    privateKey.value = '';
+  } catch (error) {
+    reportUiError('Failed to go back from login options', error);
+  }
+}
+
+function goBackToLoginOptions(): void {
+  try {
+    loginStep.value = 'methods';
+    privateKey.value = '';
+  } catch (error) {
+    reportUiError('Failed to go back to login options', error);
+  }
+}
+
+async function handleExtensionLogin(): Promise<void> {
+  if (isExtensionLoginInProgress.value) {
+    return;
+  }
+
+  isExtensionLoginInProgress.value = true;
+  try {
+    await nostrStore.loginWithExtension();
+    await goToHome();
+  } catch (error) {
+    reportUiError(
+      'Failed to log in with NIP-07 extension',
+      error,
+      'Failed to log in with extension.'
+    );
+  } finally {
+    isExtensionLoginInProgress.value = false;
+  }
+}
+
+async function handleKeyLogin(): Promise<void> {
+  try {
+    if (!canLoginWithKey.value || isKeyLoginInProgress.value) {
       return;
     }
 
-    nostrStore.savePrivateKeyFromNsec(privateKey.value);
+    isKeyLoginInProgress.value = true;
+    const validation = nostrStore.savePrivateKeyFromNsec(privateKey.value);
+    if (!validation.isValid) {
+      return;
+    }
 
-    goToHome();
+    await goToHome();
   } catch (error) {
     reportUiError('Failed to log in', error, 'Failed to log in.');
+  } finally {
+    isKeyLoginInProgress.value = false;
   }
 }
 
-function goToHome(): void {
+async function goToHome(): Promise<void> {
   try {
-    void router.push({ name: 'chats' });
+    await router.push({ name: 'chats' });
   } catch (error) {
     reportUiError('Failed to navigate after login', error);
   }
@@ -163,6 +271,12 @@ function goToHome(): void {
 .auth-card__button {
   min-height: 44px;
   border-radius: 999px;
+}
+
+.auth-card__button-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .auth-warning {
