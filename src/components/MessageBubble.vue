@@ -53,8 +53,23 @@
             :key="item.key"
             class="bubble__status-list-item bubble__status-list-item--dialog"
           >
-            <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
-            <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+            <span class="bubble__status-list-item-main">
+              <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
+              <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+            </span>
+            <q-btn
+              v-if="item.retryable"
+              flat
+              dense
+              no-caps
+              size="sm"
+              color="primary"
+              label="Retry"
+              class="bubble__status-retry"
+              :loading="isRetrying(item)"
+              :disable="isRetrying(item)"
+              @click.stop="retryRelay(item)"
+            />
           </li>
           <li
             v-if="contactStatusListItems.length === 0"
@@ -75,8 +90,23 @@
             :key="item.key"
             class="bubble__status-list-item bubble__status-list-item--dialog"
           >
-            <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
-            <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+            <span class="bubble__status-list-item-main">
+              <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
+              <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+            </span>
+            <q-btn
+              v-if="item.retryable"
+              flat
+              dense
+              no-caps
+              size="sm"
+              color="primary"
+              label="Retry"
+              class="bubble__status-retry"
+              :loading="isRetrying(item)"
+              :disable="isRetrying(item)"
+              @click.stop="retryRelay(item)"
+            />
           </li>
           <li
             v-if="myStatusListItems.length === 0"
@@ -94,13 +124,16 @@
 import { computed, ref } from 'vue';
 import AppDialog from 'src/components/AppDialog.vue';
 import type { Message, MessageRelayStatus } from 'src/types/chat';
+import { useNostrStore } from 'src/stores/nostrStore';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
+import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = defineProps<{
   message: Message;
   contactName?: string;
 }>();
 
+const nostrStore = useNostrStore();
 const isMine = computed(() => props.message.sender === 'me');
 
 interface StatusSegment {
@@ -113,6 +146,9 @@ interface StatusListItem {
   key: string;
   relayUrl: string;
   dotClass: string;
+  scope: 'recipient' | 'self';
+  status: 'published' | 'failed' | 'pending';
+  retryable: boolean;
 }
 
 function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
@@ -152,6 +188,7 @@ const contactRelaysTitle = computed(() => {
 });
 
 const isStatusDialogOpen = ref(false);
+const retryingRelayKeys = ref<string[]>([]);
 
 const statusSegments = computed<StatusSegment[]>(() => {
   const relayStatuses = outboundRelayStatuses.value;
@@ -231,7 +268,10 @@ function buildStatusListItems(
     .map((relayStatus) => ({
       key: `${relayStatus.status}-${relayStatus.scope}-${relayStatus.relay_url}`,
       relayUrl: formatRelayStatusItem(relayStatus),
-      dotClass: dotClassByStatus[relayStatus.status]
+      dotClass: dotClassByStatus[relayStatus.status],
+      scope: relayStatus.scope,
+      status: relayStatus.status,
+      retryable: relayStatus.status === 'failed'
     }));
 }
 
@@ -257,6 +297,26 @@ function openStatusDialog(): void {
   }
 
   isStatusDialogOpen.value = true;
+}
+
+function isRetrying(item: StatusListItem): boolean {
+  return retryingRelayKeys.value.includes(item.key);
+}
+
+async function retryRelay(item: StatusListItem): Promise<void> {
+  const messageId = Number.parseInt(props.message.id, 10);
+  if (!Number.isInteger(messageId) || messageId <= 0 || !item.retryable || isRetrying(item)) {
+    return;
+  }
+
+  retryingRelayKeys.value = [...retryingRelayKeys.value, item.key];
+  try {
+    await nostrStore.retryDirectMessageRelay(messageId, item.relayUrl, item.scope);
+  } catch (error) {
+    reportUiError('Failed to retry direct message relay publish', error, 'Failed to retry relay.');
+  } finally {
+    retryingRelayKeys.value = retryingRelayKeys.value.filter((key) => key !== item.key);
+  }
 }
 
 const formattedTime = computed(() => {
@@ -396,11 +456,19 @@ const formattedTime = computed(() => {
 .bubble__status-list-item--dialog {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 7px;
 }
 
 .bubble__status-list-item--dialog + .bubble__status-list-item--dialog {
   margin-top: 4px;
+}
+
+.bubble__status-list-item-main {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
 }
 
 .bubble__status-list-item--empty {
@@ -432,6 +500,11 @@ const formattedTime = computed(() => {
 .bubble__status-list-text {
   min-width: 0;
   word-break: break-word;
+}
+
+.bubble__status-retry {
+  flex: 0 0 auto;
+  min-height: 22px;
 }
 
 .bubble__status-empty {

@@ -314,6 +314,47 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function createStoredDirectMessageRumorEvent(event: NostrEvent): NDKEvent | null {
+    const pubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
+    if (!pubkey) {
+      return null;
+    }
+
+    const tags = Array.isArray(event.tags)
+      ? event.tags
+          .filter((tag): tag is string[] => Array.isArray(tag))
+          .map((tag) => tag.map((entry) => String(entry)))
+      : [];
+
+    return new NDKEvent(ndk, {
+      kind: typeof event.kind === 'number' ? event.kind : NDKKind.PrivateDirectMessage,
+      created_at: event.created_at,
+      pubkey,
+      content: event.content,
+      tags,
+      ...(event.id?.trim() ? { id: event.id.trim() } : {})
+    });
+  }
+
+  function readDirectMessageRecipientPubkey(event: NostrEvent): string | null {
+    if (!Array.isArray(event.tags)) {
+      return null;
+    }
+
+    for (const tag of event.tags) {
+      if (!Array.isArray(tag) || tag[0] !== 'p') {
+        continue;
+      }
+
+      const recipientPubkey = inputSanitizerService.normalizeHexKey(tag[1] ?? '');
+      if (recipientPubkey) {
+        return recipientPubkey;
+      }
+    }
+
+    return null;
+  }
+
   function normalizeRelayStatusUrl(value: string): string | null {
     const normalized = value.trim();
     if (!normalized) {
@@ -2125,6 +2166,89 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   }
 
+  async function retryDirectMessageRelay(
+    messageId: number,
+    relayUrl: string,
+    scope: 'recipient' | 'self'
+  ): Promise<void> {
+    const normalizedMessageId = Number(messageId);
+    const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
+    if (
+      !Number.isInteger(normalizedMessageId) ||
+      normalizedMessageId <= 0 ||
+      !normalizedRelayUrl ||
+      (scope !== 'recipient' && scope !== 'self')
+    ) {
+      throw new Error('Invalid relay retry input.');
+    }
+
+    const senderPrivateKeyHex = getPrivateKeyHex();
+    if (!senderPrivateKeyHex) {
+      throw new Error('Missing private key in localStorage. Login is required.');
+    }
+
+    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
+
+    const message = await chatDataService.getMessageById(normalizedMessageId);
+    if (!message?.event_id) {
+      throw new Error('Message is missing a persisted event id.');
+    }
+
+    const storedEvent = await nostrEventDataService.getEventById(message.event_id);
+    if (!storedEvent || storedEvent.direction !== 'out') {
+      throw new Error('No outbound nostr event found for this message.');
+    }
+
+    const rumorEvent = createStoredDirectMessageRumorEvent(storedEvent.event);
+    if (!rumorEvent) {
+      throw new Error('Failed to rebuild the direct message event for retry.');
+    }
+
+    const signer = getOrCreateSigner(senderPrivateKeyHex);
+    const recipientPubkey = readDirectMessageRecipientPubkey(storedEvent.event);
+    if (!recipientPubkey) {
+      throw new Error('Stored direct message event is missing a recipient.');
+    }
+
+    await appendRelayStatusesToMessageEvent(
+      normalizedMessageId,
+      buildPendingOutboundRelayStatuses([normalizedRelayUrl], scope),
+      {
+        event: storedEvent.event,
+        direction: 'out',
+        eventId: message.event_id
+      }
+    );
+
+    await ensureRelayConnections([normalizedRelayUrl]);
+    const recipient =
+      scope === 'self'
+        ? new NDKUser({ pubkey: signer.pubkey })
+        : new NDKUser({ pubkey: recipientPubkey });
+    const giftWrapEvent = await giftWrap(rumorEvent, recipient, signer, {
+      rumorKind: NDKKind.PrivateDirectMessage
+    });
+    const publishResult = await publishEventWithRelayStatuses(
+      giftWrapEvent,
+      [normalizedRelayUrl],
+      scope
+    );
+
+    await appendRelayStatusesToMessageEvent(
+      normalizedMessageId,
+      publishResult.relayStatuses,
+      {
+        event: storedEvent.event,
+        direction: 'out',
+        eventId: message.event_id
+      }
+    );
+
+    if (publishResult.error) {
+      throw publishResult.error;
+    }
+  }
+
   return {
     clearPrivateKey,
     contactListVersion,
@@ -2143,6 +2267,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshContactByPublicKey,
     restoreMyRelayList,
     restorePrivateContactList,
+    retryDirectMessageRelay,
     sendDirectMessage,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
