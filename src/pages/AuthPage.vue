@@ -23,9 +23,9 @@
             color="primary"
             no-caps
             icon="vpn_key"
-            label="Generate New Key"
+            label="Create Account"
             class="auth-card__button"
-            @click="goToHome"
+            @click="goToRegister"
           />
         </q-card-section>
       </q-card>
@@ -225,6 +225,14 @@ async function goToHome(): Promise<void> {
     await router.push({ name: 'chats' });
   } catch (error) {
     reportUiError('Failed to navigate after login', error);
+  }
+}
+
+async function goToRegister(): Promise<void> {
+  try {
+    await router.push({ name: 'register' });
+  } catch (error) {
+    reportUiError('Failed to navigate to account registration', error);
   }
 }
 </script>

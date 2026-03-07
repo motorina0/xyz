@@ -31,7 +31,7 @@ export default route(() => {
   });
 
   Router.beforeEach((to) => {
-    if (to.name === 'auth') {
+    if (to.name === 'auth' || to.name === 'register') {
       return true;
     }
 
