@@ -280,7 +280,7 @@ async function handleConfirmLogout(): Promise<void> {
 }
 
 .settings-content-panel {
-  background: var(--tg-panel-thread-bg);
+  background: transparent;
 }
 
 body.body--dark .settings-menu__item--danger {

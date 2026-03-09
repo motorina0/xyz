@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--tg-panel-thread-bg);
+  background: transparent;
 }
 
 .thread-header {

@@ -787,7 +787,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 .contact-profile {
   width: 100%;
   min-height: 100%;
-  background: var(--tg-panel-thread-bg);
+  background: transparent;
 }
 
 .profile-content--with-header {
