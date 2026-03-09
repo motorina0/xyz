@@ -1,7 +1,12 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap');
 
 :root {
-  --tg-bg: #eaf1ff;
+  --tg-bg: #7fd6ec;
+  --tg-app-background:
+    radial-gradient(circle at 50% 78%, rgba(191, 247, 255, 0.78) 0, rgba(105, 224, 249, 0.54) 16%, rgba(55, 170, 214, 0.24) 30%, transparent 52%),
+    radial-gradient(circle at 50% 108%, rgba(215, 250, 255, 0.94) 0, rgba(143, 227, 246, 0.48) 25%, transparent 57%),
+    radial-gradient(circle at 50% 44%, rgba(22, 122, 194, 0.28) 0, rgba(22, 122, 194, 0.1) 24%, transparent 46%),
+    linear-gradient(180deg, #423f97 0%, #3251a1 24%, #166fa9 56%, #1f8fbc 78%, #7dd7ed 100%);
   --tg-sidebar: #fdfefe;
   --tg-thread-bg: linear-gradient(155deg, #eef6ff 0%, #f9fcff 54%, #edf9f2 100%);
   --tg-sent: #dcf9d1;
@@ -14,7 +19,12 @@
 }
 
 body.body--dark {
-  --tg-bg: #0b1220;
+  --tg-bg: #1f4a82;
+  --tg-app-background:
+    radial-gradient(circle at 50% 80%, rgba(114, 223, 248, 0.4) 0, rgba(55, 171, 218, 0.24) 20%, transparent 48%),
+    radial-gradient(circle at 50% 106%, rgba(149, 232, 248, 0.38) 0, rgba(82, 183, 217, 0.2) 26%, transparent 58%),
+    radial-gradient(circle at 50% 42%, rgba(24, 110, 186, 0.22) 0, rgba(24, 110, 186, 0.08) 24%, transparent 44%),
+    linear-gradient(180deg, #2d317a 0%, #244785 24%, #165f8e 56%, #18739b 78%, #449dbc 100%);
   --tg-sidebar: #151d2d;
   --tg-thread-bg: linear-gradient(165deg, #101a2d 0%, #0d1526 52%, #132230 100%);
   --tg-sent: #175e52;
@@ -29,11 +39,7 @@ body {
   font-family: 'Manrope', 'Trebuchet MS', sans-serif;
   color: #0f172a;
   letter-spacing: 0.01em;
-  background:
-    radial-gradient(circle at 8% 16%, rgba(64, 129, 255, 0.2) 0, transparent 34%),
-    radial-gradient(circle at 86% 8%, rgba(31, 192, 150, 0.18) 0, transparent 32%),
-    radial-gradient(circle at 52% 102%, rgba(20, 111, 255, 0.1) 0, transparent 42%),
-    var(--tg-bg);
+  background: var(--tg-app-background);
   background-attachment: fixed;
 }
 
