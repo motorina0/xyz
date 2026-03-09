@@ -3,7 +3,6 @@
     <div
       class="bubble"
       :class="isMine ? 'bubble--mine' : 'bubble--their'"
-      @click="handleBubbleTap"
     >
       <q-btn
         flat
@@ -125,23 +124,26 @@
         </div>
       </q-menu>
 
-      <button
-        v-if="replyPreview"
-        type="button"
-        class="bubble__reply-preview"
-        aria-label="Open replied message"
-        @click.stop="handleOpenReplyTarget"
-      >
-        <div class="bubble__reply-preview-accent" aria-hidden="true" />
-        <div class="bubble__reply-preview-copy">
-          <div class="bubble__reply-preview-title">{{ replyPreview.authorName }}</div>
-          <div class="bubble__reply-preview-text">{{ replyPreview.text }}</div>
-        </div>
-      </button>
+      <div class="bubble__content" @click.stop="handleBubbleTap">
+        <button
+          v-if="replyPreview"
+          type="button"
+          class="bubble__reply-preview"
+          aria-label="Open replied message"
+          @click.stop="handleOpenReplyTarget"
+        >
+          <div class="bubble__reply-preview-accent" aria-hidden="true" />
+          <div class="bubble__reply-preview-copy">
+            <div class="bubble__reply-preview-title">{{ replyPreview.authorName }}</div>
+            <div class="bubble__reply-preview-text">{{ replyPreview.text }}</div>
+          </div>
+        </button>
 
-      <p class="bubble__text" :class="{ 'bubble__text--emoji': isSingleEmojiMessage }">
-        {{ message.text }}
-      </p>
+        <p class="bubble__text" :class="{ 'bubble__text--emoji': isSingleEmojiMessage }">
+          {{ message.text }}
+        </p>
+      </div>
+
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
         <div
@@ -524,7 +526,7 @@ function canUseTapToOpenMenu(): boolean {
     return false;
   }
 
-  return window.matchMedia('(hover: none)').matches;
+  return window.matchMedia('(hover: none), (pointer: coarse)').matches;
 }
 
 function openActionMenu(): void {
@@ -725,6 +727,12 @@ const formattedInfoTime = computed(() => {
   transform: translateY(0);
 }
 
+@media (hover: none), (pointer: coarse) {
+  .bubble__menu-trigger {
+    display: none;
+  }
+}
+
 .bubble--mine {
   background: var(--tg-sent);
   border-bottom-right-radius: 6px;
@@ -745,6 +753,10 @@ const formattedInfoTime = computed(() => {
 .bubble__text--emoji {
   font-size: clamp(2.4rem, 5vw, 3.8rem);
   line-height: 1.1;
+}
+
+.bubble__content {
+  min-width: 0;
 }
 
 .bubble__reply-preview {
