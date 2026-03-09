@@ -107,10 +107,14 @@ interface QueuePrivateMessageUiRefreshOptions {
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
+const EVENT_SINCE_STORAGE_KEY = 'nostr-event-since';
 const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
 const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
+const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
+const EVENT_FILTER_LOOKBACK_SECONDS = 24 * 60 * 60;
+let temp_counter = 0;
 
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
@@ -123,6 +127,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const relayStatusVersion = ref(0);
   const contactListVersion = ref(0);
   const isRestoringStartupState = ref(false);
+  const eventSince = ref(0);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
   const configuredRelayUrls = new Set<string>();
@@ -150,6 +155,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let privateMessagesUiRefreshTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let shouldReloadChatsOnPrivateMessagesUiRefresh = false;
   let shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
+  let pendingEventSinceUpdate = 0;
 
   function normalizeThrottleMs(value: number | undefined): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
@@ -157,6 +163,80 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return Math.floor(value);
+  }
+
+  function getDefaultEventSince(): number {
+    return Math.max(0, Math.floor(Date.now() / 1000) - DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS);
+  }
+
+  function setStoredEventSince(value: number): number {
+    const normalizedValue =
+      Number.isInteger(value) && Number(value) > 0 ? Math.floor(Number(value)) : getDefaultEventSince();
+    eventSince.value = normalizedValue;
+
+    if (hasStorage()) {
+      window.localStorage.setItem(EVENT_SINCE_STORAGE_KEY, String(normalizedValue));
+    }
+
+    return normalizedValue;
+  }
+
+  function ensureStoredEventSince(): number {
+    if (eventSince.value > 0) {
+      return eventSince.value;
+    }
+
+    if (hasStorage()) {
+      const storedValue = Number.parseInt(
+        window.localStorage.getItem(EVENT_SINCE_STORAGE_KEY) ?? '',
+        10
+      );
+      if (Number.isInteger(storedValue) && storedValue > 0) {
+        eventSince.value = storedValue;
+        return storedValue;
+      }
+    }
+
+    const defaultSince = getDefaultEventSince();
+    eventSince.value = defaultSince;
+    return defaultSince;
+  }
+
+  function getFilterSince(): number {
+    return Math.max(0, ensureStoredEventSince() - EVENT_FILTER_LOOKBACK_SECONDS);
+  }
+
+  function updateStoredEventSinceFromCreatedAt(value: unknown): void {
+    const createdAt = Number(value);
+    if (!Number.isInteger(createdAt) || createdAt <= 0) {
+      return;
+    }
+
+    if (createdAt <= ensureStoredEventSince()) {
+      return;
+    }
+
+    if (isRestoringStartupState.value) {
+      pendingEventSinceUpdate = Math.max(pendingEventSinceUpdate, createdAt);
+      return;
+    }
+
+    setStoredEventSince(createdAt);
+  }
+
+  function flushPendingEventSinceUpdate(): void {
+    const nextSince = Math.max(ensureStoredEventSince(), pendingEventSinceUpdate);
+    pendingEventSinceUpdate = 0;
+    setStoredEventSince(nextSince);
+  }
+
+  function resetEventSinceForFreshLogin(): void {
+    eventSince.value = getDefaultEventSince();
+    pendingEventSinceUpdate = 0;
+
+    if (hasStorage()) {
+      window.localStorage.removeItem(EVENT_SINCE_STORAGE_KEY);
+    }
   }
 
   async function flushPrivateMessagesUiRefresh(): Promise<void> {
@@ -232,6 +312,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return restoreStartupStatePromise;
     }
 
+    ensureStoredEventSince();
+
     const runStartupTask = async (
       errorMessage: string,
       task: () => Promise<void>
@@ -269,6 +351,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         );
       } finally {
         isRestoringStartupState.value = false;
+        flushPendingEventSinceUpdate();
         restoreStartupStatePromise = null;
       }
     })();
@@ -1328,6 +1411,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     await relayListEvent.publishReplaceable(relaySet);
+    updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
   }
 
   async function updateLoggedInUserRelayList(
@@ -1385,7 +1469,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const relayListEvent = await ndk.fetchEvent(
       {
         kinds: [NDKKind.RelayList],
-        authors: [user.pubkey]
+        authors: [user.pubkey],
+        since: getFilterSince()
       },
       {
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
@@ -1395,6 +1480,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (!relayListEvent) {
       return null;
     }
+
+    updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
 
     const parsedRelayList = NDKRelayList.from(
       relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent)
@@ -1468,13 +1555,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     myRelayListSubscription = ndk.subscribe(
       {
         kinds: [NDKKind.RelayList],
-        authors: [loggedInPubkeyHex]
+        authors: [loggedInPubkeyHex],
+        since: getFilterSince()
       },
       {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           myRelayListApplyQueue = myRelayListApplyQueue
             .then(async () => {
               const relayList = NDKRelayList.from(wrappedEvent);
@@ -1524,6 +1613,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     await listEvent.publishReplaceable(relaySet);
+    updateStoredEventSinceFromCreatedAt(listEvent.created_at);
     markPrivateContactListEventApplied(listEvent);
   }
 
@@ -1551,7 +1641,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         {
           kinds: [NDKKind.FollowSet],
           authors: [loggedInPubkeyHex],
-          '#d': [PRIVATE_CONTACT_LIST_D_TAG]
+          '#d': [PRIVATE_CONTACT_LIST_D_TAG],
+          since: getFilterSince()
         },
         {
           cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
@@ -1561,6 +1652,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       if (!listEvent) {
         return;
       }
+
+      updateStoredEventSinceFromCreatedAt(listEvent.created_at);
 
       await applyPrivateContactListEvent(
         listEvent instanceof NDKEvent ? listEvent : new NDKEvent(ndk, listEvent)
@@ -1611,7 +1704,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       {
         kinds: [NDKKind.FollowSet],
         authors: [loggedInPubkeyHex],
-        '#d': [PRIVATE_CONTACT_LIST_D_TAG]
+        '#d': [PRIVATE_CONTACT_LIST_D_TAG],
+        since: getFilterSince()
       },
       {
         relaySet,
@@ -1619,6 +1713,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         onEvent: (event) => {
           console.log('Received private contact list event', event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queuePrivateContactListEventApplication(wrappedEvent);
         }
       }
@@ -1854,14 +1949,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesSubscription = ndk.subscribe(
       {
         kinds: [NDKKind.GiftWrap],
-        '#p': [loggedInPubkeyHex]
+        '#p': [loggedInPubkeyHex],
+        since: getFilterSince()
       },
       {
         relaySet,
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
         onEvent: (event) => {
-          console.log('Received private message gift wrap event', event);
+          console.log('Received private message gift wrap event', temp_counter++, getFilterSince(), event);
           const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
         },
         onEose: () => {
@@ -2024,6 +2121,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const signer = new NDKPrivateKeySigner(normalized, ndk);
     clearPrivateKey();
+    resetEventSinceForFreshLogin();
     setStoredAuthSession('nsec', signer.pubkey, normalized);
     cachedSigner = signer;
     cachedSignerSessionKey = `nsec:${signer.pubkey}`;
@@ -2045,6 +2143,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     clearPrivateKey();
+    resetEventSinceForFreshLogin();
     setStoredAuthSession('nip07', pubkeyHex);
     cachedSigner = signer;
     cachedSignerSessionKey = `nip07:${pubkeyHex}`;
@@ -2073,6 +2172,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   async function logout(): Promise<void> {
     clearPrivateKey();
+    eventSince.value = 0;
+    pendingEventSinceUpdate = 0;
     isRestoringStartupState.value = false;
     restoreStartupStatePromise = null;
     restoreMyRelayListPromise = null;
@@ -2088,6 +2189,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStatusVersion.value += 1;
 
     if (hasStorage()) {
+      window.localStorage.removeItem(EVENT_SINCE_STORAGE_KEY);
       for (const storageKey of RELAY_STORAGE_KEYS) {
         window.localStorage.removeItem(storageKey);
       }
