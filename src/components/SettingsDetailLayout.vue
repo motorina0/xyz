@@ -58,7 +58,7 @@ function goBack(): void {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: var(--tg-thread-bg);
+  background: var(--tg-panel-thread-bg);
 }
 
 .settings-detail-layout__header {
@@ -66,12 +66,7 @@ function goBack(): void {
   align-items: center;
   padding: 12px 14px;
   border-bottom: 1px solid var(--tg-border);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 90%, #dce9ff 10%),
-      color-mix(in srgb, var(--tg-sidebar) 96%, #dce9ff 4%)
-    );
+  background: var(--tg-panel-header-bg);
   backdrop-filter: blur(10px);
 }
 

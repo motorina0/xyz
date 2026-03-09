@@ -166,7 +166,7 @@ function handleSend(): void {
   gap: 10px;
   padding: 10px;
   border-top: 1px solid var(--tg-border);
-  background: var(--tg-sidebar);
+  background: var(--tg-panel-header-bg);
 }
 
 .composer__input {

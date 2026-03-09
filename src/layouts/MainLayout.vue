@@ -48,7 +48,11 @@ import { useRoute, useRouter } from 'vue-router';
 import { useChatStore } from 'src/stores/chatStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { useNostrStore } from 'src/stores/nostrStore';
-import { readDarkModePreference } from 'src/utils/themeStorage';
+import {
+  applyPanelOpacityPreference,
+  readPanelOpacityPreference,
+  readDarkModePreference
+} from 'src/utils/themeStorage';
 
 const $q = useQuasar();
 const route = useRoute();
@@ -57,6 +61,7 @@ const chatStore = useChatStore();
 const relayStore = useRelayStore();
 const nostrStore = useNostrStore();
 const savedDarkMode = readDarkModePreference();
+const savedPanelOpacity = readPanelOpacityPreference();
 const isMobile = computed(() => $q.screen.lt.md);
 
 type NavigationSection = 'chats' | 'contacts' | 'settings';
@@ -119,6 +124,8 @@ watch(
 if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
+
+applyPanelOpacityPreference(savedPanelOpacity);
 relayStore.init();
 void nostrStore.restoreStartupState(relayStore.relays).catch((error) => {
   console.error('Failed to restore app state on startup', error);

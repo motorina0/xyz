@@ -787,7 +787,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 .contact-profile {
   width: 100%;
   min-height: 100%;
-  background: var(--tg-thread-bg);
+  background: var(--tg-panel-thread-bg);
 }
 
 .profile-content--with-header {
@@ -800,7 +800,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-sidebar);
+  background: var(--tg-panel-header-bg);
 }
 
 .profile-header__identity {

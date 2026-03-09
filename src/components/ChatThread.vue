@@ -324,7 +324,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: var(--tg-thread-bg);
+  background: var(--tg-panel-thread-bg);
 }
 
 .thread-header {
@@ -333,7 +333,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-sidebar);
+  background: var(--tg-panel-header-bg);
 }
 
 .thread-header__identity {

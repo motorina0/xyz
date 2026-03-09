@@ -208,17 +208,12 @@ async function handleConfirmLogout(): Promise<void> {
   border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
   border-radius: 18px;
   overflow: hidden;
-  background: var(--tg-sidebar);
+  background: var(--tg-panel-sidebar-bg);
   box-shadow: var(--tg-shadow-sm);
 }
 
 .rail-panel {
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-rail) 92%, #dceaff 8%),
-      color-mix(in srgb, var(--tg-rail) 96%, #dceaff 4%)
-    );
+  background: var(--tg-panel-rail-bg);
 }
 
 .settings-sidebar {
@@ -229,12 +224,7 @@ async function handleConfirmLogout(): Promise<void> {
 .settings-sidebar__top {
   padding: 13px;
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--tg-sidebar) 88%, #dbe9ff 12%),
-      color-mix(in srgb, var(--tg-sidebar) 96%, #dbe9ff 4%)
-    );
+  background: var(--tg-panel-header-bg);
   backdrop-filter: blur(10px);
 }
 
@@ -290,7 +280,7 @@ async function handleConfirmLogout(): Promise<void> {
 }
 
 .settings-content-panel {
-  background: var(--tg-thread-bg);
+  background: var(--tg-panel-thread-bg);
 }
 
 body.body--dark .settings-menu__item--danger {

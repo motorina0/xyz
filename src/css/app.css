@@ -2,6 +2,28 @@
 
 :root {
   --tg-bg: #7fd6ec;
+  --tg-panel-opacity: 75;
+  --tg-panel-alpha: calc(var(--tg-panel-opacity, 75) / 100);
+  --tg-panel-sidebar-bg: rgb(253 254 254 / var(--tg-panel-alpha));
+  --tg-panel-rail-bg:
+    linear-gradient(
+      180deg,
+      rgb(231 238 248 / calc(var(--tg-panel-alpha) * 0.96)),
+      rgb(242 247 255 / calc(var(--tg-panel-alpha) * 0.92))
+    );
+  --tg-panel-thread-bg:
+    linear-gradient(
+      155deg,
+      rgb(238 246 255 / var(--tg-panel-alpha)) 0%,
+      rgb(249 252 255 / var(--tg-panel-alpha)) 54%,
+      rgb(237 249 242 / var(--tg-panel-alpha)) 100%
+    );
+  --tg-panel-header-bg:
+    linear-gradient(
+      180deg,
+      rgb(241 247 255 / calc(var(--tg-panel-alpha) * 0.96)),
+      rgb(251 253 255 / calc(var(--tg-panel-alpha) * 0.92))
+    );
   --tg-app-background:
     radial-gradient(circle at 50% 78%, rgba(191, 247, 255, 0.78) 0, rgba(105, 224, 249, 0.54) 16%, rgba(55, 170, 214, 0.24) 30%, transparent 52%),
     radial-gradient(circle at 50% 108%, rgba(215, 250, 255, 0.94) 0, rgba(143, 227, 246, 0.48) 25%, transparent 57%),
@@ -20,6 +42,26 @@
 
 body.body--dark {
   --tg-bg: #1f4a82;
+  --tg-panel-sidebar-bg: rgb(21 29 45 / var(--tg-panel-alpha));
+  --tg-panel-rail-bg:
+    linear-gradient(
+      180deg,
+      rgb(17 25 41 / calc(var(--tg-panel-alpha) * 0.96)),
+      rgb(26 36 54 / calc(var(--tg-panel-alpha) * 0.92))
+    );
+  --tg-panel-thread-bg:
+    linear-gradient(
+      165deg,
+      rgb(16 26 45 / var(--tg-panel-alpha)) 0%,
+      rgb(13 21 38 / var(--tg-panel-alpha)) 52%,
+      rgb(19 34 48 / var(--tg-panel-alpha)) 100%
+    );
+  --tg-panel-header-bg:
+    linear-gradient(
+      180deg,
+      rgb(25 38 58 / calc(var(--tg-panel-alpha) * 0.96)),
+      rgb(20 31 47 / calc(var(--tg-panel-alpha) * 0.92))
+    );
   --tg-app-background:
     radial-gradient(circle at 50% 80%, rgba(114, 223, 248, 0.4) 0, rgba(55, 171, 218, 0.24) 20%, transparent 48%),
     radial-gradient(circle at 50% 106%, rgba(149, 232, 248, 0.38) 0, rgba(82, 183, 217, 0.2) 26%, transparent 58%),

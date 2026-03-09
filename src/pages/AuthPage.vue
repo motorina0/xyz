@@ -252,11 +252,16 @@ async function goToRegister(): Promise<void> {
 .auth-card {
   border-radius: 20px;
   border: 1px solid var(--tg-border);
-  background: color-mix(in srgb, var(--tg-sidebar) 96%, transparent);
+  overflow: hidden;
+  background: var(--tg-panel-sidebar-bg);
+  box-shadow: var(--tg-shadow-sm);
+  backdrop-filter: blur(10px);
 }
 
 .auth-card__header {
   padding: 22px 22px 10px;
+  background: var(--tg-panel-header-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
 }
 
 .auth-card__title {

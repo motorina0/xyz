@@ -36,7 +36,7 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import type { MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
-import { clearDarkModePreference } from 'src/utils/themeStorage';
+import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -2196,6 +2196,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     clearDarkModePreference();
+    clearPanelOpacityPreference();
 
     await Promise.all([
       chatDataService.clearAllData(),
