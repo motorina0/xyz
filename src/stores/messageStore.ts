@@ -4,7 +4,7 @@ import { chatDataService } from 'src/services/chatDataService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { Message, NostrEventEntry } from 'src/types/chat';
+import type { Message, MessageReplyPreview, NostrEventEntry } from 'src/types/chat';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 
@@ -216,7 +216,11 @@ export const useMessageStore = defineStore('messageStore', () => {
     await Promise.all(chatIds.map((chatId) => loadMessages(chatId, true)));
   }
 
-  async function sendMessage(chatId: string, text: string): Promise<Message | null> {
+  async function sendMessage(
+    chatId: string,
+    text: string,
+    replyTo: MessageReplyPreview | null = null
+  ): Promise<Message | null> {
     const cleanText = text.trim();
 
     if (!cleanText) {
@@ -243,7 +247,8 @@ export const useMessageStore = defineStore('messageStore', () => {
       chat_public_key: chat.public_key,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      ...(replyTo ? { meta: { reply: replyTo } } : {})
     });
     if (!created) {
       return null;

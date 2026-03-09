@@ -62,6 +62,20 @@
         </q-list>
       </q-menu>
 
+      <button
+        v-if="replyPreview"
+        type="button"
+        class="bubble__reply-preview"
+        aria-label="Open replied message"
+        @click.stop="handleOpenReplyTarget"
+      >
+        <div class="bubble__reply-preview-accent" aria-hidden="true" />
+        <div class="bubble__reply-preview-copy">
+          <div class="bubble__reply-preview-title">{{ replyPreview.authorName }}</div>
+          <div class="bubble__reply-preview-text">{{ replyPreview.text }}</div>
+        </div>
+      </button>
+
       <p class="bubble__text">{{ message.text }}</p>
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
@@ -216,7 +230,7 @@
 import { computed, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
-import type { Message, MessageRelayStatus } from 'src/types/chat';
+import type { Message, MessageRelayStatus, MessageReplyPreview } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
 import { reportUiError } from 'src/utils/uiErrorHandler';
@@ -224,6 +238,11 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 const props = defineProps<{
   message: Message;
   contactName?: string;
+}>();
+
+const emit = defineEmits<{
+  (event: 'reply', message: Message): void;
+  (event: 'open-reply-target', messageId: string): void;
 }>();
 
 const $q = useQuasar();
@@ -245,6 +264,23 @@ interface StatusListItem {
   scope: 'recipient' | 'self';
   status: 'published' | 'failed' | 'pending';
   retryable: boolean;
+}
+
+function isMessageReplyPreview(value: unknown): value is MessageReplyPreview {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<MessageReplyPreview>;
+  return (
+    typeof candidate.messageId === 'string' &&
+    typeof candidate.text === 'string' &&
+    (candidate.sender === 'me' || candidate.sender === 'them') &&
+    typeof candidate.authorName === 'string' &&
+    typeof candidate.authorPublicKey === 'string' &&
+    typeof candidate.sentAt === 'string' &&
+    (typeof candidate.eventId === 'string' || candidate.eventId === null)
+  );
 }
 
 function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
@@ -285,6 +321,10 @@ const contactRelaysTitle = computed(() => {
 
 const isStatusDialogOpen = ref(false);
 const retryingRelayKeys = ref<string[]>([]);
+const replyPreview = computed(() => {
+  const candidate = props.message.meta.reply;
+  return isMessageReplyPreview(candidate) ? candidate : null;
+});
 
 const statusSegments = computed<StatusSegment[]>(() => {
   const relayStatuses = outboundRelayStatuses.value;
@@ -451,7 +491,15 @@ async function copyText(value: string): Promise<void> {
 }
 
 function handleReply(): void {
-  notifyUnimplemented('Reply');
+  emit('reply', props.message);
+}
+
+function handleOpenReplyTarget(): void {
+  if (!replyPreview.value) {
+    return;
+  }
+
+  emit('open-reply-target', replyPreview.value.messageId);
 }
 
 function handleForward(): void {
@@ -583,6 +631,49 @@ const formattedInfoTime = computed(() => {
   white-space: pre-wrap;
   word-break: break-word;
   cursor: pointer;
+}
+
+.bubble__reply-preview {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 12px;
+  color: inherit;
+  text-align: left;
+  background: color-mix(in srgb, currentColor 7%, transparent);
+  cursor: pointer;
+}
+
+.bubble__reply-preview-accent {
+  flex: 0 0 3px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: var(--q-primary);
+}
+
+.bubble__reply-preview-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.bubble__reply-preview-title {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--q-primary);
+}
+
+.bubble__reply-preview-text {
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.82;
 }
 
 .bubble__meta {

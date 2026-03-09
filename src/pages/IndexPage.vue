@@ -65,6 +65,7 @@ import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+import type { MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -125,13 +126,17 @@ function handleSelectChat(chatId: string): void {
   }
 }
 
-async function handleSend(text: string): Promise<void> {
+async function handleSend(payload: { text: string; replyTo: MessageReplyPreview | null }): Promise<void> {
   try {
     if (!activeChatId.value) {
       return;
     }
 
-    const created = await messageStore.sendMessage(activeChatId.value, text);
+    const created = await messageStore.sendMessage(
+      activeChatId.value,
+      payload.text,
+      payload.replyTo
+    );
 
     if (created) {
       await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);

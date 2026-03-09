@@ -16,7 +16,18 @@ export interface Chat {
   meta: ChatMetadata;
 }
 
+export interface MessageReplyPreview {
+  messageId: string;
+  text: string;
+  sender: 'me' | 'them';
+  authorName: string;
+  authorPublicKey: string;
+  sentAt: string;
+  eventId: string | null;
+}
+
 export interface MessageMetadata {
+  reply?: MessageReplyPreview;
   [key: string]: unknown;
 }
 

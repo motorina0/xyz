@@ -60,18 +60,26 @@
           <div
             v-else
             class="thread-message-entry"
+            :class="{ 'thread-message-entry--target': highlightedMessageId === item.message.id }"
             :data-day-key="item.dayKey"
             :data-day-label="item.dayLabel"
+            :data-message-id="item.message.id"
           >
             <MessageBubble
               :message="item.message"
               :contact-name="chat.name"
+              @reply="handleReplyToMessage"
+              @open-reply-target="handleOpenReplyTarget"
             />
           </div>
         </template>
       </div>
 
-      <MessageComposer @send="handleSend" />
+      <MessageComposer
+        :reply-to="activeReply"
+        @send="handleSend"
+        @cancel-reply="handleCancelReply"
+      />
     </template>
 
     <div v-else class="thread-empty" :class="{ 'thread-empty--loading': isInitializing }">
@@ -100,7 +108,7 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
-import type { Chat, Message } from 'src/types/chat';
+import type { Chat, Message, MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = withDefaults(
@@ -117,7 +125,7 @@ const props = withDefaults(
 );
 
 const emit = defineEmits<{
-  (event: 'send', text: string): void;
+  (event: 'send', payload: { text: string; replyTo: MessageReplyPreview | null }): void;
   (event: 'back'): void;
   (event: 'open-profile', publicKey: string): void;
   (event: 'refresh-chat', chatId: string): void;
@@ -125,7 +133,10 @@ const emit = defineEmits<{
 
 const threadBodyRef = ref<HTMLElement | null>(null);
 const stickyDayLabel = ref('');
+const activeReply = ref<MessageReplyPreview | null>(null);
+const highlightedMessageId = ref<string | null>(null);
 let scrollFrameId: number | null = null;
+let highlightTimerId: number | null = null;
 
 type ThreadItem =
   | {
@@ -272,11 +283,75 @@ function handleBack(): void {
   }
 }
 
-function handleSend(text: string): void {
+function handleSend(payload: { text: string }): void {
   try {
-    emit('send', text);
+    emit('send', {
+      text: payload.text,
+      replyTo: activeReply.value
+    });
+    activeReply.value = null;
   } catch (error) {
     reportUiError('Failed to emit chat thread send event', error);
+  }
+}
+
+function handleReplyToMessage(message: Message): void {
+  try {
+    activeReply.value = {
+      messageId: message.id,
+      text: message.text,
+      sender: message.sender,
+      authorName: message.sender === 'me' ? 'You' : props.chat?.name?.trim() || 'Contact',
+      authorPublicKey: message.authorPublicKey,
+      sentAt: message.sentAt,
+      eventId: message.eventId
+    };
+  } catch (error) {
+    reportUiError('Failed to prepare reply target', error);
+  }
+}
+
+function handleCancelReply(): void {
+  activeReply.value = null;
+}
+
+function clearReplyTargetHighlight(): void {
+  highlightedMessageId.value = null;
+  if (highlightTimerId !== null) {
+    window.clearTimeout(highlightTimerId);
+    highlightTimerId = null;
+  }
+}
+
+async function handleOpenReplyTarget(messageId: string): Promise<void> {
+  try {
+    const threadBody = threadBodyRef.value;
+    if (!threadBody) {
+      return;
+    }
+
+    const targetEntry = Array.from(threadBody.querySelectorAll<HTMLElement>('.thread-message-entry'))
+      .find((entry) => entry.dataset.messageId === messageId);
+
+    if (!targetEntry) {
+      return;
+    }
+
+    clearReplyTargetHighlight();
+    highlightedMessageId.value = messageId;
+    targetEntry.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center'
+    });
+
+    highlightTimerId = window.setTimeout(() => {
+      if (highlightedMessageId.value === messageId) {
+        highlightedMessageId.value = null;
+      }
+      highlightTimerId = null;
+    }, 1800);
+  } catch (error) {
+    reportUiError('Failed to focus replied message', error);
   }
 }
 
@@ -312,7 +387,16 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => props.chat?.id ?? null,
+  () => {
+    activeReply.value = null;
+    clearReplyTargetHighlight();
+  }
+);
+
 onBeforeUnmount(() => {
+  clearReplyTargetHighlight();
   if (scrollFrameId !== null) {
     cancelAnimationFrame(scrollFrameId);
   }
@@ -427,6 +511,28 @@ onBeforeUnmount(() => {
   letter-spacing: 0.02em;
   color: color-mix(in srgb, var(--q-primary) 45%, var(--tg-text) 55%);
   white-space: nowrap;
+}
+
+.thread-message-entry {
+  scroll-margin-block: 88px;
+}
+
+.thread-message-entry--target :deep(.bubble) {
+  animation: thread-message-target 1.8s ease;
+}
+
+@keyframes thread-message-target {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-primary) 42%, transparent);
+  }
+
+  30% {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--q-primary) 42%, transparent);
+  }
+
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 .thread-empty {

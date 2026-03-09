@@ -1,79 +1,103 @@
 <template>
   <div class="composer">
-    <q-input
-      ref="inputRef"
-      v-model="draft"
-      class="composer__input tg-input"
-      dense
-      outlined
-      rounded
-      autogrow
-      placeholder="Write a message"
-      @focus="rememberSelection"
-      @click="rememberSelection"
-      @keyup="rememberSelection"
-      @select="rememberSelection"
-      @keydown.enter.exact.prevent="handleSend"
-    >
-      <template #prepend>
-        <q-btn
-          flat
-          round
-          dense
-          icon="sentiment_satisfied"
-          aria-label="Add emoji"
-          @click="rememberSelection"
-        >
-          <q-menu anchor="top right" self="bottom right" class="emoji-menu">
-            <div class="emoji-menu__search">
-              <q-input
-                v-model="emojiSearch"
-                class="tg-input"
-                dense
-                outlined
-                rounded
-                clearable
-                placeholder="Search emoji"
-              >
-                <template #prepend>
-                  <q-icon name="search" />
-                </template>
-              </q-input>
-            </div>
+    <div v-if="replyTo" class="composer__reply">
+      <div class="composer__reply-accent" aria-hidden="true" />
+      <div class="composer__reply-copy">
+        <div class="composer__reply-title">Reply to {{ replyTo.authorName }}</div>
+        <div class="composer__reply-text">{{ replyTo.text }}</div>
+      </div>
+      <q-btn
+        flat
+        dense
+        round
+        icon="close"
+        aria-label="Cancel reply"
+        class="composer__reply-close"
+        @click="$emit('cancel-reply')"
+      />
+    </div>
 
-            <div class="emoji-menu__scroll">
-              <div class="emoji-grid">
-                <button
-                  v-for="entry in filteredEmojis"
-                  :key="entry.emoji"
-                  type="button"
-                  class="emoji-grid__item"
-                  v-close-popup
-                  @mousedown.prevent
-                  @click="insertEmoji(entry.emoji)"
-                  :title="entry.label"
-                  :aria-label="entry.label"
+    <div class="composer__row">
+      <q-input
+        ref="inputRef"
+        v-model="draft"
+        class="composer__input tg-input"
+        dense
+        outlined
+        rounded
+        autogrow
+        placeholder="Write a message"
+        @focus="rememberSelection"
+        @click="rememberSelection"
+        @keyup="rememberSelection"
+        @select="rememberSelection"
+        @keydown.enter.exact.prevent="handleSend"
+      >
+        <template #prepend>
+          <q-btn
+            flat
+            round
+            dense
+            icon="sentiment_satisfied"
+            aria-label="Add emoji"
+            @click="rememberSelection"
+          >
+            <q-menu anchor="top right" self="bottom right" class="emoji-menu">
+              <div class="emoji-menu__search">
+                <q-input
+                  v-model="emojiSearch"
+                  class="tg-input"
+                  dense
+                  outlined
+                  rounded
+                  clearable
+                  placeholder="Search emoji"
                 >
-                  <span class="emoji-grid__char">{{ entry.emoji }}</span>
-                </button>
+                  <template #prepend>
+                    <q-icon name="search" />
+                  </template>
+                </q-input>
               </div>
-              <div v-if="filteredEmojis.length === 0" class="emoji-menu__empty">
-                No emoji found.
-              </div>
-            </div>
-          </q-menu>
-        </q-btn>
-      </template>
-    </q-input>
 
-    <q-btn color="primary" label="Send" class="composer__send" @click="handleSend" />
+              <div class="emoji-menu__scroll">
+                <div class="emoji-grid">
+                  <button
+                    v-for="entry in filteredEmojis"
+                    :key="entry.emoji"
+                    type="button"
+                    class="emoji-grid__item"
+                    v-close-popup
+                    @mousedown.prevent
+                    @click="insertEmoji(entry.emoji)"
+                    :title="entry.label"
+                    :aria-label="entry.label"
+                  >
+                    <span class="emoji-grid__char">{{ entry.emoji }}</span>
+                  </button>
+                </div>
+                <div v-if="filteredEmojis.length === 0" class="emoji-menu__empty">
+                  No emoji found.
+                </div>
+              </div>
+            </q-menu>
+          </q-btn>
+        </template>
+      </q-input>
+
+      <q-btn color="primary" label="Send" class="composer__send" @click="handleSend" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import { TOP_500_EMOJIS } from 'src/data/topEmojis';
+import type { MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+
+defineProps<{
+  replyTo?: MessageReplyPreview | null;
+}>();
 
 const draft = ref('');
 const inputRef = ref<{ $el: HTMLElement } | null>(null);
@@ -82,7 +106,8 @@ const selectionEnd = ref<number | null>(null);
 const emojiSearch = ref('');
 
 const emit = defineEmits<{
-  (event: 'send', text: string): void;
+  (event: 'send', payload: { text: string }): void;
+  (event: 'cancel-reply'): void;
 }>();
 
 const filteredEmojis = computed(() => {
@@ -148,7 +173,7 @@ function handleSend(): void {
       return;
     }
 
-    emit('send', cleanText);
+    emit('send', { text: cleanText });
     draft.value = '';
     emojiSearch.value = '';
     selectionStart.value = 0;
@@ -162,6 +187,7 @@ function handleSend(): void {
 <style scoped>
 .composer {
   display: flex;
+  flex-direction: column;
   align-items: flex-end;
   gap: 10px;
   padding: 10px;
@@ -169,7 +195,57 @@ function handleSend(): void {
   background: var(--tg-panel-header-bg);
 }
 
+.composer__reply {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tg-sidebar) 76%, transparent);
+}
+
+.composer__reply-accent {
+  flex: 0 0 3px;
+  align-self: stretch;
+  border-radius: 999px;
+  background: var(--q-primary);
+}
+
+.composer__reply-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.composer__reply-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--q-primary);
+}
+
+.composer__reply-text {
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.composer__reply-close {
+  flex: 0 0 auto;
+  color: #64748b;
+}
+
+.composer__row {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 .composer__input {
+  width: 100%;
   flex: 1;
 }
 
