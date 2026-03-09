@@ -1,6 +1,67 @@
 <template>
   <div class="bubble-row" :class="isMine ? 'bubble-row--mine' : 'bubble-row--their'">
-    <div class="bubble" :class="isMine ? 'bubble--mine' : 'bubble--their'">
+    <div
+      class="bubble"
+      :class="isMine ? 'bubble--mine' : 'bubble--their'"
+      @click="handleBubbleTap"
+    >
+      <q-btn
+        flat
+        dense
+        round
+        size="sm"
+        icon="arrow_drop_down"
+        aria-label="Open message actions"
+        class="bubble__menu-trigger"
+        @click.stop="openActionMenu"
+      />
+
+      <q-menu
+        v-model="isActionMenuOpen"
+        anchor="bottom right"
+        self="top right"
+        class="tg-pop-menu"
+      >
+        <q-list dense separator class="tg-pop-menu__list">
+          <q-item clickable v-close-popup @click="handleReply">
+            <q-item-section avatar>
+              <q-icon name="reply" />
+            </q-item-section>
+            <q-item-section>Reply</q-item-section>
+          </q-item>
+          <q-item clickable v-close-popup @click="handleForward">
+            <q-item-section avatar>
+              <q-icon name="forward" />
+            </q-item-section>
+            <q-item-section>Forward</q-item-section>
+          </q-item>
+          <q-item clickable v-close-popup @click="handleCopy">
+            <q-item-section avatar>
+              <q-icon name="content_copy" />
+            </q-item-section>
+            <q-item-section>Copy</q-item-section>
+          </q-item>
+          <q-item clickable v-close-popup @click="handlePin">
+            <q-item-section avatar>
+              <q-icon name="push_pin" />
+            </q-item-section>
+            <q-item-section>Pin</q-item-section>
+          </q-item>
+          <q-item clickable v-close-popup @click="handleInfo">
+            <q-item-section avatar>
+              <q-icon name="info" />
+            </q-item-section>
+            <q-item-section>Info</q-item-section>
+          </q-item>
+          <q-item clickable v-close-popup @click="handleDelete">
+            <q-item-section avatar>
+              <q-icon name="delete" class="text-negative" />
+            </q-item-section>
+            <q-item-section class="text-negative">Delete</q-item-section>
+          </q-item>
+        </q-list>
+      </q-menu>
+
       <p class="bubble__text">{{ message.text }}</p>
       <div class="bubble__meta">
         <span class="bubble__time">{{ formattedTime }}</span>
@@ -118,10 +179,42 @@
       </div>
     </template>
   </AppDialog>
+
+  <AppDialog
+    v-model="isInfoDialogOpen"
+    title="Message Info"
+    max-width="460px"
+  >
+    <div class="bubble__info">
+      <div class="bubble__info-row">
+        <div class="bubble__info-label">Sent</div>
+        <div class="bubble__info-value">{{ formattedInfoTime }}</div>
+      </div>
+      <div class="bubble__info-row">
+        <div class="bubble__info-label">Sender</div>
+        <div class="bubble__info-value">{{ isMine ? 'You' : 'Contact' }}</div>
+      </div>
+      <div class="bubble__info-row">
+        <div class="bubble__info-label">Author Pubkey</div>
+        <div class="bubble__info-value bubble__info-value--mono">{{ message.authorPublicKey }}</div>
+      </div>
+      <div class="bubble__info-row">
+        <div class="bubble__info-label">Event ID</div>
+        <div class="bubble__info-value bubble__info-value--mono">
+          {{ message.eventId || 'Not available' }}
+        </div>
+      </div>
+      <div class="bubble__info-row">
+        <div class="bubble__info-label">Message</div>
+        <div class="bubble__info-value">{{ message.text }}</div>
+      </div>
+    </div>
+  </AppDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
+import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import type { Message, MessageRelayStatus } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -133,8 +226,11 @@ const props = defineProps<{
   contactName?: string;
 }>();
 
+const $q = useQuasar();
 const nostrStore = useNostrStore();
 const isMine = computed(() => props.message.sender === 'me');
+const isActionMenuOpen = ref(false);
+const isInfoDialogOpen = ref(false);
 
 interface StatusSegment {
   key: 'published' | 'pending' | 'failed';
@@ -299,6 +395,95 @@ function openStatusDialog(): void {
   isStatusDialogOpen.value = true;
 }
 
+function canUseTapToOpenMenu(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+    return false;
+  }
+
+  return window.matchMedia('(hover: none)').matches;
+}
+
+function openActionMenu(): void {
+  isActionMenuOpen.value = true;
+}
+
+function handleBubbleTap(): void {
+  if (!canUseTapToOpenMenu()) {
+    return;
+  }
+
+  openActionMenu();
+}
+
+function notifyUnimplemented(label: string): void {
+  $q.notify({
+    type: 'info',
+    message: `${label} is not implemented yet.`,
+    position: 'top',
+    timeout: 1800
+  });
+}
+
+async function copyText(value: string): Promise<void> {
+  const text = value.trim();
+  if (!text) {
+    return;
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document === 'undefined') {
+    throw new Error('Clipboard is not available.');
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'absolute';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
+function handleReply(): void {
+  notifyUnimplemented('Reply');
+}
+
+function handleForward(): void {
+  notifyUnimplemented('Forward');
+}
+
+async function handleCopy(): Promise<void> {
+  try {
+    await copyText(props.message.text);
+    $q.notify({
+      type: 'positive',
+      message: 'Message copied.',
+      position: 'top',
+      timeout: 1600
+    });
+  } catch (error) {
+    reportUiError('Failed to copy message text', error, 'Failed to copy message.');
+  }
+}
+
+function handlePin(): void {
+  notifyUnimplemented('Pin');
+}
+
+function handleInfo(): void {
+  isInfoDialogOpen.value = true;
+}
+
+function handleDelete(): void {
+  notifyUnimplemented('Delete');
+}
+
 function isRetrying(item: StatusListItem): boolean {
   return retryingRelayKeys.value.includes(item.key);
 }
@@ -325,6 +510,13 @@ const formattedTime = computed(() => {
     minute: '2-digit'
   }).format(new Date(props.message.sentAt));
 });
+
+const formattedInfoTime = computed(() => {
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(props.message.sentAt));
+});
 </script>
 
 <style scoped>
@@ -342,11 +534,38 @@ const formattedTime = computed(() => {
 }
 
 .bubble {
+  position: relative;
   max-width: min(82%, 560px);
   border-radius: 16px;
-  padding: 10px 12px;
+  padding: 10px 36px 10px 12px;
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
   animation: bubble-in 180ms ease both;
+}
+
+.bubble__menu-trigger {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  color: color-mix(in srgb, currentColor 68%, #64748b 32%);
+  background: color-mix(in srgb, var(--tg-sidebar) 74%, transparent);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.bubble__menu-trigger:hover {
+  background: color-mix(in srgb, var(--tg-sidebar) 88%, transparent);
+}
+
+.bubble-row:hover .bubble__menu-trigger,
+.bubble-row:focus-within .bubble__menu-trigger {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
 }
 
 .bubble--mine {
@@ -511,6 +730,43 @@ const formattedTime = computed(() => {
   font-size: 12px;
   line-height: 1.45;
   opacity: 0.72;
+}
+
+.bubble__info {
+  display: grid;
+  gap: 12px;
+}
+
+.bubble__info-row {
+  display: grid;
+  gap: 4px;
+}
+
+.bubble__info-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.72;
+}
+
+.bubble__info-value {
+  font-size: 14px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.bubble__info-value--mono {
+  font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+  font-size: 12px;
+}
+
+@media (hover: none) {
+  .bubble__menu-trigger {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
 }
 
 @keyframes bubble-in {
