@@ -183,6 +183,24 @@ export const useMessageStore = defineStore('messageStore', () => {
     return preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
   }
 
+  async function resolveReplyTargetEventId(
+    replyTo: MessageReplyPreview | null
+  ): Promise<string | null> {
+    const directEventId = normalizeEventId(replyTo?.eventId);
+    if (directEventId) {
+      return directEventId;
+    }
+
+    const localMessageId = Number.parseInt(replyTo?.messageId ?? '', 10);
+    if (!Number.isInteger(localMessageId) || localMessageId <= 0) {
+      return null;
+    }
+
+    await chatDataService.init();
+    const replyMessageRow = await chatDataService.getMessageById(localMessageId);
+    return normalizeEventId(replyMessageRow?.event_id);
+  }
+
   function upsertMessageInState(chatId: string, message: Message): void {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -300,13 +318,20 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
+    const replyTargetEventId = await resolveReplyTargetEventId(replyTo);
+    const replyPreview = replyTo
+      ? {
+          ...replyTo,
+          eventId: replyTargetEventId ?? replyTo.eventId
+        }
+      : null;
 
     const created = await chatDataService.createMessage({
       chat_public_key: chat.public_key,
       author_public_key: window.localStorage.getItem('npub'),
       message: cleanText,
       created_at: new Date().toISOString(),
-      ...(replyTo ? { meta: { reply: replyTo } } : {})
+      ...(replyPreview ? { meta: { reply: replyPreview } } : {})
     });
     if (!created) {
       return null;
@@ -332,7 +357,8 @@ export const useMessageStore = defineStore('messageStore', () => {
         recipientRelayUrls,
         {
           localMessageId: created.id,
-          createdAt: created.created_at
+          createdAt: created.created_at,
+          replyToEventId: replyTargetEventId
         }
       );
     } catch (error) {

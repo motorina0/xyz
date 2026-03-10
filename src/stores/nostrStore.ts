@@ -37,6 +37,7 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import type {
   DeletedMessageMetadata,
+  MessageReplyPreview,
   MessageReaction,
   MessageRelayStatus,
   NostrEventDirection
@@ -99,7 +100,9 @@ interface SendGiftWrappedRumorOptions {
   createdAt?: string;
 }
 
-interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {}
+interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {
+  replyToEventId?: string | null;
+}
 
 interface SendDirectMessageReactionOptions {
   createdAt?: string;
@@ -155,6 +158,7 @@ const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 24 * 60 * 60;
+const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
 let temp_counter = 0;
 
 function hasStorage(): boolean {
@@ -511,14 +515,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
     senderPubkey: string,
     recipientPubkey: string,
     message: string,
-    createdAt: number
+    createdAt: number,
+    replyToEventId?: string | null
   ): NDKEvent {
+    const tags: string[][] = [['p', recipientPubkey]];
+    const normalizedReplyTargetEventId = normalizeEventId(replyToEventId);
+    if (normalizedReplyTargetEventId) {
+      tags.push(['e', normalizedReplyTargetEventId, '', 'reply']);
+    }
+
     return new NDKEvent(ndk, {
       kind: NDKKind.PrivateDirectMessage,
       created_at: createdAt,
       pubkey: senderPubkey,
       content: message,
-      tags: [['p', recipientPubkey]]
+      tags
     });
   }
 
@@ -607,6 +618,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   function readReactionTargetEventId(event: NDKEvent): string | null {
+    return normalizeEventId(event.getMatchingTags('e')[0]?.[1] ?? '');
+  }
+
+  function readReplyTargetEventId(event: NDKEvent): string | null {
+    const replyTag = event.getMatchingTags('e').find((tag) => {
+      const marker = String(tag[3] ?? '').trim().toLowerCase();
+      return marker === 'reply' && normalizeEventId(tag[1] ?? '');
+    });
+    if (replyTag) {
+      return normalizeEventId(replyTag[1] ?? '');
+    }
+
     return normalizeEventId(event.getMatchingTags('e')[0]?.[1] ?? '');
   }
 
@@ -1515,6 +1538,55 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await upsertReactionOnMessageRow(targetMessage, pendingReaction, options);
+  }
+
+  async function buildReplyPreviewFromTargetEvent(
+    targetEventId: string,
+    chatPubkey: string,
+    loggedInPubkeyHex: string,
+    contact?: ContactRecord | null
+  ): Promise<MessageReplyPreview> {
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    if (!normalizedTargetEventId) {
+      return {
+        messageId: '',
+        text: UNKNOWN_REPLY_MESSAGE_TEXT,
+        sender: 'them',
+        authorName: 'Unknown',
+        authorPublicKey: '',
+        sentAt: '',
+        eventId: null
+      };
+    }
+
+    const targetMessage = await chatDataService.getMessageByEventId(normalizedTargetEventId);
+    if (!targetMessage) {
+      return {
+        messageId: normalizedTargetEventId,
+        text: UNKNOWN_REPLY_MESSAGE_TEXT,
+        sender: 'them',
+        authorName: 'Unknown',
+        authorPublicKey: '',
+        sentAt: '',
+        eventId: normalizedTargetEventId
+      };
+    }
+
+    const targetAuthorPublicKey =
+      inputSanitizerService.normalizeHexKey(targetMessage.author_public_key) ?? '';
+    const isOwnTargetMessage = targetAuthorPublicKey === loggedInPubkeyHex;
+    const replyContact =
+      contact === undefined ? await contactsService.getContactByPublicKey(chatPubkey) : contact;
+
+    return {
+      messageId: String(targetMessage.id),
+      text: targetMessage.message.trim() || UNKNOWN_REPLY_MESSAGE_TEXT,
+      sender: isOwnTargetMessage ? 'me' : 'them',
+      authorName: isOwnTargetMessage ? 'You' : deriveChatName(replyContact, chatPubkey),
+      authorPublicKey: targetAuthorPublicKey,
+      sentAt: targetMessage.created_at,
+      eventId: normalizedTargetEventId
+    };
   }
 
   async function processIncomingReactionDeletion(
@@ -2714,6 +2786,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
     const receivedRelayStatuses = buildInboundRelayStatuses(extractRelayUrlsFromEvent(wrappedEvent));
     const direction: NostrEventDirection = isSelfSentMessage ? 'out' : 'in';
+    const replyTargetEventId = readReplyTargetEventId(rumorEvent);
 
     if (rumorEvent.kind === NDKKind.EventDeletion) {
       await processIncomingDeletionRumorEvent(rumorEvent, senderPubkeyHex, {
@@ -2796,6 +2869,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
+    const replyPreview = replyTargetEventId
+      ? await buildReplyPreviewFromTargetEvent(
+          replyTargetEventId,
+          chatPubkey,
+          loggedInPubkeyHex,
+          contact
+        )
+      : null;
     const createdMessage = await chatDataService.createMessage({
       chat_public_key: chat.public_key,
       author_public_key: senderPubkeyHex,
@@ -2805,7 +2886,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       meta: {
         source: 'nostr',
         kind: NDKKind.PrivateDirectMessage,
-        wrapper_event_id: wrappedEvent.id ?? ''
+        wrapper_event_id: wrappedEvent.id ?? '',
+        ...(replyPreview ? { reply: replyPreview } : {})
       }
     });
     if (!createdMessage) {
@@ -3284,6 +3366,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Message cannot be empty.');
     }
 
+    const replyTargetEventId = normalizeEventId(options.replyToEventId);
+
     const publishResult = await sendGiftWrappedRumor(
       recipientPublicKey,
       relays,
@@ -3293,7 +3377,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
           senderPubkey,
           normalizedRecipientPubkey,
           message,
-          createdAt
+          createdAt,
+          replyTargetEventId
         );
       },
       options

@@ -60,10 +60,15 @@
           <div
             v-else
             class="thread-message-entry"
-            :class="{ 'thread-message-entry--target': highlightedMessageId === item.message.id }"
+            :class="{
+              'thread-message-entry--target':
+                highlightedMessageId === item.message.id ||
+                highlightedMessageId === item.message.eventId
+            }"
             :data-day-key="item.dayKey"
             :data-day-label="item.dayLabel"
             :data-message-id="item.message.id"
+            :data-message-event-id="item.message.eventId ?? ''"
           >
             <MessageBubble
               :message="item.message"
@@ -364,7 +369,12 @@ async function handleOpenReplyTarget(messageId: string): Promise<void> {
     }
 
     const targetEntry = Array.from(threadBody.querySelectorAll<HTMLElement>('.thread-message-entry'))
-      .find((entry) => entry.dataset.messageId === messageId);
+      .find((entry) => {
+        return (
+          entry.dataset.messageId === messageId ||
+          entry.dataset.messageEventId === messageId
+        );
+      });
 
     if (!targetEntry) {
       return;
