@@ -2299,18 +2299,42 @@ export const useNostrStore = defineStore('nostrStore', () => {
   async function ensureRelayConnections(relayUrls: string[]): Promise<void> {
     ensureRelayStatusListeners();
 
+    const relaysToReconnect = new Map<string, Promise<void>>();
+
     for (const relayUrl of relayUrls) {
       const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
       if (configuredRelayUrls.has(normalizedRelayUrl)) {
+        const existingRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
+        if (existingRelay && !existingRelay.connected) {
+          relaysToReconnect.set(
+            normalizedRelayUrl,
+            existingRelay.connect(INITIAL_CONNECT_TIMEOUT_MS).catch((error) => {
+              console.warn('Failed to reconnect relay', normalizedRelayUrl, error);
+            })
+          );
+        }
         continue;
       }
 
       ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
       configuredRelayUrls.add(normalizedRelayUrl);
+      const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
+      if (addedRelay && !addedRelay.connected) {
+        relaysToReconnect.set(
+          normalizedRelayUrl,
+          addedRelay.connect(INITIAL_CONNECT_TIMEOUT_MS).catch((error) => {
+            console.warn('Failed to connect relay', normalizedRelayUrl, error);
+          })
+        );
+      }
       bumpRelayStatusVersion();
     }
 
     if (hasActivatedPool) {
+      if (relaysToReconnect.size > 0) {
+        await Promise.all(relaysToReconnect.values());
+        bumpRelayStatusVersion();
+      }
       return;
     }
 
@@ -2336,7 +2360,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return 'issue';
     }
 
-    return relay.status >= NDKRelayStatus.CONNECTED ? 'connected' : 'issue';
+    return relay.connected ? 'connected' : 'issue';
   }
 
   async function fetchRelayNip11Info(
