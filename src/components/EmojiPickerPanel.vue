@@ -19,18 +19,15 @@
     <div
       ref="emojiScrollRef"
       class="emoji-picker__scroll"
-      @scroll="handleEmojiScroll"
     >
       <div
-        v-for="group in groupedEmojis"
-        :key="group.key"
+        v-if="activeEmojiGroup"
         class="emoji-picker__group"
-        :data-emoji-category="group.key"
       >
-        <div class="emoji-picker__group-title">{{ group.label }}</div>
+        <div class="emoji-picker__group-title">{{ activeEmojiGroup.label }}</div>
         <div class="emoji-picker__grid">
           <button
-            v-for="entry in group.emojis"
+            v-for="entry in activeEmojiGroup.emojis"
             :key="entry.emoji"
             v-close-popup
             type="button"
@@ -45,19 +42,19 @@
         </div>
       </div>
 
-      <div v-if="groupedEmojis.length === 0" class="emoji-picker__empty">
+      <div v-if="availableEmojiGroups.length === 0" class="emoji-picker__empty">
         No emoji found.
       </div>
     </div>
 
     <div
-      v-if="groupedEmojis.length > 0"
+      v-if="availableEmojiGroups.length > 0"
       class="emoji-picker__tabs"
       role="tablist"
       aria-label="Emoji categories"
     >
       <button
-        v-for="group in groupedEmojis"
+        v-for="group in availableEmojiGroups"
         :key="group.key"
         type="button"
         class="emoji-picker__tab"
@@ -65,7 +62,7 @@
         role="tab"
         :aria-selected="activeEmojiCategoryKey === group.key ? 'true' : 'false'"
         :aria-label="group.label"
-        @click="scrollToEmojiCategory(group.key)"
+        @click="selectEmojiCategory(group.key)"
       >
         <q-icon :name="group.icon" size="18px" />
         <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
@@ -79,8 +76,8 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
-import { filterEmojiEntries, groupEmojiEntries } from 'src/data/topEmojis';
-import type { EmojiCategoryKey } from 'src/data/topEmojis';
+import { EMOJI_GROUPS, filterEmojiEntries, groupEmojiEntries } from 'src/data/topEmojis';
+import type { EmojiCategoryKey, EmojiGroup } from 'src/data/topEmojis';
 
 interface Props {
   width?: string;
@@ -114,92 +111,57 @@ const pickerStyle = computed(() => ({
   '--emoji-picker-item-padding': props.itemPadding
 }));
 
+const isSearching = computed(() => emojiSearch.value.trim().length > 0);
 const filteredEmojis = computed(() => filterEmojiEntries(emojiSearch.value));
-const groupedEmojis = computed(() => groupEmojiEntries(filteredEmojis.value));
+const availableEmojiGroups = computed<EmojiGroup[]>(() => {
+  if (!isSearching.value) {
+    return EMOJI_GROUPS;
+  }
+
+  return groupEmojiEntries(filteredEmojis.value);
+});
+const activeEmojiGroup = computed<EmojiGroup | null>(() => {
+  const groups = availableEmojiGroups.value;
+  if (groups.length === 0) {
+    return null;
+  }
+
+  return groups.find((group) => group.key === activeEmojiCategoryKey.value) ?? groups[0] ?? null;
+});
 
 watch(
-  groupedEmojis,
+  availableEmojiGroups,
   (groups) => {
-    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
+    if (groups.length === 0) {
+      activeEmojiCategoryKey.value = null;
+      return;
+    }
 
-    void nextTick(() => {
-      syncActiveEmojiCategory();
-    });
+    const hasActiveCategory = groups.some((group) => group.key === activeEmojiCategoryKey.value);
+    if (!hasActiveCategory) {
+      activeEmojiCategoryKey.value = groups[0]?.key ?? null;
+    }
+
+    scrollEmojiListToTop();
   },
   { immediate: true }
 );
 
-function getGroupScrollTop(container: HTMLElement, groupElement: HTMLElement): number {
-  const containerTop = container.getBoundingClientRect().top;
-  const groupTop = groupElement.getBoundingClientRect().top;
-  return groupTop - containerTop + container.scrollTop;
-}
-
-function syncActiveEmojiCategory(): void {
-  const container = emojiScrollRef.value;
-  const groups = groupedEmojis.value;
-
-  if (groups.length === 0) {
-    activeEmojiCategoryKey.value = null;
-    return;
-  }
-
-  if (!container) {
-    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
-    return;
-  }
-
-  const groupElements = Array.from(
-    container.querySelectorAll<HTMLElement>('[data-emoji-category]')
-  );
-
-  if (groupElements.length === 0) {
-    activeEmojiCategoryKey.value = groups[0]?.key ?? null;
-    return;
-  }
-
-  const scrollThreshold = container.scrollTop + 18;
-  let nextActiveCategory = groupElements[0]?.dataset.emojiCategory as EmojiCategoryKey | undefined;
-
-  for (const groupElement of groupElements) {
-    const groupTop = getGroupScrollTop(container, groupElement);
-    if (groupTop <= scrollThreshold) {
-      nextActiveCategory = groupElement.dataset.emojiCategory as EmojiCategoryKey | undefined;
-      continue;
+function scrollEmojiListToTop(): void {
+  void nextTick(() => {
+    if (emojiScrollRef.value) {
+      emojiScrollRef.value.scrollTop = 0;
     }
-
-    break;
-  }
-
-  activeEmojiCategoryKey.value = nextActiveCategory ?? groups[0]?.key ?? null;
-}
-
-function handleEmojiScroll(): void {
-  syncActiveEmojiCategory();
-}
-
-function scrollToEmojiCategory(categoryKey: EmojiCategoryKey): void {
-  const container = emojiScrollRef.value;
-
-  if (!container) {
-    activeEmojiCategoryKey.value = categoryKey;
-    return;
-  }
-
-  const groupElement = container.querySelector<HTMLElement>(
-    `[data-emoji-category="${categoryKey}"]`
-  );
-
-  if (!groupElement) {
-    return;
-  }
-
-  const groupTop = getGroupScrollTop(container, groupElement);
-  activeEmojiCategoryKey.value = categoryKey;
-  container.scrollTo({
-    top: Math.max(groupTop - 4, 0),
-    behavior: 'smooth'
   });
+}
+
+function selectEmojiCategory(categoryKey: EmojiCategoryKey): void {
+  if (!availableEmojiGroups.value.some((group) => group.key === categoryKey)) {
+    return;
+  }
+
+  activeEmojiCategoryKey.value = categoryKey;
+  scrollEmojiListToTop();
 }
 
 function handleSelect(emoji: string): void {
@@ -213,11 +175,7 @@ function reset(): void {
     emojiScrollRef.value.scrollTop = 0;
   }
 
-  activeEmojiCategoryKey.value = groupedEmojis.value[0]?.key ?? null;
-
-  void nextTick(() => {
-    syncActiveEmojiCategory();
-  });
+  activeEmojiCategoryKey.value = EMOJI_GROUPS[0]?.key ?? null;
 }
 
 defineExpose({
