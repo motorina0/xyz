@@ -60,22 +60,26 @@
               </div>
 
               <div class="emoji-menu__scroll">
-                <div class="emoji-grid">
-                  <button
-                    v-for="entry in filteredEmojis"
-                    :key="entry.emoji"
-                    type="button"
-                    class="emoji-grid__item"
-                    v-close-popup
-                    @mousedown.prevent
-                    @click="insertEmoji(entry.emoji)"
-                    :title="entry.label"
-                    :aria-label="entry.label"
-                  >
-                    <span class="emoji-grid__char">{{ entry.emoji }}</span>
-                  </button>
+                <div v-for="group in groupedEmojis" :key="group.key" class="emoji-group">
+                  <div class="emoji-group__title">{{ group.label }}</div>
+                  <div class="emoji-grid">
+                    <button
+                      v-for="entry in group.emojis"
+                      :key="entry.emoji"
+                      type="button"
+                      class="emoji-grid__item"
+                      v-close-popup
+                      @mousedown.prevent
+                      @click="insertEmoji(entry.emoji)"
+                      :title="entry.label"
+                      :aria-label="entry.label"
+                    >
+                      <span class="emoji-grid__char">{{ entry.emoji }}</span>
+                      <span class="emoji-grid__label">{{ entry.label }}</span>
+                    </button>
+                  </div>
                 </div>
-                <div v-if="filteredEmojis.length === 0" class="emoji-menu__empty">
+                <div v-if="groupedEmojis.length === 0" class="emoji-menu__empty">
                   No emoji found.
                 </div>
               </div>
@@ -91,7 +95,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { TOP_500_EMOJIS } from 'src/data/topEmojis';
+import { filterEmojiEntries, groupEmojiEntries } from 'src/data/topEmojis';
 import type { MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -110,15 +114,8 @@ const emit = defineEmits<{
   (event: 'cancel-reply'): void;
 }>();
 
-const filteredEmojis = computed(() => {
-  const query = emojiSearch.value.trim().toLowerCase();
-
-  if (!query) {
-    return TOP_500_EMOJIS;
-  }
-
-  return TOP_500_EMOJIS.filter((entry) => entry.label.toLowerCase().includes(query));
-});
+const filteredEmojis = computed(() => filterEmojiEntries(emojiSearch.value));
+const groupedEmojis = computed(() => groupEmojiEntries(filteredEmojis.value));
 
 function getInputElement(): HTMLInputElement | HTMLTextAreaElement | null {
   return inputRef.value?.$el.querySelector('textarea, input') ?? null;
@@ -270,11 +267,27 @@ function handleSend(): void {
   width: 100%;
 }
 
+.emoji-group {
+  padding: 8px 8px 0;
+}
+
+.emoji-group:last-child {
+  padding-bottom: 8px;
+}
+
+.emoji-group__title {
+  padding: 0 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--q-primary) 58%, var(--tg-text) 42%);
+}
+
 .emoji-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 4px;
-  padding: 8px;
 }
 
 .emoji-grid__item {

@@ -40,20 +40,24 @@
           </div>
 
           <div class="bubble__emoji-picker-scroll">
-            <div class="bubble__emoji-grid">
-              <button
-                v-for="entry in filteredEmojiEntries"
-                :key="entry.emoji"
-                type="button"
-                class="bubble__emoji-grid-item"
-                @click="handleEmojiReaction(entry.emoji)"
-                :title="entry.label"
-                :aria-label="entry.label"
-              >
-                <span class="bubble__emoji-grid-char">{{ entry.emoji }}</span>
-              </button>
+            <div v-for="group in groupedEmojiEntries" :key="group.key" class="bubble__emoji-group">
+              <div class="bubble__emoji-group-title">{{ group.label }}</div>
+              <div class="bubble__emoji-grid">
+                <button
+                  v-for="entry in group.emojis"
+                  :key="entry.emoji"
+                  type="button"
+                  class="bubble__emoji-grid-item"
+                  @click="handleEmojiReaction(entry.emoji)"
+                  :title="entry.label"
+                  :aria-label="entry.label"
+                >
+                  <span class="bubble__emoji-grid-char">{{ entry.emoji }}</span>
+                  <span class="bubble__emoji-grid-label">{{ entry.label }}</span>
+                </button>
+              </div>
             </div>
-            <div v-if="filteredEmojiEntries.length === 0" class="bubble__emoji-picker-empty">
+            <div v-if="groupedEmojiEntries.length === 0" class="bubble__emoji-picker-empty">
               No emoji found.
             </div>
           </div>
@@ -297,7 +301,7 @@
 import { computed, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
-import { TOP_500_EMOJIS } from 'src/data/topEmojis';
+import { TOP_500_EMOJIS, filterEmojiEntries, groupEmojiEntries } from 'src/data/topEmojis';
 import type { Message, MessageRelayStatus, MessageReplyPreview } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
@@ -398,15 +402,8 @@ const replyPreview = computed(() => {
 const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
 const SINGLE_EMOJI_PATTERN =
   /^(?:\p{Regional_Indicator}{2}|(?:[#*0-9]\uFE0F?\u20E3)|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)$/u;
-const filteredEmojiEntries = computed(() => {
-  const query = emojiSearch.value.trim().toLowerCase();
-
-  if (!query) {
-    return TOP_500_EMOJIS;
-  }
-
-  return TOP_500_EMOJIS.filter((entry) => entry.label.toLowerCase().includes(query));
-});
+const filteredEmojiEntries = computed(() => filterEmojiEntries(emojiSearch.value));
+const groupedEmojiEntries = computed(() => groupEmojiEntries(filteredEmojiEntries.value));
 const isSingleEmojiMessage = computed(() => {
   const trimmedText = props.message.text.trim();
   return trimmedText.length > 0 && SINGLE_EMOJI_PATTERN.test(trimmedText);
@@ -841,19 +838,34 @@ const formattedInfoTime = computed(() => {
   padding-right: 4px;
 }
 
+.bubble__emoji-group + .bubble__emoji-group {
+  margin-top: 10px;
+}
+
+.bubble__emoji-group-title {
+  margin-bottom: 8px;
+  padding: 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--q-primary) 58%, currentColor 42%);
+}
+
 .bubble__emoji-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
 .bubble__emoji-grid-item {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 40px;
-  padding: 0;
+  min-height: 66px;
+  padding: 6px 4px;
   border: 0;
   border-radius: 12px;
   background: color-mix(in srgb, #ffffff 38%, transparent);
@@ -871,6 +883,14 @@ const formattedInfoTime = computed(() => {
 .bubble__emoji-grid-char {
   font-size: 22px;
   line-height: 1;
+}
+
+.bubble__emoji-grid-label {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+  color: color-mix(in srgb, currentColor 80%, transparent);
 }
 
 .bubble__emoji-picker-empty {
