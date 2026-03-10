@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService } from 'src/services/chatDataService';
+import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -19,6 +20,31 @@ import {
 } from 'src/utils/messageReactions';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
+
+interface SendMessageOptions {
+  relayUrls?: string[];
+}
+
+export class MissingContactRelaysError extends Error {
+  readonly code = 'missing-contact-relays';
+  readonly chatPublicKey: string;
+
+  constructor(chatPublicKey: string) {
+    super('Inbound relays not found for this contact.');
+    this.name = 'MissingContactRelaysError';
+    this.chatPublicKey = chatPublicKey;
+  }
+}
+
+export function isMissingContactRelaysError(error: unknown): error is MissingContactRelaysError {
+  return (
+    error instanceof MissingContactRelaysError ||
+    (typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code?: unknown }).code === 'missing-contact-relays')
+  );
+}
 
 function normalizeChatIdentifier(value: string | null | undefined): string | null {
   if (typeof value !== 'string') {
@@ -298,7 +324,8 @@ export const useMessageStore = defineStore('messageStore', () => {
   async function sendMessage(
     chatId: string,
     text: string,
-    replyTo: MessageReplyPreview | null = null
+    replyTo: MessageReplyPreview | null = null,
+    options: SendMessageOptions = {}
   ): Promise<Message | null> {
     const cleanText = text.trim();
 
@@ -317,7 +344,17 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
+    const recipientRelayUrls = Array.isArray(options.relayUrls)
+      ? inputSanitizerService.normalizeStringArray(options.relayUrls)
+      : await resolveRecipientRelayUrls(chat.public_key);
+    if (recipientRelayUrls.length === 0) {
+      if (Array.isArray(options.relayUrls)) {
+        throw new Error('Cannot send encrypted event without application relays.');
+      }
+
+      throw new MissingContactRelaysError(chat.public_key);
+    }
+
     const replyTargetEventId = await resolveReplyTargetEventId(replyTo);
     const replyPreview = replyTo
       ? {
@@ -347,13 +384,10 @@ export const useMessageStore = defineStore('messageStore', () => {
     messagesByChat.value[normalizedChatId] = [...messagesByChat.value[normalizedChatId], newMessage];
     let sendError: unknown = null;
 
-    // const allRelays = await relaysService.listAllRelays();
-    
     try {
       await nostrStore.sendDirectMessage(
         chat.public_key,
         newMessage.text,
-        // recipientRelayUrls.concat(allRelays),
         recipientRelayUrls,
         {
           localMessageId: created.id,

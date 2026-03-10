@@ -21,8 +21,14 @@ import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
-import { useMessageStore } from 'src/stores/messageStore';
+import {
+  isMissingContactRelaysError,
+  useMessageStore
+} from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { useRelayStore } from 'src/stores/relayStore';
+import type { MessageReplyPreview } from 'src/types/chat';
+import { confirmUseAppRelaysDialog } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -31,6 +37,9 @@ const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
+const relayStore = useRelayStore();
+
+relayStore.init();
 
 const activeChatId = computed(() => {
   const rawChatId = route.params.pubkey;
@@ -90,13 +99,38 @@ function goBack(): void {
   }
 }
 
-async function handleSend(text: string): Promise<void> {
+async function handleSend(payload: { text: string; replyTo: MessageReplyPreview | null }): Promise<void> {
   try {
     if (!activeChatId.value) {
       return;
     }
 
-    const created = await messageStore.sendMessage(activeChatId.value, text);
+    let created;
+    try {
+      created = await messageStore.sendMessage(
+        activeChatId.value,
+        payload.text,
+        payload.replyTo
+      );
+    } catch (error) {
+      if (!isMissingContactRelaysError(error)) {
+        throw error;
+      }
+
+      const shouldUseAppRelays = await confirmUseAppRelaysDialog($q);
+      if (!shouldUseAppRelays) {
+        return;
+      }
+
+      created = await messageStore.sendMessage(
+        activeChatId.value,
+        payload.text,
+        payload.replyTo,
+        {
+          relayUrls: relayStore.relays
+        }
+      );
+    }
 
     if (created) {
       await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
