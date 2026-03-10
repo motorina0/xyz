@@ -2788,6 +2788,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const direction: NostrEventDirection = isSelfSentMessage ? 'out' : 'in';
     const replyTargetEventId = readReplyTargetEventId(rumorEvent);
 
+    console.log('### rumorEvent', await rumorEvent.toNostrEvent());
     if (rumorEvent.kind === NDKKind.EventDeletion) {
       await processIncomingDeletionRumorEvent(rumorEvent, senderPubkeyHex, {
         uiThrottleMs

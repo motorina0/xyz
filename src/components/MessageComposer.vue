@@ -42,7 +42,13 @@
             aria-label="Add emoji"
             @click="rememberSelection"
           >
-            <q-menu anchor="top right" self="bottom right" @show="handleEmojiMenuShow">
+            <q-menu
+              v-model="isEmojiMenuOpen"
+              anchor="top right"
+              self="bottom right"
+              @show="handleEmojiMenuShow"
+              @hide="handleEmojiMenuHide"
+            >
               <EmojiPickerPanel
                 ref="emojiPickerRef"
                 width="360px"
@@ -63,12 +69,12 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref } from 'vue';
+import { nextTick, ref, watch } from 'vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import type { MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
-defineProps<{
+const props = defineProps<{
   replyTo?: MessageReplyPreview | null;
 }>();
 
@@ -77,6 +83,8 @@ const inputRef = ref<{ $el: HTMLElement } | null>(null);
 const selectionStart = ref<number | null>(null);
 const selectionEnd = ref<number | null>(null);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
+const isEmojiMenuOpen = ref(false);
+const shouldRefocusAfterEmojiMenuHide = ref(false);
 
 const emit = defineEmits<{
   (event: 'send', payload: { text: string }): void;
@@ -85,6 +93,25 @@ const emit = defineEmits<{
 
 function getInputElement(): HTMLInputElement | HTMLTextAreaElement | null {
   return inputRef.value?.$el.querySelector('textarea, input') ?? null;
+}
+
+function focusInputAtEnd(): void {
+  const nextCursor = draft.value.length;
+
+  void nextTick(() => {
+    window.setTimeout(() => {
+      const inputElement = getInputElement();
+
+      if (!inputElement) {
+        return;
+      }
+
+      inputElement.focus();
+      inputElement.setSelectionRange(nextCursor, nextCursor);
+      selectionStart.value = nextCursor;
+      selectionEnd.value = nextCursor;
+    }, 0);
+  });
 }
 
 function rememberSelection(): void {
@@ -112,17 +139,7 @@ function insertEmoji(emoji: string): void {
     const nextCursor = start + emoji.length;
     selectionStart.value = nextCursor;
     selectionEnd.value = nextCursor;
-
-    void nextTick(() => {
-      const inputElement = getInputElement();
-
-      if (!inputElement) {
-        return;
-      }
-
-      inputElement.focus();
-      inputElement.setSelectionRange(nextCursor, nextCursor);
-    });
+    shouldRefocusAfterEmojiMenuHide.value = true;
   } catch (error) {
     reportUiError('Failed to insert emoji', error);
   }
@@ -132,6 +149,15 @@ function handleEmojiMenuShow(): void {
   void nextTick(() => {
     emojiPickerRef.value?.reset();
   });
+}
+
+function handleEmojiMenuHide(): void {
+  if (!shouldRefocusAfterEmojiMenuHide.value) {
+    return;
+  }
+
+  shouldRefocusAfterEmojiMenuHide.value = false;
+  focusInputAtEnd();
 }
 
 function handleSend(): void {
@@ -150,6 +176,21 @@ function handleSend(): void {
     reportUiError('Failed to submit message input', error);
   }
 }
+
+watch(
+  () => props.replyTo?.messageId ?? null,
+  (nextMessageId, previousMessageId) => {
+    if (!nextMessageId || nextMessageId === previousMessageId) {
+      return;
+    }
+
+    focusInputAtEnd();
+  }
+);
+
+defineExpose({
+  focusInputAtEnd
+});
 </script>
 
 <style scoped>

@@ -84,6 +84,7 @@
       </div>
 
       <MessageComposer
+        ref="composerRef"
         :reply-to="activeReply"
         @send="handleSend"
         @cancel-reply="handleCancelReply"
@@ -143,6 +144,7 @@ const emit = defineEmits<{
 }>();
 
 const threadBodyRef = ref<HTMLElement | null>(null);
+const composerRef = ref<{ focusInputAtEnd: () => void } | null>(null);
 const stickyDayLabel = ref('');
 const activeReply = ref<MessageReplyPreview | null>(null);
 const highlightedMessageId = ref<string | null>(null);
@@ -317,9 +319,18 @@ function handleReplyToMessage(message: Message): void {
       sentAt: message.sentAt,
       eventId: message.eventId
     };
+    queueComposerFocus();
   } catch (error) {
     reportUiError('Failed to prepare reply target', error);
   }
+}
+
+function queueComposerFocus(): void {
+  void nextTick(() => {
+    window.setTimeout(() => {
+      composerRef.value?.focusInputAtEnd();
+    }, 0);
+  });
 }
 
 function handleReactToMessage(payload: { message: Message; emoji: string }): void {
