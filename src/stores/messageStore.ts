@@ -462,6 +462,14 @@ export const useMessageStore = defineStore('messageStore', () => {
     messageId: string,
     reactionToRemove: MessageReaction
   ): Promise<Message | null> {
+    const loggedInPublicKey = getLoggedInPublicKey();
+    if (
+      !loggedInPublicKey ||
+      normalizeChatIdentifier(reactionToRemove.reactorPublicKey) !== loggedInPublicKey
+    ) {
+      return getMessageFromState(chatId, messageId);
+    }
+
     return updateMessageReactions(chatId, messageId, (reactions) => {
       return reactions.filter((reaction) => {
         return !(

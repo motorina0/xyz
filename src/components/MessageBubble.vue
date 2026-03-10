@@ -324,6 +324,7 @@ const emit = defineEmits<{
 const $q = useQuasar();
 const nostrStore = useNostrStore();
 const isMine = computed(() => props.message.sender === 'me');
+const loggedInPublicKey = computed(() => nostrStore.getLoggedInPublicKeyHex()?.toLowerCase() ?? '');
 const isActionMenuOpen = ref(false);
 const isEmojiPickerMenuOpen = ref(false);
 const isInfoDialogOpen = ref(false);
@@ -428,6 +429,10 @@ const messageReactions = computed<MessageReaction[]>(() => {
 
   return candidate.filter(isMessageReaction);
 });
+
+function canRemoveReaction(reaction: MessageReaction): boolean {
+  return reaction.reactorPublicKey.trim().toLowerCase() === loggedInPublicKey.value;
+}
 const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
 const SINGLE_EMOJI_PATTERN =
   /^(?:\p{Regional_Indicator}{2}|(?:[#*0-9]\uFE0F?\u20E3)|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)$/u;
@@ -648,6 +653,10 @@ function handleEmojiReaction(emoji: string): void {
 }
 
 function handleRemoveReaction(reaction: MessageReaction): void {
+  if (!canRemoveReaction(reaction)) {
+    return;
+  }
+
   try {
     emit('remove-reaction', {
       message: props.message,
