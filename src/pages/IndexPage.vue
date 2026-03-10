@@ -40,16 +40,18 @@
         class="thread-panel"
         :class="{ 'thread-panel--mobile': isMobile }"
       >
-        <ChatThread
-          :chat="activeChat"
-          :messages="currentMessages"
-          :is-initializing="isThreadInitializing"
-          :show-back-button="isMobile"
-          @send="handleSend"
-          @back="handleBackToChatList"
-          @open-profile="handleOpenProfile"
-          @refresh-chat="handleRefreshChat"
-        />
+      <ChatThread
+        :chat="activeChat"
+        :messages="currentMessages"
+        :is-initializing="isThreadInitializing"
+        :show-back-button="isMobile"
+        @send="handleSend"
+        @back="handleBackToChatList"
+        @open-profile="handleOpenProfile"
+        @react="handleReactToMessage"
+        @remove-reaction="handleRemoveReaction"
+        @refresh-chat="handleRefreshChat"
+      />
       </section>
     </div>
   </q-page>
@@ -65,7 +67,7 @@ import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { MessageReplyPreview } from 'src/types/chat';
+import type { Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -143,6 +145,29 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
     }
   } catch (error) {
     reportUiError('Failed to send chat message', error, 'Failed to send message.');
+  }
+}
+
+async function handleReactToMessage(payload: { message: Message; emoji: string }): Promise<void> {
+  try {
+    await messageStore.addReaction(payload.message.chatId, payload.message.id, payload.emoji);
+  } catch (error) {
+    reportUiError('Failed to add message reaction', error, 'Failed to add reaction.');
+  }
+}
+
+async function handleRemoveReaction(payload: {
+  message: Message;
+  reaction: MessageReaction;
+}): Promise<void> {
+  try {
+    await messageStore.removeReaction(
+      payload.message.chatId,
+      payload.message.id,
+      payload.reaction
+    );
+  } catch (error) {
+    reportUiError('Failed to remove message reaction', error, 'Failed to remove reaction.');
   }
 }
 

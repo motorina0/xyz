@@ -1,9 +1,10 @@
 <template>
   <div class="bubble-row" :class="isMine ? 'bubble-row--mine' : 'bubble-row--their'">
-    <div
-      class="bubble"
-      :class="isMine ? 'bubble--mine' : 'bubble--their'"
-    >
+    <div class="bubble-stack" :class="isMine ? 'bubble-stack--mine' : 'bubble-stack--their'">
+      <div
+        class="bubble"
+        :class="isMine ? 'bubble--mine' : 'bubble--their'"
+      >
       <q-btn
         flat
         dense
@@ -127,32 +128,47 @@
         </p>
       </div>
 
-      <div class="bubble__meta">
-        <span class="bubble__time">{{ formattedTime }}</span>
-        <div
-          v-if="isMine && hasRelayStatuses"
-          class="bubble__status-hitbox"
-          tabindex="0"
-          role="button"
-          aria-haspopup="dialog"
-          :aria-expanded="isStatusDialogOpen ? 'true' : 'false'"
-          @click.stop="openStatusDialog"
-          @keydown.enter.prevent="openStatusDialog"
-          @keydown.space.prevent="openStatusDialog"
-        >
+        <div class="bubble__meta">
+          <span class="bubble__time">{{ formattedTime }}</span>
           <div
-            class="bubble__status"
-            :class="{ 'bubble__status--pending': hasPendingRelayStatuses }"
+            v-if="isMine && hasRelayStatuses"
+            class="bubble__status-hitbox"
+            tabindex="0"
+            role="button"
+            aria-haspopup="dialog"
+            :aria-expanded="isStatusDialogOpen ? 'true' : 'false'"
+            @click.stop="openStatusDialog"
+            @keydown.enter.prevent="openStatusDialog"
+            @keydown.space.prevent="openStatusDialog"
           >
-            <span
-              v-for="segment in statusSegments"
-              :key="segment.key"
-              class="bubble__status-segment"
-              :class="segment.className"
-              :style="{ flex: `${segment.weight} 1 0` }"
-            />
+            <div
+              class="bubble__status"
+              :class="{ 'bubble__status--pending': hasPendingRelayStatuses }"
+            >
+              <span
+                v-for="segment in statusSegments"
+                :key="segment.key"
+                class="bubble__status-segment"
+                :class="segment.className"
+                :style="{ flex: `${segment.weight} 1 0` }"
+              />
+            </div>
           </div>
         </div>
+      </div>
+
+      <div v-if="messageReactions.length > 0" class="bubble__reactions">
+        <button
+          v-for="(reaction, index) in messageReactions"
+          :key="`${reaction.emoji}-${reaction.reactorPublicKey}-${index}`"
+          type="button"
+          class="bubble__reaction-chip"
+          :aria-label="`Remove ${reaction.name} reaction`"
+          @click.stop="handleRemoveReaction(reaction)"
+        >
+          <span class="bubble__reaction-emoji">{{ reaction.emoji }}</span>
+          <AppTooltip>{{ reaction.name }}</AppTooltip>
+        </button>
       </div>
     </div>
   </div>
@@ -280,9 +296,15 @@
 import { computed, nextTick, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
+import AppTooltip from 'src/components/AppTooltip.vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS } from 'src/data/topEmojis';
-import type { Message, MessageRelayStatus, MessageReplyPreview } from 'src/types/chat';
+import type {
+  Message,
+  MessageReaction,
+  MessageRelayStatus,
+  MessageReplyPreview
+} from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
 import { reportUiError } from 'src/utils/uiErrorHandler';
@@ -295,6 +317,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'reply', message: Message): void;
   (event: 'open-reply-target', messageId: string): void;
+  (event: 'react', payload: { message: Message; emoji: string }): void;
+  (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
 }>();
 
 const $q = useQuasar();
@@ -319,6 +343,22 @@ interface StatusListItem {
   scope: 'recipient' | 'self';
   status: 'published' | 'failed' | 'pending';
   retryable: boolean;
+}
+
+function isMessageReaction(value: unknown): value is MessageReaction {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<MessageReaction>;
+  return (
+    typeof candidate.emoji === 'string' &&
+    candidate.emoji.trim().length > 0 &&
+    typeof candidate.name === 'string' &&
+    candidate.name.trim().length > 0 &&
+    typeof candidate.reactorPublicKey === 'string' &&
+    candidate.reactorPublicKey.trim().length > 0
+  );
 }
 
 function isMessageReplyPreview(value: unknown): value is MessageReplyPreview {
@@ -379,6 +419,14 @@ const retryingRelayKeys = ref<string[]>([]);
 const replyPreview = computed(() => {
   const candidate = props.message.meta.reply;
   return isMessageReplyPreview(candidate) ? candidate : null;
+});
+const messageReactions = computed<MessageReaction[]>(() => {
+  const candidate = props.message.meta.reactions;
+  if (!Array.isArray(candidate)) {
+    return [];
+  }
+
+  return candidate.filter(isMessageReaction);
 });
 const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
 const SINGLE_EMOJI_PATTERN =
@@ -587,15 +635,27 @@ function handleOpenReplyTarget(): void {
 }
 
 function handleEmojiReaction(emoji: string): void {
-  isActionMenuOpen.value = false;
-  isEmojiPickerMenuOpen.value = false;
+  try {
+    isActionMenuOpen.value = false;
+    isEmojiPickerMenuOpen.value = false;
+    emit('react', {
+      message: props.message,
+      emoji
+    });
+  } catch (error) {
+    reportUiError('Failed to emit message reaction', error, 'Failed to add reaction.');
+  }
+}
 
-  $q.notify({
-    type: 'info',
-    message: `Reaction ${emoji} is not implemented yet.`,
-    position: 'top',
-    timeout: 1800
-  });
+function handleRemoveReaction(reaction: MessageReaction): void {
+  try {
+    emit('remove-reaction', {
+      message: props.message,
+      reaction
+    });
+  } catch (error) {
+    reportUiError('Failed to emit message reaction removal', error, 'Failed to remove reaction.');
+  }
 }
 
 function handleForward(): void {
@@ -669,6 +729,20 @@ const formattedInfoTime = computed(() => {
   margin-bottom: 10px;
 }
 
+.bubble-stack {
+  display: flex;
+  flex-direction: column;
+  max-width: min(82%, 560px);
+}
+
+.bubble-stack--mine {
+  align-items: flex-end;
+}
+
+.bubble-stack--their {
+  align-items: flex-start;
+}
+
 .bubble-row--mine {
   justify-content: flex-end;
 }
@@ -679,7 +753,7 @@ const formattedInfoTime = computed(() => {
 
 .bubble {
   position: relative;
-  max-width: min(82%, 560px);
+  max-width: 100%;
   border-radius: 16px;
   padding: 10px 36px 10px 12px;
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
@@ -809,6 +883,40 @@ const formattedInfoTime = computed(() => {
 .bubble__quick-reaction--more {
   color: color-mix(in srgb, currentColor 76%, #5b6f86 24%);
   font-size: 0;
+}
+
+.bubble__reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bubble__reaction-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--tg-sidebar) 88%, transparent);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  transition:
+    transform 0.18s ease,
+    background-color 0.18s ease;
+}
+
+.bubble__reaction-chip:hover {
+  transform: translateY(-1px);
+  background: color-mix(in srgb, var(--q-primary) 16%, var(--tg-sidebar) 84%);
+}
+
+.bubble__reaction-emoji {
+  font-size: 16px;
+  line-height: 1;
 }
 
 .bubble__reply-preview-accent {

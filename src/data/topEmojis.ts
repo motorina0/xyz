@@ -566,4 +566,13 @@ export function groupEmojiEntries(entries: readonly EmojiOption[]): EmojiGroup[]
   })).filter((group) => group.emojis.length > 0);
 }
 
+export function getEmojiEntryByValue(emoji: string): EmojiOption | null {
+  const normalizedEmoji = emoji.trim();
+  if (!normalizedEmoji) {
+    return null;
+  }
+
+  return TOP_500_EMOJIS.find((entry) => entry.emoji === normalizedEmoji) ?? null;
+}
+
 export const EMOJI_GROUPS = groupEmojiEntries(TOP_500_EMOJIS);

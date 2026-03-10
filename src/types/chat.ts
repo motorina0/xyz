@@ -26,8 +26,15 @@ export interface MessageReplyPreview {
   eventId: string | null;
 }
 
+export interface MessageReaction {
+  emoji: string;
+  name: string;
+  reactorPublicKey: string;
+}
+
 export interface MessageMetadata {
   reply?: MessageReplyPreview;
+  reactions?: MessageReaction[];
   [key: string]: unknown;
 }
 

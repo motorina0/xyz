@@ -1,10 +1,16 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
+import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService } from 'src/services/chatDataService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { Message, MessageReplyPreview, NostrEventEntry } from 'src/types/chat';
+import type {
+  Message,
+  MessageReaction,
+  MessageReplyPreview,
+  NostrEventEntry
+} from 'src/types/chat';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 
@@ -15,6 +21,59 @@ function normalizeChatIdentifier(value: string | null | undefined): string | nul
 
   const normalizedValue = value.trim().toLowerCase();
   return normalizedValue || null;
+}
+
+function getLoggedInPublicKey(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return normalizeChatIdentifier(window.localStorage.getItem('npub'));
+}
+
+function isMessageReaction(value: unknown): value is MessageReaction {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<MessageReaction>;
+  return (
+    typeof candidate.emoji === 'string' &&
+    candidate.emoji.trim().length > 0 &&
+    typeof candidate.name === 'string' &&
+    candidate.name.trim().length > 0 &&
+    typeof candidate.reactorPublicKey === 'string' &&
+    candidate.reactorPublicKey.trim().length > 0
+  );
+}
+
+function normalizeMessageReactions(value: unknown): MessageReaction[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .filter(isMessageReaction)
+    .map((reaction) => ({
+      emoji: reaction.emoji.trim(),
+      name: reaction.name.trim(),
+      reactorPublicKey: reaction.reactorPublicKey.trim().toLowerCase()
+    }));
+}
+
+function buildMetaWithReactions(
+  meta: Record<string, unknown>,
+  reactions: MessageReaction[]
+): Record<string, unknown> {
+  const nextMeta = { ...meta };
+
+  if (reactions.length === 0) {
+    delete nextMeta.reactions;
+    return nextMeta;
+  }
+
+  nextMeta.reactions = reactions.map((reaction) => ({ ...reaction }));
+  return nextMeta;
 }
 
 function mapMessageRowToMessage(
@@ -120,6 +179,17 @@ export const useMessageStore = defineStore('messageStore', () => {
     const nextMessages = [...existingMessages];
     nextMessages[existingIndex] = message;
     messagesByChat.value[normalizedChatId] = nextMessages;
+  }
+
+  function getMessageFromState(chatId: string, messageId: string): Message | null {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return null;
+    }
+
+    return (
+      messagesByChat.value[normalizedChatId]?.find((message) => message.id === messageId) ?? null
+    );
   }
 
   function upsertMessageInState(chatId: string, message: Message): void {
@@ -291,6 +361,110 @@ export const useMessageStore = defineStore('messageStore', () => {
     return finalMessage;
   }
 
+  async function updateMessageReactions(
+    chatId: string,
+    messageId: string,
+    transform: (reactions: MessageReaction[], loggedInPublicKey: string) => MessageReaction[]
+  ): Promise<Message | null> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedMessageId = Number.parseInt(messageId, 10);
+    const loggedInPublicKey = getLoggedInPublicKey();
+
+    if (!normalizedChatId || !Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0) {
+      return null;
+    }
+
+    if (!loggedInPublicKey) {
+      return null;
+    }
+
+    await chatDataService.init();
+    const existingRow = await chatDataService.getMessageById(normalizedMessageId);
+    if (!existingRow) {
+      return null;
+    }
+
+    const currentReactions = normalizeMessageReactions(existingRow.meta.reactions);
+    const nextReactions = transform(currentReactions, loggedInPublicKey);
+    const noChanges =
+      currentReactions.length === nextReactions.length &&
+      currentReactions.every((reaction, index) => {
+        const nextReaction = nextReactions[index];
+        return (
+          nextReaction?.emoji === reaction.emoji &&
+          nextReaction?.name === reaction.name &&
+          nextReaction?.reactorPublicKey === reaction.reactorPublicKey
+        );
+      });
+
+    if (noChanges) {
+      return getMessageFromState(normalizedChatId, String(normalizedMessageId));
+    }
+
+    const updatedRow = await chatDataService.updateMessageMeta(
+      normalizedMessageId,
+      buildMetaWithReactions(existingRow.meta, nextReactions)
+    );
+    if (!updatedRow) {
+      return null;
+    }
+
+    const updatedMessage = await hydrateMessageRow(updatedRow, normalizedChatId);
+    replaceMessageInState(normalizedChatId, updatedMessage);
+    return updatedMessage;
+  }
+
+  async function addReaction(
+    chatId: string,
+    messageId: string,
+    emoji: string
+  ): Promise<Message | null> {
+    const normalizedEmoji = emoji.trim();
+    if (!normalizedEmoji) {
+      return null;
+    }
+
+    return updateMessageReactions(chatId, messageId, (reactions, loggedInPublicKey) => {
+      const alreadyExists = reactions.some((reaction) => {
+        return (
+          reaction.emoji === normalizedEmoji &&
+          normalizeChatIdentifier(reaction.reactorPublicKey) === loggedInPublicKey
+        );
+      });
+
+      if (alreadyExists) {
+        return reactions;
+      }
+
+      const emojiEntry = getEmojiEntryByValue(normalizedEmoji);
+      return [
+        ...reactions,
+        {
+          emoji: normalizedEmoji,
+          name: emojiEntry?.label ?? normalizedEmoji,
+          reactorPublicKey: loggedInPublicKey
+        }
+      ];
+    });
+  }
+
+  async function removeReaction(
+    chatId: string,
+    messageId: string,
+    reactionToRemove: MessageReaction
+  ): Promise<Message | null> {
+    return updateMessageReactions(chatId, messageId, (reactions) => {
+      return reactions.filter((reaction) => {
+        return !(
+          reaction.emoji === reactionToRemove.emoji &&
+          reaction.name === reactionToRemove.name &&
+          normalizeChatIdentifier(reaction.reactorPublicKey) ===
+            normalizeChatIdentifier(reactionToRemove.reactorPublicKey)
+        );
+      });
+    });
+  }
+
   function removeChatMessages(chatId: string): void {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -313,6 +487,8 @@ export const useMessageStore = defineStore('messageStore', () => {
     reloadLoadedMessages,
     getMessages,
     sendMessage,
+    addReaction,
+    removeReaction,
     removeChatMessages,
     upsertPersistedMessage,
     refreshPersistedMessage

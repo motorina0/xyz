@@ -69,6 +69,8 @@
               :message="item.message"
               :contact-name="chat.name"
               @reply="handleReplyToMessage"
+              @react="handleReactToMessage"
+              @remove-reaction="handleRemoveReaction"
               @open-reply-target="handleOpenReplyTarget"
             />
           </div>
@@ -108,7 +110,7 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
-import type { Chat, Message, MessageReplyPreview } from 'src/types/chat';
+import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = withDefaults(
@@ -129,6 +131,8 @@ const emit = defineEmits<{
   (event: 'back'): void;
   (event: 'open-profile', publicKey: string): void;
   (event: 'refresh-chat', chatId: string): void;
+  (event: 'react', payload: { message: Message; emoji: string }): void;
+  (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
 }>();
 
 const threadBodyRef = ref<HTMLElement | null>(null);
@@ -308,6 +312,25 @@ function handleReplyToMessage(message: Message): void {
     };
   } catch (error) {
     reportUiError('Failed to prepare reply target', error);
+  }
+}
+
+function handleReactToMessage(payload: { message: Message; emoji: string }): void {
+  try {
+    emit('react', payload);
+  } catch (error) {
+    reportUiError('Failed to emit message reaction', error);
+  }
+}
+
+function handleRemoveReaction(payload: {
+  message: Message;
+  reaction: MessageReaction;
+}): void {
+  try {
+    emit('remove-reaction', payload);
+  } catch (error) {
+    reportUiError('Failed to emit message reaction removal', error);
   }
 }
 
