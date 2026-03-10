@@ -20,7 +20,8 @@
         anchor="bottom right"
         self="top right"
         class="tg-pop-menu"
-        @hide="handleActionMenuHide"
+        :transition-duration="0"
+        @before-hide="handleActionMenuHide"
       >
         <div class="bubble__menu-stack">
           <q-list dense separator class="tg-pop-menu__list bubble__actions-list">
@@ -92,6 +93,7 @@
         anchor="bottom right"
         self="top right"
         class="tg-pop-menu"
+        :transition-duration="0"
         @show="handleEmojiPickerMenuShow"
       >
         <EmojiPickerPanel
