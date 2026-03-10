@@ -23,6 +23,7 @@ import NDK, {
   normalizeRelayUrl,
   type NostrEvent
 } from '@nostr-dev-kit/ndk';
+import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { imageCacheService } from 'src/services/imageCacheService';
@@ -34,8 +35,12 @@ import {
 } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
-import type { MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
+import type { MessageReaction, MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
+import {
+  buildMetaWithReactions,
+  normalizeMessageReactions
+} from 'src/utils/messageReactions';
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 
 export interface NostrIdentifierResolutionResult {
@@ -84,9 +89,16 @@ export interface RelayListMetadataEntry {
 
 export type AuthMethod = 'nsec' | 'nip07';
 
-interface SendDirectMessageOptions {
+interface SendGiftWrappedRumorOptions {
   localMessageId?: number;
   createdAt?: string;
+}
+
+interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {}
+
+interface SendDirectMessageReactionOptions {
+  createdAt?: string;
+  targetKind?: number;
 }
 
 interface RelayPublishStatusesResult {
@@ -104,6 +116,12 @@ interface QueuePrivateMessageUiRefreshOptions {
   reloadMessages?: boolean;
 }
 
+interface PendingIncomingReaction {
+  chatPublicKey: string;
+  targetAuthorPublicKey: string | null;
+  reaction: MessageReaction;
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
@@ -119,6 +137,8 @@ let temp_counter = 0;
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
+
+type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
@@ -139,6 +159,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let restorePrivateContactListPromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
+  const pendingIncomingReactions = new Map<string, PendingIncomingReaction[]>();
   let myRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let myRelayListSubscriptionSignature = '';
   let myRelayListApplyQueue = Promise.resolve();
@@ -477,6 +498,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function createReactionRumorEvent(
+    senderPubkey: string,
+    recipientPubkey: string,
+    emoji: string,
+    targetEventId: string,
+    targetAuthorPubkey: string,
+    targetKind: number,
+    createdAt: number
+  ): NDKEvent {
+    return new NDKEvent(ndk, {
+      kind: NDKKind.Reaction,
+      created_at: createdAt,
+      pubkey: senderPubkey,
+      content: emoji,
+      tags: [
+        ['p', recipientPubkey],
+        ['e', targetEventId],
+        ['p', targetAuthorPubkey],
+        ['k', String(targetKind)]
+      ]
+    });
+  }
+
   function createStoredDirectMessageRumorEvent(event: NostrEvent): NDKEvent | null {
     const pubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
     if (!pubkey) {
@@ -516,6 +560,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return null;
+  }
+
+  function readReactionTargetEventId(event: NDKEvent): string | null {
+    return normalizeEventId(event.getMatchingTags('e')[0]?.[1] ?? '');
+  }
+
+  function readReactionTargetAuthorPubkey(event: NDKEvent): string | null {
+    return inputSanitizerService.normalizeHexKey(event.getMatchingTags('p')[1]?.[1] ?? '');
   }
 
   function normalizeRelayStatusUrl(value: string): string | null {
@@ -781,6 +833,293 @@ export const useNostrStore = defineStore('nostrStore', () => {
         error: error instanceof Error ? error : new Error('Failed to publish event.')
       };
     }
+  }
+
+  async function sendGiftWrappedRumor(
+    recipientPublicKey: string,
+    relays: string[],
+    rumorKind: number,
+    createRumorEvent: (
+      senderPubkey: string,
+      recipientPubkey: string,
+      createdAt: number
+    ) => NDKEvent,
+    options: SendGiftWrappedRumorOptions = {}
+  ): Promise<NostrEvent> {
+    const recipientInput = recipientPublicKey.trim();
+    if (!recipientInput) {
+      throw new Error('Recipient public key is required.');
+    }
+
+    let normalizedRecipientPubkey: string | null = null;
+    if (isValidPubkey(recipientInput)) {
+      normalizedRecipientPubkey = recipientInput.toLowerCase();
+    } else {
+      normalizedRecipientPubkey = validateNpub(recipientInput).normalizedPubkey;
+    }
+
+    if (!normalizedRecipientPubkey) {
+      throw new Error('Recipient public key must be a valid hex pubkey or npub.');
+    }
+
+    const relayUrls = inputSanitizerService.normalizeStringArray(relays);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot send encrypted event without contact relays.');
+    }
+    await ensureRelayConnections(relayUrls);
+
+    const signer = await getOrCreateSigner();
+    const createdAt = toUnixTimestamp(options.createdAt);
+    const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
+    const recipientRumorEvent = createRumorEvent(
+      signer.pubkey,
+      normalizedRecipientPubkey,
+      createdAt
+    );
+    const recipientRumorNostrEvent = await toStoredNostrEvent(recipientRumorEvent);
+    const rumorEventId = normalizeEventId(
+      recipientRumorNostrEvent?.id ?? recipientRumorEvent.id
+    );
+    const selfRelayUrls = await resolveLoggedInPublishRelayUrls();
+    if (options.localMessageId && rumorEventId) {
+      try {
+        await appendRelayStatusesToMessageEvent(
+          options.localMessageId,
+          [
+            ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
+            ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
+          ],
+          {
+            event: recipientRumorNostrEvent ?? undefined,
+            direction: 'out',
+            eventId: rumorEventId
+          }
+        );
+      } catch (error) {
+        console.warn('Failed to persist encrypted event details before publish', error);
+      }
+    }
+
+    const recipientGiftWrapEvent = await giftWrap(recipientRumorEvent, recipient, signer, {
+      rumorKind
+    });
+    const recipientPublishResult = await publishEventWithRelayStatuses(
+      recipientGiftWrapEvent,
+      relayUrls,
+      'recipient'
+    );
+    if (options.localMessageId) {
+      await appendRelayStatusesToMessageEvent(
+        options.localMessageId,
+        recipientPublishResult.relayStatuses,
+        {
+          event: recipientRumorNostrEvent ?? undefined,
+          direction: 'out',
+          eventId: rumorEventId ?? undefined
+        }
+      );
+    }
+    if (recipientPublishResult.error) {
+      throw recipientPublishResult.error;
+    }
+
+    if (selfRelayUrls.length > 0) {
+      await ensureRelayConnections(selfRelayUrls);
+      const senderRecipient = new NDKUser({ pubkey: signer.pubkey });
+      const selfRumorEvent = createRumorEvent(
+        signer.pubkey,
+        normalizedRecipientPubkey,
+        createdAt
+      );
+      const selfGiftWrapEvent = await giftWrap(selfRumorEvent, senderRecipient, signer, {
+        rumorKind
+      });
+      const selfPublishResult = await publishEventWithRelayStatuses(
+        selfGiftWrapEvent,
+        selfRelayUrls,
+        'self'
+      );
+      if (options.localMessageId) {
+        await appendRelayStatusesToMessageEvent(
+          options.localMessageId,
+          selfPublishResult.relayStatuses,
+          {
+            event: recipientRumorNostrEvent ?? undefined,
+            direction: 'out',
+            eventId: rumorEventId ?? undefined
+          }
+        );
+      }
+      if (selfPublishResult.error) {
+        console.warn('Failed to publish encrypted event self-copy', selfPublishResult.error);
+      }
+    }
+
+    return recipientGiftWrapEvent.toNostrEvent();
+  }
+
+  function queuePendingIncomingReaction(
+    targetEventId: string,
+    pendingReaction: PendingIncomingReaction
+  ): void {
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    if (!normalizedTargetEventId) {
+      return;
+    }
+
+    const existingEntries = pendingIncomingReactions.get(normalizedTargetEventId) ?? [];
+    const alreadyQueued = existingEntries.some((entry) => {
+      return (
+        entry.chatPublicKey === pendingReaction.chatPublicKey &&
+        entry.targetAuthorPublicKey === pendingReaction.targetAuthorPublicKey &&
+        entry.reaction.emoji === pendingReaction.reaction.emoji &&
+        entry.reaction.reactorPublicKey === pendingReaction.reaction.reactorPublicKey
+      );
+    });
+    if (alreadyQueued) {
+      return;
+    }
+
+    pendingIncomingReactions.set(normalizedTargetEventId, [
+      ...existingEntries,
+      pendingReaction
+    ]);
+  }
+
+  async function upsertReactionOnMessageRow(
+    messageRow: MessageRow,
+    pendingReaction: PendingIncomingReaction,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<MessageRow | null> {
+    const normalizedMessageChatPubkey = inputSanitizerService.normalizeHexKey(
+      messageRow.chat_public_key
+    );
+    if (!normalizedMessageChatPubkey || normalizedMessageChatPubkey !== pendingReaction.chatPublicKey) {
+      return null;
+    }
+
+    const normalizedMessageAuthorPubkey = inputSanitizerService.normalizeHexKey(
+      messageRow.author_public_key
+    );
+    if (
+      pendingReaction.targetAuthorPublicKey &&
+      normalizedMessageAuthorPubkey !== pendingReaction.targetAuthorPublicKey
+    ) {
+      return null;
+    }
+
+    const currentReactions = normalizeMessageReactions(messageRow.meta.reactions);
+    const alreadyExists = currentReactions.some((reaction) => {
+      return (
+        reaction.emoji === pendingReaction.reaction.emoji &&
+        reaction.reactorPublicKey === pendingReaction.reaction.reactorPublicKey
+      );
+    });
+    if (alreadyExists) {
+      return messageRow;
+    }
+
+    const updatedRow = await chatDataService.updateMessageMeta(
+      messageRow.id,
+      buildMetaWithReactions(messageRow.meta, [
+        ...currentReactions,
+        pendingReaction.reaction
+      ])
+    );
+    if (!updatedRow) {
+      return null;
+    }
+
+    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+    if (uiThrottleMs > 0) {
+      queuePrivateMessagesUiRefresh({
+        throttleMs: uiThrottleMs,
+        reloadMessages: true
+      });
+      return updatedRow;
+    }
+
+    await refreshMessageInLiveState(updatedRow.id);
+    return updatedRow;
+  }
+
+  async function applyPendingIncomingReactionsForMessage(
+    messageRow: MessageRow,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<MessageRow> {
+    const normalizedEventId = normalizeEventId(messageRow.event_id);
+    if (!normalizedEventId) {
+      return messageRow;
+    }
+
+    const pendingEntries = pendingIncomingReactions.get(normalizedEventId);
+    if (!pendingEntries || pendingEntries.length === 0) {
+      return messageRow;
+    }
+
+    let currentMessageRow = messageRow;
+    const remainingEntries: PendingIncomingReaction[] = [];
+    for (const pendingReaction of pendingEntries) {
+      const updatedRow = await upsertReactionOnMessageRow(
+        currentMessageRow,
+        pendingReaction,
+        options
+      );
+      if (!updatedRow) {
+        remainingEntries.push(pendingReaction);
+        continue;
+      }
+
+      currentMessageRow = updatedRow;
+    }
+
+    if (remainingEntries.length > 0) {
+      pendingIncomingReactions.set(normalizedEventId, remainingEntries);
+    } else {
+      pendingIncomingReactions.delete(normalizedEventId);
+    }
+
+    return currentMessageRow;
+  }
+
+  async function processIncomingReactionRumorEvent(
+    rumorEvent: NDKEvent,
+    chatPubkey: string,
+    senderPubkeyHex: string,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<void> {
+    const reactionEmoji = rumorEvent.content.trim();
+    const targetEventId = readReactionTargetEventId(rumorEvent);
+    const targetAuthorPublicKey = readReactionTargetAuthorPubkey(rumorEvent);
+    if (!reactionEmoji || !targetEventId) {
+      return;
+    }
+
+    await chatDataService.init();
+
+    const pendingReaction: PendingIncomingReaction = {
+      chatPublicKey: chatPubkey,
+      targetAuthorPublicKey,
+      reaction: {
+        emoji: reactionEmoji,
+        name: getEmojiEntryByValue(reactionEmoji)?.label ?? reactionEmoji,
+        reactorPublicKey: senderPubkeyHex
+      }
+    };
+
+    const targetMessage = await chatDataService.getMessageByEventId(targetEventId);
+    if (!targetMessage) {
+      queuePendingIncomingReaction(targetEventId, pendingReaction);
+      return;
+    }
+
+    await upsertReactionOnMessageRow(targetMessage, pendingReaction, options);
   }
 
   function readProfileField(
@@ -1774,10 +2113,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
-    if (rumorEvent.kind !== NDKKind.PrivateDirectMessage) {
-      return;
-    }
-
     const senderPubkeyHex = inputSanitizerService.normalizeHexKey(rumorEvent.pubkey ?? '');
     if (!senderPubkeyHex) {
       return;
@@ -1799,11 +2134,28 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
 
+    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+
+    if (rumorEvent.kind === NDKKind.Reaction) {
+      await processIncomingReactionRumorEvent(
+        rumorEvent,
+        chatPubkey,
+        senderPubkeyHex,
+        {
+          uiThrottleMs
+        }
+      );
+      return;
+    }
+
+    if (rumorEvent.kind !== NDKKind.PrivateDirectMessage) {
+      return;
+    }
+
     const messageText = rumorEvent.content.trim();
     if (!messageText) {
       return;
     }
-    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
 
     await Promise.all([chatDataService.init(), contactsService.init(), nostrEventDataService.init()]);
 
@@ -1823,6 +2175,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
             uiThrottleMs
           }
         );
+        await applyPendingIncomingReactionsForMessage(existingMessage, {
+          uiThrottleMs
+        });
         return;
       }
     }
@@ -1866,6 +2221,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (!createdMessage) {
       return;
     }
+    const messageWithPendingReactions = await applyPendingIncomingReactionsForMessage(
+      createdMessage,
+      {
+        uiThrottleMs
+      }
+    );
 
     if (rumorNostrEvent) {
       await nostrEventDataService.upsertEvent({
@@ -1911,7 +2272,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
 
       const { useMessageStore } = await import('src/stores/messageStore');
-      await useMessageStore().upsertPersistedMessage(createdMessage);
+      await useMessageStore().upsertPersistedMessage(messageWithPendingReactions);
     } catch (error) {
       console.error('Failed to sync incoming private message into live state', error);
     }
@@ -2155,6 +2516,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     cachedSigner = null;
     cachedSignerSessionKey = null;
     ndk.signer = undefined;
+    pendingIncomingReactions.clear();
     lastPrivateContactListCreatedAt = 0;
     lastPrivateContactListEventId = '';
     stopMyRelayListSubscription();
@@ -2328,114 +2690,71 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Message cannot be empty.');
     }
 
-    const recipientInput = recipientPublicKey.trim();
-    if (!recipientInput) {
-      throw new Error('Recipient public key is required.');
-    }
-
-    let normalizedRecipientPubkey: string | null = null;
-    if (isValidPubkey(recipientInput)) {
-      normalizedRecipientPubkey = recipientInput.toLowerCase();
-    } else {
-      normalizedRecipientPubkey = validateNpub(recipientInput).normalizedPubkey;
-    }
-
-    if (!normalizedRecipientPubkey) {
-      throw new Error('Recipient public key must be a valid hex pubkey or npub.');
-    }
-
-    const relayUrls = inputSanitizerService.normalizeStringArray(relays);
-    if (relayUrls.length === 0) {
-      throw new Error('Cannot send DM without contact relays.');
-    }
-    await ensureRelayConnections(relayUrls);
-
-    const signer = await getOrCreateSigner();
-    const createdAt = toUnixTimestamp(options.createdAt);
-
-    const recipient = new NDKUser({ pubkey: normalizedRecipientPubkey });
-    const recipientRumorEvent = createDirectMessageRumorEvent(
-      signer.pubkey,
-      normalizedRecipientPubkey,
-      message,
-      createdAt
-    );
-    const recipientRumorNostrEvent = await toStoredNostrEvent(recipientRumorEvent);
-    const rumorEventId = normalizeEventId(recipientRumorNostrEvent?.id ?? recipientRumorEvent.id);
-    const selfRelayUrls = await resolveLoggedInPublishRelayUrls();
-    if (options.localMessageId && rumorEventId) {
-      try {
-        await appendRelayStatusesToMessageEvent(
-          options.localMessageId,
-          [
-            ...buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
-            ...buildPendingOutboundRelayStatuses(selfRelayUrls, 'self')
-          ],
-          {
-            event: recipientRumorNostrEvent ?? undefined,
-            direction: 'out',
-            eventId: rumorEventId
-          }
+    return sendGiftWrappedRumor(
+      recipientPublicKey,
+      relays,
+      NDKKind.PrivateDirectMessage,
+      (senderPubkey, normalizedRecipientPubkey, createdAt) => {
+        return createDirectMessageRumorEvent(
+          senderPubkey,
+          normalizedRecipientPubkey,
+          message,
+          createdAt
         );
-      } catch (error) {
-        console.warn('Failed to persist direct message event details before publish', error);
-      }
-    }
-
-    const nip59Event = await giftWrap(recipientRumorEvent, recipient, signer, {
-      rumorKind: NDKKind.PrivateDirectMessage
-    });
-
-    const recipientPublishResult = await publishEventWithRelayStatuses(
-      nip59Event,
-      relayUrls,
-      'recipient'
+      },
+      options
     );
-    if (options.localMessageId) {
-      await appendRelayStatusesToMessageEvent(options.localMessageId, recipientPublishResult.relayStatuses, {
-        event: recipientRumorNostrEvent ?? undefined,
-        direction: 'out',
-        eventId: rumorEventId ?? undefined
-      });
-    }
-    if (recipientPublishResult.error) {
-      throw recipientPublishResult.error;
+  }
+
+  async function sendDirectMessageReaction(
+    recipientPublicKey: string,
+    emoji: string,
+    targetEventId: string,
+    targetAuthorPublicKey: string,
+    relays: string[],
+    options: SendDirectMessageReactionOptions = {}
+  ): Promise<NostrEvent> {
+    const normalizedEmoji = emoji.trim();
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    const normalizedTargetAuthorPublicKey = inputSanitizerService.normalizeHexKey(
+      targetAuthorPublicKey
+    );
+    if (!normalizedEmoji) {
+      throw new Error('Reaction emoji is required.');
     }
 
-    if (selfRelayUrls.length > 0) {
-      await ensureRelayConnections(selfRelayUrls);
-      const senderRecipient = new NDKUser({ pubkey: signer.pubkey });
-      const selfRumorEvent = createDirectMessageRumorEvent(
-        signer.pubkey,
-        normalizedRecipientPubkey,
-        message,
-        createdAt
-      );
-      const selfGiftWrapEvent = await giftWrap(selfRumorEvent, senderRecipient, signer, {
-        rumorKind: NDKKind.PrivateDirectMessage
-      });
-      const selfPublishResult = await publishEventWithRelayStatuses(
-        selfGiftWrapEvent,
-        selfRelayUrls,
-        'self'
-      );
-      if (options.localMessageId) {
-        await appendRelayStatusesToMessageEvent(options.localMessageId, selfPublishResult.relayStatuses, {
-          event: recipientRumorNostrEvent ?? undefined,
-          direction: 'out',
-          eventId: rumorEventId ?? undefined
-        });
+    if (!normalizedTargetEventId) {
+      throw new Error('Reaction target event id is required.');
+    }
+
+    if (!normalizedTargetAuthorPublicKey) {
+      throw new Error('Reaction target author public key is required.');
+    }
+
+    const targetKind =
+      Number.isInteger(options.targetKind) && Number(options.targetKind) > 0
+        ? Number(options.targetKind)
+        : NDKKind.PrivateDirectMessage;
+
+    return sendGiftWrappedRumor(
+      recipientPublicKey,
+      relays,
+      NDKKind.Reaction,
+      (senderPubkey, normalizedRecipientPubkey, createdAt) => {
+        return createReactionRumorEvent(
+          senderPubkey,
+          normalizedRecipientPubkey,
+          normalizedEmoji,
+          normalizedTargetEventId,
+          normalizedTargetAuthorPublicKey,
+          targetKind,
+          createdAt
+        );
+      },
+      {
+        createdAt: options.createdAt
       }
-      if (selfPublishResult.error) {
-        console.warn('Failed to publish direct message self-copy', selfPublishResult.error);
-      }
-    }
-
-    const dmEvent = await nip59Event.toNostrEvent();
-    console.log('Sending DM event:', dmEvent);
-
-    return dmEvent;
-
+    );
   }
 
   async function retryDirectMessageRelay(
@@ -2542,6 +2861,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restoreStartupState,
     retryDirectMessageRelay,
     sendDirectMessage,
+    sendDirectMessageReaction,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,
     subscribeMyRelayListUpdates,

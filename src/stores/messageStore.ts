@@ -11,6 +11,11 @@ import type {
   MessageReplyPreview,
   NostrEventEntry
 } from 'src/types/chat';
+import {
+  areMessageReactionsEqual,
+  buildMetaWithReactions,
+  normalizeMessageReactions
+} from 'src/utils/messageReactions';
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 
@@ -29,51 +34,6 @@ function getLoggedInPublicKey(): string | null {
   }
 
   return normalizeChatIdentifier(window.localStorage.getItem('npub'));
-}
-
-function isMessageReaction(value: unknown): value is MessageReaction {
-  if (!value || typeof value !== 'object') {
-    return false;
-  }
-
-  const candidate = value as Partial<MessageReaction>;
-  return (
-    typeof candidate.emoji === 'string' &&
-    candidate.emoji.trim().length > 0 &&
-    typeof candidate.name === 'string' &&
-    candidate.name.trim().length > 0 &&
-    typeof candidate.reactorPublicKey === 'string' &&
-    candidate.reactorPublicKey.trim().length > 0
-  );
-}
-
-function normalizeMessageReactions(value: unknown): MessageReaction[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .filter(isMessageReaction)
-    .map((reaction) => ({
-      emoji: reaction.emoji.trim(),
-      name: reaction.name.trim(),
-      reactorPublicKey: reaction.reactorPublicKey.trim().toLowerCase()
-    }));
-}
-
-function buildMetaWithReactions(
-  meta: Record<string, unknown>,
-  reactions: MessageReaction[]
-): Record<string, unknown> {
-  const nextMeta = { ...meta };
-
-  if (reactions.length === 0) {
-    delete nextMeta.reactions;
-    return nextMeta;
-  }
-
-  nextMeta.reactions = reactions.map((reaction) => ({ ...reaction }));
-  return nextMeta;
 }
 
 function mapMessageRowToMessage(
@@ -334,11 +294,13 @@ export const useMessageStore = defineStore('messageStore', () => {
     messagesByChat.value[normalizedChatId] = [...messagesByChat.value[normalizedChatId], newMessage];
     let sendError: unknown = null;
 
+    const allRelays = await relaysService.listAllRelays();
+    
     try {
       await nostrStore.sendDirectMessage(
         chat.public_key,
         newMessage.text,
-        recipientRelayUrls,
+        recipientRelayUrls.concat(allRelays),
         {
           localMessageId: created.id,
           createdAt: created.created_at
@@ -390,11 +352,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       currentReactions.length === nextReactions.length &&
       currentReactions.every((reaction, index) => {
         const nextReaction = nextReactions[index];
-        return (
-          nextReaction?.emoji === reaction.emoji &&
-          nextReaction?.name === reaction.name &&
-          nextReaction?.reactorPublicKey === reaction.reactorPublicKey
-        );
+        return nextReaction ? areMessageReactionsEqual(reaction, nextReaction) : false;
       });
 
     if (noChanges) {
@@ -424,28 +382,79 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    return updateMessageReactions(chatId, messageId, (reactions, loggedInPublicKey) => {
-      const alreadyExists = reactions.some((reaction) => {
-        return (
-          reaction.emoji === normalizedEmoji &&
-          normalizeChatIdentifier(reaction.reactorPublicKey) === loggedInPublicKey
-        );
-      });
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedMessageId = Number.parseInt(messageId, 10);
+    const loggedInPublicKey = getLoggedInPublicKey();
+    if (!normalizedChatId || !Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0) {
+      return null;
+    }
 
-      if (alreadyExists) {
-        return reactions;
-      }
+    if (!loggedInPublicKey) {
+      return null;
+    }
 
-      const emojiEntry = getEmojiEntryByValue(normalizedEmoji);
-      return [
-        ...reactions,
-        {
-          emoji: normalizedEmoji,
-          name: emojiEntry?.label ?? normalizedEmoji,
-          reactorPublicKey: loggedInPublicKey
-        }
-      ];
+    await chatDataService.init();
+    const existingRow = await chatDataService.getMessageById(normalizedMessageId);
+    if (!existingRow) {
+      return null;
+    }
+
+    const currentReactions = normalizeMessageReactions(existingRow.meta.reactions);
+    const alreadyExists = currentReactions.some((reaction) => {
+      return (
+        reaction.emoji === normalizedEmoji &&
+        normalizeChatIdentifier(reaction.reactorPublicKey) === loggedInPublicKey
+      );
     });
+    if (alreadyExists) {
+      return getMessageFromState(normalizedChatId, String(normalizedMessageId));
+    }
+
+    const updatedMessage = await updateMessageReactions(
+      normalizedChatId,
+      String(normalizedMessageId),
+      (reactions) => {
+        const emojiEntry = getEmojiEntryByValue(normalizedEmoji);
+        return [
+          ...reactions,
+          {
+            emoji: normalizedEmoji,
+            name: emojiEntry?.label ?? normalizedEmoji,
+            reactorPublicKey: loggedInPublicKey
+          }
+        ];
+      }
+    );
+
+    if (!updatedMessage || !existingRow.event_id) {
+      return updatedMessage;
+    }
+
+    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
+    if (!chat) {
+      return updatedMessage;
+    }
+
+    const contactRelays = await relaysService.listRelaysByPublicKey(chat.public_key);
+    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
+    const fallbackRelays = contactRelays.map((relay) => relay.url);
+    const recipientRelayUrls = preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
+    // const allRelays = await relaysService.listAllRelays();
+
+    await nostrStore.sendDirectMessageReaction(
+      chat.public_key,
+      normalizedEmoji,
+      existingRow.event_id,
+      existingRow.author_public_key,
+      // recipientRelayUrls.concat(allRelays),
+      recipientRelayUrls,
+      {
+        createdAt: new Date().toISOString(),
+        targetKind: updatedMessage.nostrEvent?.event.kind
+      }
+    );
+
+    return updatedMessage;
   }
 
   async function removeReaction(
