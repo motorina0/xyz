@@ -70,6 +70,7 @@
               :contact-name="chat.name"
               @reply="handleReplyToMessage"
               @react="handleReactToMessage"
+              @delete-message="handleDeleteMessage"
               @remove-reaction="handleRemoveReaction"
               @open-reply-target="handleOpenReplyTarget"
             />
@@ -132,6 +133,7 @@ const emit = defineEmits<{
   (event: 'open-profile', publicKey: string): void;
   (event: 'refresh-chat', chatId: string): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
+  (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
 }>();
 
@@ -331,6 +333,14 @@ function handleRemoveReaction(payload: {
     emit('remove-reaction', payload);
   } catch (error) {
     reportUiError('Failed to emit message reaction removal', error);
+  }
+}
+
+function handleDeleteMessage(message: Message): void {
+  try {
+    emit('delete-message', message);
+  } catch (error) {
+    reportUiError('Failed to emit message deletion', error);
   }
 }
 

@@ -35,7 +35,12 @@ import {
 } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
-import type { MessageReaction, MessageRelayStatus, NostrEventDirection } from 'src/types/chat';
+import type {
+  DeletedMessageMetadata,
+  MessageReaction,
+  MessageRelayStatus,
+  NostrEventDirection
+} from 'src/types/chat';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 import {
   buildMetaWithReactions,
@@ -101,9 +106,20 @@ interface SendDirectMessageReactionOptions {
   targetKind?: number;
 }
 
+interface SendDirectMessageDeletionOptions {
+  createdAt?: string;
+}
+
 interface RelayPublishStatusesResult {
   relayStatuses: MessageRelayStatus[];
   error: Error | null;
+}
+
+interface GiftWrappedRumorPublishResult {
+  giftWrapEvent: NostrEvent;
+  rumorEvent: NostrEvent | null;
+  rumorEventId: string | null;
+  relayStatuses: MessageRelayStatus[];
 }
 
 interface SubscribePrivateMessagesOptions {
@@ -120,6 +136,13 @@ interface PendingIncomingReaction {
   chatPublicKey: string;
   targetAuthorPublicKey: string | null;
   reaction: MessageReaction;
+}
+
+interface PendingIncomingDeletion {
+  deletionAuthorPublicKey: string;
+  deleteEventId: string | null;
+  deletedAt: string;
+  targetKind: number | null;
 }
 
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
@@ -160,6 +183,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let restorePrivateContactListPromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
   const pendingIncomingReactions = new Map<string, PendingIncomingReaction[]>();
+  const pendingIncomingDeletions = new Map<string, PendingIncomingDeletion[]>();
   let myRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let myRelayListSubscriptionSignature = '';
   let myRelayListApplyQueue = Promise.resolve();
@@ -521,6 +545,26 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function createEventDeletionRumorEvent(
+    senderPubkey: string,
+    recipientPubkey: string,
+    targetEventId: string,
+    targetKind: number,
+    createdAt: number
+  ): NDKEvent {
+    return new NDKEvent(ndk, {
+      kind: NDKKind.EventDeletion,
+      created_at: createdAt,
+      pubkey: senderPubkey,
+      content: '',
+      tags: [
+        ['p', recipientPubkey],
+        ['e', targetEventId],
+        ['k', String(targetKind)]
+      ]
+    });
+  }
+
   function createStoredDirectMessageRumorEvent(event: NostrEvent): NDKEvent | null {
     const pubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
     if (!pubkey) {
@@ -570,6 +614,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return inputSanitizerService.normalizeHexKey(event.getMatchingTags('p')[1]?.[1] ?? '');
   }
 
+  function readDeletionTargetEntries(
+    event: NDKEvent
+  ): Array<{ eventId: string; kind: number | null }> {
+    const eventIds = event
+      .getMatchingTags('e')
+      .map((tag) => normalizeEventId(tag[1] ?? ''))
+      .filter((eventId): eventId is string => Boolean(eventId));
+    if (eventIds.length === 0) {
+      return [];
+    }
+
+    const kinds = event
+      .getMatchingTags('k')
+      .map((tag) => Number.parseInt(String(tag[1] ?? ''), 10))
+      .filter((kind) => Number.isInteger(kind) && kind > 0);
+    const fallbackKind = kinds.length === 1 ? kinds[0] : null;
+
+    return eventIds.map((eventId, index) => ({
+      eventId,
+      kind: kinds[index] ?? fallbackKind
+    }));
+  }
+
   function normalizeRelayStatusUrl(value: string): string | null {
     const normalized = value.trim();
     if (!normalized) {
@@ -602,6 +669,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const trimmed = value.trim().toLowerCase();
     return trimmed || null;
+  }
+
+  function buildDeletedMessageMeta(
+    deletedByPublicKey: string,
+    deletedEventKind: number,
+    deletedAt: string,
+    deleteEventId?: string | null
+  ): DeletedMessageMetadata {
+    return {
+      deletedAt,
+      deletedByPublicKey,
+      deletedEventKind,
+      ...(normalizeEventId(deleteEventId) ? { deleteEventId: normalizeEventId(deleteEventId) } : {})
+    };
   }
 
   async function toStoredNostrEvent(event: NDKEvent): Promise<NostrEvent | null> {
@@ -845,7 +926,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       createdAt: number
     ) => NDKEvent,
     options: SendGiftWrappedRumorOptions = {}
-  ): Promise<NostrEvent> {
+  ): Promise<GiftWrappedRumorPublishResult> {
     const recipientInput = recipientPublicKey.trim();
     if (!recipientInput) {
       throw new Error('Recipient public key is required.');
@@ -908,6 +989,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       relayUrls,
       'recipient'
     );
+    const combinedRelayStatuses = [...recipientPublishResult.relayStatuses];
     if (options.localMessageId) {
       await appendRelayStatusesToMessageEvent(
         options.localMessageId,
@@ -939,6 +1021,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         selfRelayUrls,
         'self'
       );
+      combinedRelayStatuses.push(...selfPublishResult.relayStatuses);
       if (options.localMessageId) {
         await appendRelayStatusesToMessageEvent(
           options.localMessageId,
@@ -955,7 +1038,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
     }
 
-    return recipientGiftWrapEvent.toNostrEvent();
+    return {
+      giftWrapEvent: await recipientGiftWrapEvent.toNostrEvent(),
+      rumorEvent: recipientRumorNostrEvent,
+      rumorEventId,
+      relayStatuses: combinedRelayStatuses
+    };
   }
 
   function queuePendingIncomingReaction(
@@ -986,6 +1074,63 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ]);
   }
 
+  function removePendingIncomingReaction(
+    targetEventId: string,
+    reactionEventId: string,
+    reactorPublicKey: string
+  ): void {
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    const normalizedReactionEventId = normalizeEventId(reactionEventId);
+    const normalizedReactorPublicKey = inputSanitizerService.normalizeHexKey(reactorPublicKey);
+    if (!normalizedTargetEventId || !normalizedReactionEventId || !normalizedReactorPublicKey) {
+      return;
+    }
+
+    const existingEntries = pendingIncomingReactions.get(normalizedTargetEventId) ?? [];
+    if (existingEntries.length === 0) {
+      return;
+    }
+
+    const remainingEntries = existingEntries.filter((entry) => {
+      return !(
+        normalizeEventId(entry.reaction.eventId) === normalizedReactionEventId &&
+        entry.reaction.reactorPublicKey === normalizedReactorPublicKey
+      );
+    });
+
+    if (remainingEntries.length > 0) {
+      pendingIncomingReactions.set(normalizedTargetEventId, remainingEntries);
+    } else {
+      pendingIncomingReactions.delete(normalizedTargetEventId);
+    }
+  }
+
+  function queuePendingIncomingDeletion(
+    targetEventId: string,
+    pendingDeletion: PendingIncomingDeletion
+  ): void {
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    if (!normalizedTargetEventId) {
+      return;
+    }
+
+    const existingEntries = pendingIncomingDeletions.get(normalizedTargetEventId) ?? [];
+    const alreadyQueued = existingEntries.some((entry) => {
+      return (
+        entry.deletionAuthorPublicKey === pendingDeletion.deletionAuthorPublicKey &&
+        entry.targetKind === pendingDeletion.targetKind
+      );
+    });
+    if (alreadyQueued) {
+      return;
+    }
+
+    pendingIncomingDeletions.set(normalizedTargetEventId, [
+      ...existingEntries,
+      pendingDeletion
+    ]);
+  }
+
   async function upsertReactionOnMessageRow(
     messageRow: MessageRow,
     pendingReaction: PendingIncomingReaction,
@@ -1011,13 +1156,65 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const currentReactions = normalizeMessageReactions(messageRow.meta.reactions);
-    const alreadyExists = currentReactions.some((reaction) => {
+    const existingReactionIndex = currentReactions.findIndex((reaction) => {
+      const sameEventId =
+        normalizeEventId(reaction.eventId) &&
+        normalizeEventId(reaction.eventId) === normalizeEventId(pendingReaction.reaction.eventId);
+      if (sameEventId) {
+        return true;
+      }
+
       return (
         reaction.emoji === pendingReaction.reaction.emoji &&
         reaction.reactorPublicKey === pendingReaction.reaction.reactorPublicKey
       );
     });
-    if (alreadyExists) {
+    if (existingReactionIndex >= 0) {
+      const existingReaction = currentReactions[existingReactionIndex];
+      const nextReaction: MessageReaction = {
+        ...existingReaction,
+        ...pendingReaction.reaction,
+        eventId:
+          normalizeEventId(pendingReaction.reaction.eventId) ??
+          normalizeEventId(existingReaction.eventId) ??
+          null
+      };
+      const isUnchanged =
+        nextReaction.emoji === existingReaction.emoji &&
+        nextReaction.name === existingReaction.name &&
+        nextReaction.reactorPublicKey === existingReaction.reactorPublicKey &&
+        normalizeEventId(nextReaction.eventId) === normalizeEventId(existingReaction.eventId);
+      if (isUnchanged) {
+        return messageRow;
+      }
+
+      const nextReactions = [...currentReactions];
+      nextReactions.splice(existingReactionIndex, 1, nextReaction);
+      const updatedRow = await chatDataService.updateMessageMeta(
+        messageRow.id,
+        buildMetaWithReactions(messageRow.meta, nextReactions)
+      );
+      if (!updatedRow) {
+        return null;
+      }
+
+      const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+      if (uiThrottleMs > 0) {
+        queuePrivateMessagesUiRefresh({
+          throttleMs: uiThrottleMs,
+          reloadMessages: true
+        });
+        return updatedRow;
+      }
+
+      await refreshMessageInLiveState(updatedRow.id);
+      return updatedRow;
+    }
+
+    if (
+      pendingReaction.targetAuthorPublicKey &&
+      normalizedMessageAuthorPubkey !== pendingReaction.targetAuthorPublicKey
+    ) {
       return messageRow;
     }
 
@@ -1027,6 +1224,103 @@ export const useNostrStore = defineStore('nostrStore', () => {
         ...currentReactions,
         pendingReaction.reaction
       ])
+    );
+    if (!updatedRow) {
+      return null;
+    }
+
+    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+    if (uiThrottleMs > 0) {
+      queuePrivateMessagesUiRefresh({
+        throttleMs: uiThrottleMs,
+        reloadMessages: true
+      });
+      return updatedRow;
+    }
+
+    await refreshMessageInLiveState(updatedRow.id);
+    return updatedRow;
+  }
+
+  async function removeReactionByEventIdFromMessageRow(
+    messageRow: MessageRow,
+    reactionEventId: string,
+    reactorPublicKey: string,
+    reactionEmoji: string | null,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<MessageRow | null> {
+    const normalizedReactionEventId = normalizeEventId(reactionEventId);
+    const normalizedReactorPublicKey = inputSanitizerService.normalizeHexKey(reactorPublicKey);
+    if (!normalizedReactionEventId || !normalizedReactorPublicKey) {
+      return null;
+    }
+
+    const currentReactions = normalizeMessageReactions(messageRow.meta.reactions);
+    const nextReactions = currentReactions.filter((reaction) => {
+      const sameEventId = normalizeEventId(reaction.eventId) === normalizedReactionEventId;
+      if (sameEventId) {
+      return false;
+      }
+
+      return !(
+        normalizeEventId(reaction.eventId) === null &&
+        reaction.reactorPublicKey === normalizedReactorPublicKey &&
+        (!reactionEmoji || reaction.emoji === reactionEmoji)
+      );
+    });
+    if (nextReactions.length === currentReactions.length) {
+      return messageRow;
+    }
+
+    const updatedRow = await chatDataService.updateMessageMeta(
+      messageRow.id,
+      buildMetaWithReactions(messageRow.meta, nextReactions)
+    );
+    if (!updatedRow) {
+      return null;
+    }
+
+    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+    if (uiThrottleMs > 0) {
+      queuePrivateMessagesUiRefresh({
+        throttleMs: uiThrottleMs,
+        reloadMessages: true
+      });
+      return updatedRow;
+    }
+
+    await refreshMessageInLiveState(updatedRow.id);
+    return updatedRow;
+  }
+
+  async function markMessageRowDeleted(
+    messageRow: MessageRow,
+    deletedByPublicKey: string,
+    deletedAt: string,
+    deletedEventKind: number,
+    deleteEventId: string | null,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<MessageRow | null> {
+    const normalizedDeletedByPublicKey = inputSanitizerService.normalizeHexKey(deletedByPublicKey);
+    if (!normalizedDeletedByPublicKey) {
+      return null;
+    }
+
+    const updatedRow = await chatDataService.updateMessageMeta(
+      messageRow.id,
+      {
+        ...messageRow.meta,
+        deleted: buildDeletedMessageMeta(
+          normalizedDeletedByPublicKey,
+          deletedEventKind,
+          deletedAt,
+          deleteEventId
+        )
+      }
     );
     if (!updatedRow) {
       return null;
@@ -1086,22 +1380,122 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return currentMessageRow;
   }
 
+  function consumePendingIncomingDeletions(targetEventId: string): PendingIncomingDeletion[] {
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    if (!normalizedTargetEventId) {
+      return [];
+    }
+
+    const entries = pendingIncomingDeletions.get(normalizedTargetEventId) ?? [];
+    pendingIncomingDeletions.delete(normalizedTargetEventId);
+    return entries;
+  }
+
+  async function applyPendingIncomingDeletionsForMessage(
+    messageRow: MessageRow,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<MessageRow> {
+    const normalizedMessageEventId = normalizeEventId(messageRow.event_id);
+    const normalizedMessageAuthorPublicKey = inputSanitizerService.normalizeHexKey(
+      messageRow.author_public_key
+    );
+    if (!normalizedMessageEventId || !normalizedMessageAuthorPublicKey) {
+      return messageRow;
+    }
+
+    const pendingDeletions = consumePendingIncomingDeletions(normalizedMessageEventId);
+    if (pendingDeletions.length === 0) {
+      return messageRow;
+    }
+
+    let currentMessageRow = messageRow;
+    for (const pendingDeletion of pendingDeletions) {
+      if (
+        pendingDeletion.deletionAuthorPublicKey !== normalizedMessageAuthorPublicKey ||
+        (pendingDeletion.targetKind !== null &&
+          pendingDeletion.targetKind !== NDKKind.PrivateDirectMessage)
+      ) {
+        continue;
+      }
+
+      const updatedRow = await markMessageRowDeleted(
+        currentMessageRow,
+        pendingDeletion.deletionAuthorPublicKey,
+        pendingDeletion.deletedAt,
+        NDKKind.PrivateDirectMessage,
+        pendingDeletion.deleteEventId,
+        options
+      );
+      if (updatedRow) {
+        currentMessageRow = updatedRow;
+      }
+    }
+
+    return currentMessageRow;
+  }
+
+  function consumePendingIncomingDeletionForReaction(
+    reactionEventId: string,
+    reactorPublicKey: string
+  ): PendingIncomingDeletion | null {
+    const normalizedReactionEventId = normalizeEventId(reactionEventId);
+    const normalizedReactorPublicKey = inputSanitizerService.normalizeHexKey(reactorPublicKey);
+    if (!normalizedReactionEventId || !normalizedReactorPublicKey) {
+      return null;
+    }
+
+    const pendingDeletions = consumePendingIncomingDeletions(normalizedReactionEventId);
+    return (
+      pendingDeletions.find((entry) => {
+        return (
+          entry.deletionAuthorPublicKey === normalizedReactorPublicKey &&
+          (entry.targetKind === null || entry.targetKind === NDKKind.Reaction)
+        );
+      }) ?? null
+    );
+  }
+
   async function processIncomingReactionRumorEvent(
     rumorEvent: NDKEvent,
     chatPubkey: string,
     senderPubkeyHex: string,
     options: {
       uiThrottleMs?: number;
-    } = {}
+      direction: NostrEventDirection;
+      rumorNostrEvent: NostrEvent | null;
+      relayStatuses: MessageRelayStatus[];
+    }
   ): Promise<void> {
     const reactionEmoji = rumorEvent.content.trim();
     const targetEventId = readReactionTargetEventId(rumorEvent);
     const targetAuthorPublicKey = readReactionTargetAuthorPubkey(rumorEvent);
+    const reactionEventId = normalizeEventId(options.rumorNostrEvent?.id ?? rumorEvent.id);
     if (!reactionEmoji || !targetEventId) {
       return;
     }
 
-    await chatDataService.init();
+    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
+
+    if (options.rumorNostrEvent && reactionEventId) {
+      await nostrEventDataService.upsertEvent({
+        event: options.rumorNostrEvent,
+        direction: options.direction,
+        relay_statuses: options.relayStatuses
+      });
+    }
+
+    if (reactionEventId) {
+      const pendingDeletion = consumePendingIncomingDeletionForReaction(
+        reactionEventId,
+        senderPubkeyHex
+      );
+      if (pendingDeletion) {
+        await nostrEventDataService.deleteEventsByIds([reactionEventId]);
+        return;
+      }
+    }
 
     const pendingReaction: PendingIncomingReaction = {
       chatPublicKey: chatPubkey,
@@ -1109,7 +1503,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       reaction: {
         emoji: reactionEmoji,
         name: getEmojiEntryByValue(reactionEmoji)?.label ?? reactionEmoji,
-        reactorPublicKey: senderPubkeyHex
+        reactorPublicKey: senderPubkeyHex,
+        ...(reactionEventId ? { eventId: reactionEventId } : {})
       }
     };
 
@@ -1120,6 +1515,186 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await upsertReactionOnMessageRow(targetMessage, pendingReaction, options);
+  }
+
+  async function processIncomingReactionDeletion(
+    reactionEventId: string,
+    deletionAuthorPublicKey: string,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<boolean> {
+    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
+
+    const normalizedReactionEventId = normalizeEventId(reactionEventId);
+    const normalizedDeletionAuthorPublicKey = inputSanitizerService.normalizeHexKey(
+      deletionAuthorPublicKey
+    );
+    if (!normalizedReactionEventId || !normalizedDeletionAuthorPublicKey) {
+      return true;
+    }
+
+    const storedReactionEvent = await nostrEventDataService.getEventById(normalizedReactionEventId);
+    if (storedReactionEvent) {
+      const reactionAuthorPublicKey = inputSanitizerService.normalizeHexKey(
+        storedReactionEvent.event.pubkey
+      );
+      if (
+        reactionAuthorPublicKey &&
+        reactionAuthorPublicKey !== normalizedDeletionAuthorPublicKey
+      ) {
+        return true;
+      }
+    }
+
+    let targetMessage = await chatDataService.findMessageByReactionEventId(normalizedReactionEventId);
+    const reactionEmoji = storedReactionEvent?.event.content.trim() || null;
+    if (!targetMessage && storedReactionEvent) {
+      const reactionEvent = new NDKEvent(ndk, storedReactionEvent.event);
+      const targetMessageEventId = readReactionTargetEventId(reactionEvent);
+      if (targetMessageEventId) {
+        targetMessage = await chatDataService.getMessageByEventId(targetMessageEventId);
+      }
+    }
+
+    if (!targetMessage) {
+      if (storedReactionEvent) {
+        const reactionEvent = new NDKEvent(ndk, storedReactionEvent.event);
+        const targetMessageEventId = readReactionTargetEventId(reactionEvent);
+        if (targetMessageEventId) {
+          removePendingIncomingReaction(
+            targetMessageEventId,
+            normalizedReactionEventId,
+            normalizedDeletionAuthorPublicKey
+          );
+        }
+
+        await nostrEventDataService.deleteEventsByIds([normalizedReactionEventId]);
+        return true;
+      }
+
+      return false;
+    }
+
+    const matchingReaction = normalizeMessageReactions(targetMessage.meta.reactions).find((reaction) => {
+      return normalizeEventId(reaction.eventId) === normalizedReactionEventId;
+    });
+    if (
+      matchingReaction &&
+      matchingReaction.reactorPublicKey !== normalizedDeletionAuthorPublicKey
+    ) {
+      return true;
+    }
+
+    await removeReactionByEventIdFromMessageRow(
+      targetMessage,
+      normalizedReactionEventId,
+      normalizedDeletionAuthorPublicKey,
+      reactionEmoji,
+      options
+    );
+    await nostrEventDataService.deleteEventsByIds([normalizedReactionEventId]);
+    return true;
+  }
+
+  async function processIncomingMessageDeletion(
+    messageEventId: string,
+    deletionAuthorPublicKey: string,
+    deleteEventId: string | null,
+    deletedAt: string,
+    targetKind: number,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<boolean> {
+    await chatDataService.init();
+
+    const targetMessage = await chatDataService.getMessageByEventId(messageEventId);
+    if (!targetMessage) {
+      return false;
+    }
+
+    const normalizedMessageAuthorPublicKey = inputSanitizerService.normalizeHexKey(
+      targetMessage.author_public_key
+    );
+    const normalizedDeletionAuthorPublicKey = inputSanitizerService.normalizeHexKey(
+      deletionAuthorPublicKey
+    );
+    if (
+      !normalizedMessageAuthorPublicKey ||
+      !normalizedDeletionAuthorPublicKey ||
+      normalizedMessageAuthorPublicKey !== normalizedDeletionAuthorPublicKey
+    ) {
+      return true;
+    }
+
+    await markMessageRowDeleted(
+      targetMessage,
+      normalizedDeletionAuthorPublicKey,
+      deletedAt,
+      targetKind,
+      deleteEventId,
+      options
+    );
+    return true;
+  }
+
+  async function processIncomingDeletionRumorEvent(
+    rumorEvent: NDKEvent,
+    senderPubkeyHex: string,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<void> {
+    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
+
+    const deleteEventId = normalizeEventId(rumorEvent.id);
+    const deletedAt = toIsoTimestampFromUnix(rumorEvent.created_at);
+    const deletionTargets = readDeletionTargetEntries(rumorEvent);
+    if (deletionTargets.length === 0) {
+      return;
+    }
+
+    for (const target of deletionTargets) {
+      const targetKind = target.kind ?? null;
+      let handled = false;
+
+      if (targetKind === NDKKind.Reaction) {
+        handled = await processIncomingReactionDeletion(target.eventId, senderPubkeyHex, options);
+      } else if (targetKind === NDKKind.PrivateDirectMessage) {
+        handled = await processIncomingMessageDeletion(
+          target.eventId,
+          senderPubkeyHex,
+          deleteEventId,
+          deletedAt,
+          NDKKind.PrivateDirectMessage,
+          options
+        );
+      } else {
+        const matchingMessage = await chatDataService.getMessageByEventId(target.eventId);
+        if (matchingMessage) {
+          handled = await processIncomingMessageDeletion(
+            target.eventId,
+            senderPubkeyHex,
+            deleteEventId,
+            deletedAt,
+            NDKKind.PrivateDirectMessage,
+            options
+          );
+        } else {
+          handled = await processIncomingReactionDeletion(target.eventId, senderPubkeyHex, options);
+        }
+      }
+
+      if (!handled) {
+        queuePendingIncomingDeletion(target.eventId, {
+          deletionAuthorPublicKey: senderPubkeyHex,
+          deleteEventId,
+          deletedAt,
+          targetKind
+        });
+      }
+    }
   }
 
   function readProfileField(
@@ -2136,13 +2711,27 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
 
+    const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
+    const receivedRelayStatuses = buildInboundRelayStatuses(extractRelayUrlsFromEvent(wrappedEvent));
+    const direction: NostrEventDirection = isSelfSentMessage ? 'out' : 'in';
+
+    if (rumorEvent.kind === NDKKind.EventDeletion) {
+      await processIncomingDeletionRumorEvent(rumorEvent, senderPubkeyHex, {
+        uiThrottleMs
+      });
+      return;
+    }
+
     if (rumorEvent.kind === NDKKind.Reaction) {
       await processIncomingReactionRumorEvent(
         rumorEvent,
         chatPubkey,
         senderPubkeyHex,
         {
-          uiThrottleMs
+          uiThrottleMs,
+          direction,
+          rumorNostrEvent,
+          relayStatuses: receivedRelayStatuses
         }
       );
       return;
@@ -2159,8 +2748,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await Promise.all([chatDataService.init(), contactsService.init(), nostrEventDataService.init()]);
 
-    const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
-    const receivedRelayStatuses = buildInboundRelayStatuses(extractRelayUrlsFromEvent(wrappedEvent));
     const rumorEventId = normalizeEventId(rumorNostrEvent?.id ?? rumorEvent.id);
     if (rumorEventId) {
       const existingMessage = await chatDataService.getMessageByEventId(rumorEventId);
@@ -2170,12 +2757,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
           receivedRelayStatuses,
           {
             event: rumorNostrEvent ?? undefined,
-            direction: isSelfSentMessage ? 'out' : 'in',
+            direction,
             eventId: rumorEventId,
             uiThrottleMs
           }
         );
-        await applyPendingIncomingReactionsForMessage(existingMessage, {
+        let updatedExistingMessage = await applyPendingIncomingReactionsForMessage(existingMessage, {
+          uiThrottleMs
+        });
+        updatedExistingMessage = await applyPendingIncomingDeletionsForMessage(updatedExistingMessage, {
           uiThrottleMs
         });
         return;
@@ -2221,17 +2811,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
     if (!createdMessage) {
       return;
     }
-    const messageWithPendingReactions = await applyPendingIncomingReactionsForMessage(
+    let nextMessageRow = await applyPendingIncomingReactionsForMessage(
       createdMessage,
       {
         uiThrottleMs
       }
     );
+    nextMessageRow = await applyPendingIncomingDeletionsForMessage(nextMessageRow, {
+      uiThrottleMs
+    });
 
     if (rumorNostrEvent) {
       await nostrEventDataService.upsertEvent({
         event: rumorNostrEvent,
-        direction: isSelfSentMessage ? 'out' : 'in',
+        direction,
         relay_statuses: receivedRelayStatuses
       });
     }
@@ -2272,7 +2865,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
 
       const { useMessageStore } = await import('src/stores/messageStore');
-      await useMessageStore().upsertPersistedMessage(messageWithPendingReactions);
+      await useMessageStore().upsertPersistedMessage(nextMessageRow);
     } catch (error) {
       console.error('Failed to sync incoming private message into live state', error);
     }
@@ -2517,6 +3110,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     cachedSignerSessionKey = null;
     ndk.signer = undefined;
     pendingIncomingReactions.clear();
+    pendingIncomingDeletions.clear();
     lastPrivateContactListCreatedAt = 0;
     lastPrivateContactListEventId = '';
     stopMyRelayListSubscription();
@@ -2690,7 +3284,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Message cannot be empty.');
     }
 
-    return sendGiftWrappedRumor(
+    const publishResult = await sendGiftWrappedRumor(
       recipientPublicKey,
       relays,
       NDKKind.PrivateDirectMessage,
@@ -2704,6 +3298,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       },
       options
     );
+    return publishResult.giftWrapEvent;
   }
 
   async function sendDirectMessageReaction(
@@ -2713,7 +3308,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     targetAuthorPublicKey: string,
     relays: string[],
     options: SendDirectMessageReactionOptions = {}
-  ): Promise<NostrEvent> {
+  ): Promise<NostrEvent | null> {
     const normalizedEmoji = emoji.trim();
     const normalizedTargetEventId = normalizeEventId(targetEventId);
     const normalizedTargetAuthorPublicKey = inputSanitizerService.normalizeHexKey(
@@ -2736,7 +3331,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         ? Number(options.targetKind)
         : NDKKind.PrivateDirectMessage;
 
-    return sendGiftWrappedRumor(
+    const publishResult = await sendGiftWrappedRumor(
       recipientPublicKey,
       relays,
       NDKKind.Reaction,
@@ -2755,6 +3350,52 @@ export const useNostrStore = defineStore('nostrStore', () => {
         createdAt: options.createdAt
       }
     );
+    if (publishResult.rumorEvent) {
+      await nostrEventDataService.upsertEvent({
+        event: publishResult.rumorEvent,
+        direction: 'out',
+        relay_statuses: publishResult.relayStatuses
+      });
+    }
+
+    return publishResult.rumorEvent;
+  }
+
+  async function sendDirectMessageDeletion(
+    recipientPublicKey: string,
+    targetEventId: string,
+    targetKind: number,
+    relays: string[],
+    options: SendDirectMessageDeletionOptions = {}
+  ): Promise<NostrEvent | null> {
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    if (!normalizedTargetEventId) {
+      throw new Error('Deletion target event id is required.');
+    }
+
+    if (!Number.isInteger(targetKind) || Number(targetKind) <= 0) {
+      throw new Error('Deletion target kind is required.');
+    }
+
+    const publishResult = await sendGiftWrappedRumor(
+      recipientPublicKey,
+      relays,
+      NDKKind.EventDeletion,
+      (senderPubkey, normalizedRecipientPubkey, createdAt) => {
+        return createEventDeletionRumorEvent(
+          senderPubkey,
+          normalizedRecipientPubkey,
+          normalizedTargetEventId,
+          Number(targetKind),
+          createdAt
+        );
+      },
+      {
+        createdAt: options.createdAt
+      }
+    );
+
+    return publishResult.rumorEvent;
   }
 
   async function retryDirectMessageRelay(
@@ -2861,6 +3502,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restoreStartupState,
     retryDirectMessageRelay,
     sendDirectMessage,
+    sendDirectMessageDeletion,
     sendDirectMessageReaction,
     savePrivateKeyFromNsec,
     savePrivateKeyHex,

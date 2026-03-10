@@ -6,6 +6,7 @@ import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { relaysService } from 'src/services/relaysService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type {
+  DeletedMessageMetadata,
   Message,
   MessageReaction,
   MessageReplyPreview,
@@ -34,6 +35,29 @@ function getLoggedInPublicKey(): string | null {
   }
 
   return normalizeChatIdentifier(window.localStorage.getItem('npub'));
+}
+
+function normalizeEventId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  return normalizedValue || null;
+}
+
+function buildDeletedMessageMeta(
+  deletedByPublicKey: string,
+  deletedEventKind: number,
+  deletedAt: string,
+  deleteEventId?: string | null
+): DeletedMessageMetadata {
+  return {
+    deletedAt,
+    deletedByPublicKey,
+    deletedEventKind,
+    ...(normalizeEventId(deleteEventId) ? { deleteEventId: normalizeEventId(deleteEventId) } : {})
+  };
 }
 
 function mapMessageRowToMessage(
@@ -152,6 +176,13 @@ export const useMessageStore = defineStore('messageStore', () => {
     );
   }
 
+  async function resolveRecipientRelayUrls(chatPublicKey: string): Promise<string[]> {
+    const contactRelays = await relaysService.listRelaysByPublicKey(chatPublicKey);
+    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
+    const fallbackRelays = contactRelays.map((relay) => relay.url);
+    return preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
+  }
+
   function upsertMessageInState(chatId: string, message: Message): void {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -268,10 +299,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const contactRelays = await relaysService.listRelaysByPublicKey(chat.public_key);
-    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
-    const fallbackRelays = contactRelays.map((relay) => relay.url);
-    const recipientRelayUrls = preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
+    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
 
     const created = await chatDataService.createMessage({
       chat_public_key: chat.public_key,
@@ -294,13 +322,14 @@ export const useMessageStore = defineStore('messageStore', () => {
     messagesByChat.value[normalizedChatId] = [...messagesByChat.value[normalizedChatId], newMessage];
     let sendError: unknown = null;
 
-    const allRelays = await relaysService.listAllRelays();
+    // const allRelays = await relaysService.listAllRelays();
     
     try {
       await nostrStore.sendDirectMessage(
         chat.public_key,
         newMessage.text,
-        recipientRelayUrls.concat(allRelays),
+        // recipientRelayUrls.concat(allRelays),
+        recipientRelayUrls,
         {
           localMessageId: created.id,
           createdAt: created.created_at
@@ -420,7 +449,8 @@ export const useMessageStore = defineStore('messageStore', () => {
           {
             emoji: normalizedEmoji,
             name: emojiEntry?.label ?? normalizedEmoji,
-            reactorPublicKey: loggedInPublicKey
+            reactorPublicKey: loggedInPublicKey,
+            eventId: null
           }
         ];
       }
@@ -435,13 +465,10 @@ export const useMessageStore = defineStore('messageStore', () => {
       return updatedMessage;
     }
 
-    const contactRelays = await relaysService.listRelaysByPublicKey(chat.public_key);
-    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
-    const fallbackRelays = contactRelays.map((relay) => relay.url);
-    const recipientRelayUrls = preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
+    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
     // const allRelays = await relaysService.listAllRelays();
 
-    await nostrStore.sendDirectMessageReaction(
+    const publishedReactionEvent = await nostrStore.sendDirectMessageReaction(
       chat.public_key,
       normalizedEmoji,
       existingRow.event_id,
@@ -454,7 +481,31 @@ export const useMessageStore = defineStore('messageStore', () => {
       }
     );
 
-    return updatedMessage;
+    const publishedReactionEventId = normalizeEventId(publishedReactionEvent?.id);
+    if (!publishedReactionEventId) {
+      return updatedMessage;
+    }
+
+    return updateMessageReactions(
+      normalizedChatId,
+      String(normalizedMessageId),
+      (reactions, currentLoggedInPublicKey) => {
+        return reactions.map((reaction) => {
+          const isMatchingReaction =
+            reaction.emoji === normalizedEmoji &&
+            normalizeChatIdentifier(reaction.reactorPublicKey) === currentLoggedInPublicKey &&
+            !normalizeEventId(reaction.eventId);
+          if (!isMatchingReaction) {
+            return reaction;
+          }
+
+          return {
+            ...reaction,
+            eventId: publishedReactionEventId
+          };
+        });
+      }
+    );
   }
 
   async function removeReaction(
@@ -470,7 +521,19 @@ export const useMessageStore = defineStore('messageStore', () => {
       return getMessageFromState(chatId, messageId);
     }
 
-    return updateMessageReactions(chatId, messageId, (reactions) => {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedMessageId = Number.parseInt(messageId, 10);
+    if (!normalizedChatId || !Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0) {
+      return null;
+    }
+
+    await chatDataService.init();
+    const existingRow = await chatDataService.getMessageById(normalizedMessageId);
+    if (!existingRow) {
+      return null;
+    }
+
+    const updatedMessage = await updateMessageReactions(chatId, messageId, (reactions) => {
       return reactions.filter((reaction) => {
         return !(
           reaction.emoji === reactionToRemove.emoji &&
@@ -480,6 +543,122 @@ export const useMessageStore = defineStore('messageStore', () => {
         );
       });
     });
+    if (!updatedMessage) {
+      return null;
+    }
+
+    const reactionEventId = normalizeEventId(reactionToRemove.eventId);
+    if (!reactionEventId) {
+      return updatedMessage;
+    }
+
+    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
+    if (!chat) {
+      return updatedMessage;
+    }
+
+    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
+    await nostrStore.sendDirectMessageDeletion(
+      chat.public_key,
+      reactionEventId,
+      7,
+      recipientRelayUrls,
+      {
+        createdAt: new Date().toISOString()
+      }
+    );
+    await nostrEventDataService.deleteEventsByIds([reactionEventId]);
+
+    return updatedMessage;
+  }
+
+  async function deleteMessage(chatId: string, messageId: string): Promise<Message | null> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedMessageId = Number.parseInt(messageId, 10);
+    const loggedInPublicKey = getLoggedInPublicKey();
+    if (!normalizedChatId || !Number.isInteger(normalizedMessageId) || normalizedMessageId <= 0) {
+      return null;
+    }
+
+    if (!loggedInPublicKey) {
+      return null;
+    }
+
+    await chatDataService.init();
+    const existingRow = await chatDataService.getMessageById(normalizedMessageId);
+    if (!existingRow) {
+      return null;
+    }
+
+    if (normalizeChatIdentifier(existingRow.author_public_key) !== loggedInPublicKey) {
+      return getMessageFromState(normalizedChatId, String(normalizedMessageId));
+    }
+
+    if (!existingRow.event_id) {
+      return getMessageFromState(normalizedChatId, String(normalizedMessageId));
+    }
+
+    const targetKind = Number.isInteger(existingRow.meta.kind)
+      ? Number(existingRow.meta.kind)
+      : 14;
+    const updatedRow = await chatDataService.updateMessageMeta(
+      normalizedMessageId,
+      {
+        ...existingRow.meta,
+        deleted: buildDeletedMessageMeta(
+          loggedInPublicKey,
+          targetKind,
+          new Date().toISOString()
+        )
+      }
+    );
+    if (!updatedRow) {
+      return null;
+    }
+
+    const updatedMessage = await hydrateMessageRow(updatedRow, normalizedChatId);
+    replaceMessageInState(normalizedChatId, updatedMessage);
+
+    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
+    if (!chat) {
+      return updatedMessage;
+    }
+
+    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
+    const deleteEvent = await nostrStore.sendDirectMessageDeletion(
+      chat.public_key,
+      existingRow.event_id,
+      targetKind,
+      recipientRelayUrls,
+      {
+        createdAt: new Date().toISOString()
+      }
+    );
+    const deleteEventId = normalizeEventId(deleteEvent?.id);
+    if (!deleteEventId) {
+      return updatedMessage;
+    }
+
+    const rowWithDeleteEvent = await chatDataService.updateMessageMeta(
+      normalizedMessageId,
+      {
+        ...updatedRow.meta,
+        deleted: buildDeletedMessageMeta(
+          loggedInPublicKey,
+          targetKind,
+          (updatedRow.meta.deleted as DeletedMessageMetadata | undefined)?.deletedAt ??
+            new Date().toISOString(),
+          deleteEventId
+        )
+      }
+    );
+    if (!rowWithDeleteEvent) {
+      return updatedMessage;
+    }
+
+    const finalMessage = await hydrateMessageRow(rowWithDeleteEvent, normalizedChatId);
+    replaceMessageInState(normalizedChatId, finalMessage);
+    return finalMessage;
   }
 
   function removeChatMessages(chatId: string): void {
@@ -506,6 +685,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     sendMessage,
     addReaction,
     removeReaction,
+    deleteMessage,
     removeChatMessages,
     upsertPersistedMessage,
     refreshPersistedMessage

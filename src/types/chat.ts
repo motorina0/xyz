@@ -30,11 +30,20 @@ export interface MessageReaction {
   emoji: string;
   name: string;
   reactorPublicKey: string;
+  eventId?: string | null;
+}
+
+export interface DeletedMessageMetadata {
+  deletedAt: string;
+  deletedByPublicKey: string;
+  deleteEventId?: string | null;
+  deletedEventKind: number;
 }
 
 export interface MessageMetadata {
   reply?: MessageReplyPreview;
   reactions?: MessageReaction[];
+  deleted?: DeletedMessageMetadata;
   [key: string]: unknown;
 }
 

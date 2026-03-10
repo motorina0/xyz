@@ -56,11 +56,22 @@
               </q-item-section>
               <q-item-section>Info</q-item-section>
             </q-item>
-            <q-item clickable v-close-popup @click="handleDelete">
+            <q-item v-if="canDeleteMessage" clickable v-close-popup @click="handleDelete">
               <q-item-section avatar>
                 <q-icon name="delete" class="text-negative" />
               </q-item-section>
               <q-item-section class="text-negative">Delete</q-item-section>
+            </q-item>
+            <q-item
+              v-else-if="isDeletedMessage"
+              clickable
+              v-close-popup
+              @click="openDeletedMessageDialog"
+            >
+              <q-item-section avatar>
+                <q-icon name="visibility" />
+              </q-item-section>
+              <q-item-section>View Deleted Message</q-item-section>
             </q-item>
           </q-list>
 
@@ -123,8 +134,14 @@
           </div>
         </button>
 
-        <p class="bubble__text" :class="{ 'bubble__text--emoji': isSingleEmojiMessage }">
-          {{ message.text }}
+        <p
+          class="bubble__text"
+          :class="{
+            'bubble__text--emoji': isSingleEmojiMessage,
+            'bubble__text--deleted': isDeletedMessage
+          }"
+        >
+          {{ visibleMessageText }}
         </p>
       </div>
 
@@ -163,7 +180,12 @@
           :key="`${reaction.emoji}-${reaction.reactorPublicKey}-${index}`"
           type="button"
           class="bubble__reaction-chip"
-          :aria-label="`Remove ${reaction.name} reaction`"
+          :class="{ 'bubble__reaction-chip--removable': canRemoveReaction(reaction) }"
+          :aria-label="
+            canRemoveReaction(reaction)
+              ? `Remove ${reaction.name} reaction`
+              : `${reaction.name} reaction`
+          "
           @click.stop="handleRemoveReaction(reaction)"
         >
           <span class="bubble__reaction-emoji">{{ reaction.emoji }}</span>
@@ -286,9 +308,17 @@
       </div>
       <div class="bubble__info-row">
         <div class="bubble__info-label">Message</div>
-        <div class="bubble__info-value">{{ message.text }}</div>
+        <div class="bubble__info-value">{{ visibleMessageText }}</div>
       </div>
     </div>
+  </AppDialog>
+
+  <AppDialog
+    v-model="isDeletedMessageDialogOpen"
+    title="Deleted Message"
+    max-width="460px"
+  >
+    <div class="bubble__deleted-message-dialog">{{ message.text }}</div>
   </AppDialog>
 </template>
 
@@ -300,6 +330,7 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS } from 'src/data/topEmojis';
 import type {
+  DeletedMessageMetadata,
   Message,
   MessageReaction,
   MessageRelayStatus,
@@ -318,6 +349,7 @@ const emit = defineEmits<{
   (event: 'reply', message: Message): void;
   (event: 'open-reply-target', messageId: string): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
+  (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
 }>();
 
@@ -328,6 +360,7 @@ const loggedInPublicKey = computed(() => nostrStore.getLoggedInPublicKeyHex()?.t
 const isActionMenuOpen = ref(false);
 const isEmojiPickerMenuOpen = ref(false);
 const isInfoDialogOpen = ref(false);
+const isDeletedMessageDialogOpen = ref(false);
 const shouldOpenEmojiPickerAfterActionMenu = ref(false);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
 
@@ -376,6 +409,21 @@ function isMessageReplyPreview(value: unknown): value is MessageReplyPreview {
     typeof candidate.authorPublicKey === 'string' &&
     typeof candidate.sentAt === 'string' &&
     (typeof candidate.eventId === 'string' || candidate.eventId === null)
+  );
+}
+
+function isDeletedMessageMetadata(value: unknown): value is DeletedMessageMetadata {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Partial<DeletedMessageMetadata>;
+  return (
+    typeof candidate.deletedAt === 'string' &&
+    candidate.deletedAt.trim().length > 0 &&
+    typeof candidate.deletedByPublicKey === 'string' &&
+    candidate.deletedByPublicKey.trim().length > 0 &&
+    typeof candidate.deletedEventKind === 'number'
   );
 }
 
@@ -433,10 +481,30 @@ const messageReactions = computed<MessageReaction[]>(() => {
 function canRemoveReaction(reaction: MessageReaction): boolean {
   return reaction.reactorPublicKey.trim().toLowerCase() === loggedInPublicKey.value;
 }
+const deletedMessageMeta = computed<DeletedMessageMetadata | null>(() => {
+  const candidate = props.message.meta.deleted;
+  return isDeletedMessageMetadata(candidate) ? candidate : null;
+});
+const isDeletedMessage = computed(() => deletedMessageMeta.value !== null);
+const canDeleteMessage = computed(() => {
+  return isMine.value && !isDeletedMessage.value && Boolean(props.message.eventId);
+});
+const visibleMessageText = computed(() => {
+  if (!isDeletedMessage.value) {
+    return props.message.text;
+  }
+
+  const [firstLine = ''] = props.message.text.split(/\r?\n/u);
+  return firstLine;
+});
 const quickReactionEntries = TOP_500_EMOJIS.slice(0, 5);
 const SINGLE_EMOJI_PATTERN =
   /^(?:\p{Regional_Indicator}{2}|(?:[#*0-9]\uFE0F?\u20E3)|\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?(?:\u200D\p{Extended_Pictographic}(?:\uFE0F|\uFE0E)?(?:\p{Emoji_Modifier})?)*)$/u;
 const isSingleEmojiMessage = computed(() => {
+  if (isDeletedMessage.value) {
+    return false;
+  }
+
   const trimmedText = props.message.text.trim();
   return trimmedText.length > 0 && SINGLE_EMOJI_PATTERN.test(trimmedText);
 });
@@ -673,7 +741,7 @@ function handleForward(): void {
 
 async function handleCopy(): Promise<void> {
   try {
-    await copyText(props.message.text);
+    await copyText(visibleMessageText.value);
     $q.notify({
       type: 'positive',
       message: 'Message copied.',
@@ -694,7 +762,19 @@ function handleInfo(): void {
 }
 
 function handleDelete(): void {
-  notifyUnimplemented('Delete');
+  if (!canDeleteMessage.value) {
+    return;
+  }
+
+  emit('delete-message', props.message);
+}
+
+function openDeletedMessageDialog(): void {
+  if (!isDeletedMessage.value) {
+    return;
+  }
+
+  isDeletedMessageDialogOpen.value = true;
 }
 
 function isRetrying(item: StatusListItem): boolean {
@@ -818,6 +898,14 @@ const formattedInfoTime = computed(() => {
   cursor: pointer;
 }
 
+.bubble__text--deleted {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  filter: blur(4px);
+  user-select: none;
+}
+
 .bubble__text--emoji {
   font-size: clamp(2.4rem, 5vw, 3.8rem);
   line-height: 1.1;
@@ -914,13 +1002,16 @@ const formattedInfoTime = computed(() => {
   border-radius: 999px;
   background: color-mix(in srgb, var(--tg-sidebar) 88%, transparent);
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
-  cursor: pointer;
   transition:
     transform 0.18s ease,
     background-color 0.18s ease;
 }
 
-.bubble__reaction-chip:hover {
+.bubble__reaction-chip--removable {
+  cursor: pointer;
+}
+
+.bubble__reaction-chip--removable:hover {
   transform: translateY(-1px);
   background: color-mix(in srgb, var(--q-primary) 16%, var(--tg-sidebar) 84%);
 }
@@ -928,6 +1019,12 @@ const formattedInfoTime = computed(() => {
 .bubble__reaction-emoji {
   font-size: 16px;
   line-height: 1;
+}
+
+.bubble__deleted-message-dialog {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 .bubble__reply-preview-accent {

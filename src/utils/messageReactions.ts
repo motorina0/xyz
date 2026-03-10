@@ -1,5 +1,14 @@
 import type { MessageReaction } from 'src/types/chat';
 
+function normalizeEventId(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || null;
+}
+
 export function isMessageReaction(value: unknown): value is MessageReaction {
   if (!value || typeof value !== 'object') {
     return false;
@@ -12,7 +21,10 @@ export function isMessageReaction(value: unknown): value is MessageReaction {
     typeof candidate.name === 'string' &&
     candidate.name.trim().length > 0 &&
     typeof candidate.reactorPublicKey === 'string' &&
-    candidate.reactorPublicKey.trim().length > 0
+    candidate.reactorPublicKey.trim().length > 0 &&
+    (candidate.eventId === undefined ||
+      candidate.eventId === null ||
+      (typeof candidate.eventId === 'string' && candidate.eventId.trim().length > 0))
   );
 }
 
@@ -26,7 +38,8 @@ export function normalizeMessageReactions(value: unknown): MessageReaction[] {
     .map((reaction) => ({
       emoji: reaction.emoji.trim(),
       name: reaction.name.trim(),
-      reactorPublicKey: reaction.reactorPublicKey.trim().toLowerCase()
+      reactorPublicKey: reaction.reactorPublicKey.trim().toLowerCase(),
+      ...(normalizeEventId(reaction.eventId) ? { eventId: normalizeEventId(reaction.eventId) } : {})
     }));
 }
 
@@ -37,7 +50,8 @@ export function areMessageReactionsEqual(
   return (
     first.emoji === second.emoji &&
     first.name === second.name &&
-    first.reactorPublicKey === second.reactorPublicKey
+    first.reactorPublicKey === second.reactorPublicKey &&
+    normalizeEventId(first.eventId) === normalizeEventId(second.eventId)
   );
 }
 

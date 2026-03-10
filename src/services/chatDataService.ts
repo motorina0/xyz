@@ -117,6 +117,24 @@ function normalizeEventId(value: unknown): string | null {
   return trimmed || null;
 }
 
+function hasReactionEventId(meta: Record<string, unknown>, eventId: string): boolean {
+  const reactions = meta.reactions;
+  if (!Array.isArray(reactions)) {
+    return false;
+  }
+
+  return reactions.some((reaction) => {
+    if (!reaction || typeof reaction !== 'object') {
+      return false;
+    }
+
+    const reactionEventId = normalizeEventId(
+      'eventId' in reaction ? reaction.eventId : null
+    );
+    return reactionEventId === eventId;
+  });
+}
+
 function normalizePublicKeyValue(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
@@ -630,6 +648,27 @@ class ChatDataService {
     await waitForTransaction(transaction);
 
     return record ? toMessageRow(record) : null;
+  }
+
+  async findMessageByReactionEventId(eventId: string): Promise<MessageRow | null> {
+    const normalizedEventId = normalizeEventId(eventId);
+    if (!normalizedEventId) {
+      return null;
+    }
+
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const records = await requestToPromise<MessageRecord[]>(
+      store.getAll() as IDBRequest<MessageRecord[]>
+    );
+    await waitForTransaction(transaction);
+
+    const matchingRecord = records.find((record) => {
+      return hasReactionEventId(normalizeMeta(record.meta), normalizedEventId);
+    });
+
+    return matchingRecord ? toMessageRow(matchingRecord) : null;
   }
 
   async getDatabase(): Promise<IDBDatabase> {

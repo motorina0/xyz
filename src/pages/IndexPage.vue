@@ -49,6 +49,7 @@
         @back="handleBackToChatList"
         @open-profile="handleOpenProfile"
         @react="handleReactToMessage"
+        @delete-message="handleDeleteMessage"
         @remove-reaction="handleRemoveReaction"
         @refresh-chat="handleRefreshChat"
       />
@@ -153,6 +154,14 @@ async function handleReactToMessage(payload: { message: Message; emoji: string }
     await messageStore.addReaction(payload.message.chatId, payload.message.id, payload.emoji);
   } catch (error) {
     reportUiError('Failed to add message reaction', error, 'Failed to add reaction.');
+  }
+}
+
+async function handleDeleteMessage(message: Message): Promise<void> {
+  try {
+    await messageStore.deleteMessage(message.chatId, message.id);
+  } catch (error) {
+    reportUiError('Failed to delete message', error, 'Failed to delete message.');
   }
 }
 
