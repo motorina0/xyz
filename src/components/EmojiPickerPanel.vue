@@ -230,18 +230,22 @@ defineExpose({
   width: 100%;
   min-height: var(--emoji-picker-item-min-height);
   padding: var(--emoji-picker-item-padding);
-  border: 0;
+  border: 1px solid var(--tg-btn-soft-border);
   border-radius: 12px;
-  background: color-mix(in srgb, #ffffff 38%, transparent);
+  background: var(--tg-btn-soft-bg);
+  box-shadow: var(--tg-btn-soft-shadow);
   cursor: pointer;
   transition:
     transform 0.18s ease,
-    background-color 0.18s ease;
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .emoji-picker__item:hover {
   transform: translateY(-1px);
-  background: color-mix(in srgb, var(--q-primary) 16%, #ffffff 84%);
+  background: var(--tg-btn-soft-hover-bg);
+  border-color: color-mix(in srgb, var(--q-primary) 26%, var(--tg-btn-soft-border) 74%);
 }
 
 .emoji-picker__char {
@@ -264,24 +268,28 @@ defineExpose({
   justify-content: center;
   min-height: 34px;
   padding: 0;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 10px;
-  background: transparent;
+  background: var(--tg-btn-soft-bg);
+  box-shadow: var(--tg-btn-soft-shadow);
   color: color-mix(in srgb, currentColor 72%, #60758f 28%);
   cursor: pointer;
   transition:
     color 0.18s ease,
     background-color 0.18s ease,
-    transform 0.18s ease;
+    transform 0.18s ease,
+    border-color 0.18s ease;
 }
 
 .emoji-picker__tab:hover {
-  background: color-mix(in srgb, var(--q-primary) 12%, #ffffff 88%);
+  background: var(--tg-btn-soft-hover-bg);
+  border-color: var(--tg-btn-soft-border);
   color: inherit;
 }
 
 .emoji-picker__tab--active {
-  background: color-mix(in srgb, var(--q-primary) 16%, #ffffff 84%);
+  background: color-mix(in srgb, var(--q-primary) 12%, var(--tg-btn-soft-hover-bg) 88%);
+  border-color: color-mix(in srgb, var(--q-primary) 26%, var(--tg-btn-soft-border) 74%);
   color: var(--q-primary);
 }
 

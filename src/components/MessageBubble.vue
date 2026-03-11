@@ -910,23 +910,30 @@ watch(
   animation: bubble-in 180ms ease both;
 }
 
-.bubble__menu-trigger {
+.q-btn.bubble__menu-trigger {
   position: absolute;
   top: 6px;
   right: 6px;
   color: color-mix(in srgb, currentColor 68%, #64748b 32%);
-  background: color-mix(in srgb, var(--tg-sidebar) 74%, transparent);
+  background: transparent !important;
+  box-shadow: none !important;
   opacity: 0;
   pointer-events: none;
   transform: translateY(-2px);
   transition:
     opacity 0.18s ease,
     transform 0.18s ease,
-    background-color 0.18s ease;
+    color 0.18s ease;
+  border-radius: 999px;
 }
 
-.bubble__menu-trigger:hover {
-  background: color-mix(in srgb, var(--tg-sidebar) 88%, transparent);
+.q-btn.bubble__menu-trigger::before {
+  border-color: transparent !important;
+}
+
+.q-btn.bubble__menu-trigger:hover {
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .bubble-row:hover .bubble__menu-trigger,
@@ -1036,9 +1043,10 @@ watch(
   width: 34px;
   height: 34px;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--tg-btn-round-border);
   border-radius: 999px;
-  background: color-mix(in srgb, #ffffff 42%, transparent);
+  background: var(--tg-btn-round-bg);
+  box-shadow: var(--tg-btn-soft-shadow);
   color: inherit;
   font-size: 18px;
   line-height: 1;
@@ -1046,12 +1054,15 @@ watch(
   transition:
     transform 0.18s ease,
     background-color 0.18s ease,
-    color 0.18s ease;
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .bubble__quick-reaction:hover {
   transform: translateY(-1px);
-  background: color-mix(in srgb, var(--q-primary) 18%, #ffffff 82%);
+  background: color-mix(in srgb, var(--q-primary) 12%, var(--tg-btn-soft-hover-bg) 88%);
+  border-color: color-mix(in srgb, var(--q-primary) 24%, var(--tg-btn-round-border) 76%);
 }
 
 .bubble__quick-reaction--more {
@@ -1075,13 +1086,15 @@ watch(
   min-width: 32px;
   min-height: 28px;
   padding: 0 10px;
-  border: 0;
+  border: 1px solid var(--tg-btn-round-border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tg-sidebar) 88%, transparent);
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+  background: var(--tg-btn-round-bg);
+  box-shadow: var(--tg-btn-soft-shadow);
   transition:
     transform 0.18s ease,
-    background-color 0.18s ease;
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .bubble__reaction-chip--removable {

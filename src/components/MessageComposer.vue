@@ -433,18 +433,25 @@ defineExpose({
   gap: 10px;
   width: 100%;
   padding: 8px 10px;
-  border: 0;
+  border: 1px solid transparent;
   border-radius: 12px;
-  background: transparent;
+  background: var(--tg-btn-soft-bg);
+  box-shadow: var(--tg-btn-soft-shadow);
   color: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background-color 0.16s ease;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .composer__emoji-option:hover,
 .composer__emoji-option--active {
-  background: color-mix(in srgb, var(--q-primary) 14%, transparent);
+  transform: translateY(-1px);
+  border-color: var(--tg-btn-soft-border);
+  background: var(--tg-btn-soft-hover-bg);
 }
 
 .composer__emoji-option-char {

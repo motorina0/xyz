@@ -38,6 +38,28 @@
   --tg-shadow-sm: 0 10px 26px rgba(15, 56, 104, 0.1);
   --tg-shadow-md: 0 18px 44px rgba(15, 56, 104, 0.14);
   --tg-title-font: 'Space Grotesk', 'Manrope', 'Trebuchet MS', sans-serif;
+  --tg-btn-radius: 14px;
+  --tg-btn-soft-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 90%, #f4f8ff 10%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #ffffff 4%)
+    );
+  --tg-btn-soft-border: color-mix(in srgb, var(--tg-border) 84%, #8ea5c1 16%);
+  --tg-btn-soft-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 8px 18px rgba(15, 56, 104, 0.08);
+  --tg-btn-soft-hover-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 84%, #dcecff 16%),
+      color-mix(in srgb, var(--tg-sidebar) 92%, #eff6ff 8%)
+    );
+  --tg-btn-solid-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 12px 24px rgba(45, 120, 220, 0.24);
+  --tg-btn-round-bg: color-mix(in srgb, var(--tg-sidebar) 82%, rgba(255, 255, 255, 0.18));
+  --tg-btn-round-border: color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
 }
 
 body.body--dark {
@@ -75,6 +97,27 @@ body.body--dark {
   --tg-rail: #111929;
   --tg-shadow-sm: 0 12px 32px rgba(0, 0, 0, 0.35);
   --tg-shadow-md: 0 24px 52px rgba(0, 0, 0, 0.42);
+  --tg-btn-soft-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 88%, #22344c 12%),
+      color-mix(in srgb, var(--tg-sidebar) 96%, #22344c 4%)
+    );
+  --tg-btn-soft-border: color-mix(in srgb, var(--tg-border) 84%, #6b85a8 16%);
+  --tg-btn-soft-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 20px rgba(0, 0, 0, 0.24);
+  --tg-btn-soft-hover-bg:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--tg-sidebar) 82%, #27446a 18%),
+      color-mix(in srgb, var(--tg-sidebar) 92%, #20314a 8%)
+    );
+  --tg-btn-solid-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 26px rgba(0, 0, 0, 0.3);
+  --tg-btn-round-bg: color-mix(in srgb, var(--tg-sidebar) 76%, rgba(19, 31, 47, 0.24));
+  --tg-btn-round-border: color-mix(in srgb, var(--tg-border) 86%, #6480a0 14%);
 }
 
 body {
@@ -121,6 +164,70 @@ body.body--dark {
     inset 0 1px 0 rgba(255, 255, 255, 0.62),
     0 0 0 1px rgba(59, 130, 246, 0.2),
     0 10px 20px rgba(59, 130, 246, 0.12);
+}
+
+.q-btn {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition:
+    transform 0.18s ease,
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.q-btn .q-btn__content {
+  gap: 8px;
+  font-weight: 700;
+}
+
+.q-btn:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini) {
+  border-radius: var(--tg-btn-radius);
+}
+
+.q-btn.q-btn--flat:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini),
+.q-btn.q-btn--outline:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini) {
+  background: var(--tg-btn-soft-bg);
+  box-shadow: var(--tg-btn-soft-shadow);
+}
+
+.q-btn.q-btn--flat:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini)::before,
+.q-btn.q-btn--outline:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini)::before {
+  border-color: var(--tg-btn-soft-border);
+}
+
+.q-btn.q-btn--unelevated:not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini),
+.q-btn:not(.q-btn--flat):not(.q-btn--outline):not(.q-btn--round):not(.q-btn--fab):not(.q-btn--fab-mini) {
+  box-shadow: var(--tg-btn-solid-shadow);
+}
+
+.q-btn.q-btn--flat.q-btn--round,
+.q-btn.q-btn--outline.q-btn--round,
+.q-btn.q-btn--unelevated.q-btn--round {
+  background: var(--tg-btn-round-bg);
+  box-shadow: var(--tg-btn-soft-shadow);
+}
+
+.q-btn.q-btn--flat.q-btn--round::before,
+.q-btn.q-btn--outline.q-btn--round::before,
+.q-btn.q-btn--unelevated.q-btn--round::before {
+  border-color: var(--tg-btn-round-border);
+}
+
+.q-btn:not(.q-btn--disabled):hover {
+  transform: translateY(-1px);
+}
+
+.q-btn.q-btn--flat:not(.q-btn--disabled):hover,
+.q-btn.q-btn--outline:not(.q-btn--disabled):hover {
+  background: var(--tg-btn-soft-hover-bg);
+}
+
+.q-btn.q-btn--disabled,
+.q-btn:disabled {
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .tg-pop-menu {

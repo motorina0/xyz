@@ -875,14 +875,22 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
     box-shadow 0.2s ease;
 }
 
-.contact-item__more {
+.q-btn.contact-item__more {
   color: color-mix(in srgb, var(--tg-border) 20%, #5f718a 80%);
-  transition: background-color 0.2s ease, color 0.2s ease;
+  background: transparent !important;
+  box-shadow: none !important;
+  transition: color 0.2s ease, opacity 0.2s ease;
 }
 
-.contact-item__more:hover {
+.q-btn.contact-item__more::before {
+  border-color: transparent !important;
+}
+
+.q-btn.contact-item__more:hover {
   color: color-mix(in srgb, var(--tg-border) 10%, #4f637e 90%);
-  background: color-mix(in srgb, var(--tg-sidebar) 86%, #dce8f9 14%);
+  background: transparent !important;
+  box-shadow: none !important;
+  transform: none !important;
 }
 
 .contact-item__main {
