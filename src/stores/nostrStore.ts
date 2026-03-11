@@ -1336,6 +1336,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       const nextReaction: MessageReaction = {
         ...existingReaction,
         ...pendingReaction.reaction,
+        createdAt:
+          pendingReaction.reaction.createdAt ??
+          existingReaction.createdAt ??
+          null,
         eventId:
           normalizeEventId(pendingReaction.reaction.eventId) ??
           normalizeEventId(existingReaction.eventId) ??
@@ -1349,6 +1353,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         nextReaction.emoji === existingReaction.emoji &&
         nextReaction.name === existingReaction.name &&
         nextReaction.reactorPublicKey === existingReaction.reactorPublicKey &&
+        nextReaction.createdAt === existingReaction.createdAt &&
         normalizeEventId(nextReaction.eventId) === normalizeEventId(existingReaction.eventId) &&
         nextReaction.viewedByAuthorAt === existingReaction.viewedByAuthorAt;
       if (isUnchanged) {
@@ -1680,6 +1685,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         emoji: reactionEmoji,
         name: getEmojiEntryByValue(reactionEmoji)?.label ?? reactionEmoji,
         reactorPublicKey: senderPubkeyHex,
+        createdAt: toIsoTimestampFromUnix(rumorEvent.created_at),
         ...(
           (() => {
             const loggedInPubkeyHex = getLoggedInPublicKeyHex();

@@ -75,6 +75,24 @@ function normalizeEventId(value: unknown): string | null {
   return normalizedValue || null;
 }
 
+function normalizeTimestamp(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalizedValue = value.trim();
+  return normalizedValue || null;
+}
+
+function toComparableTimestamp(value: string | null | undefined): number {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 0;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
 function buildDeletedMessageMeta(
   deletedByPublicKey: string,
   deletedEventKind: number,
@@ -614,6 +632,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       (reactions) => {
         const emojiEntry = getEmojiEntryByValue(normalizedEmoji);
         const isOwnMessage = normalizeChatIdentifier(existingRow.author_public_key) === loggedInPublicKey;
+        const createdAt = new Date().toISOString();
         return [
           ...reactions,
           {
@@ -621,7 +640,8 @@ export const useMessageStore = defineStore('messageStore', () => {
             name: emojiEntry?.label ?? normalizedEmoji,
             reactorPublicKey: loggedInPublicKey,
             eventId: null,
-            ...(isOwnMessage ? { viewedByAuthorAt: new Date().toISOString() } : {})
+            createdAt,
+            ...(isOwnMessage ? { viewedByAuthorAt: createdAt } : {})
           }
         ];
       }
@@ -637,6 +657,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
+    const createdAt = new Date().toISOString();
     // const allRelays = await relaysService.listAllRelays();
 
     const publishedReactionEvent = await nostrStore.sendDirectMessageReaction(
@@ -647,7 +668,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       // recipientRelayUrls.concat(allRelays),
       recipientRelayUrls,
       {
-        createdAt: new Date().toISOString(),
+        createdAt,
         targetKind: updatedMessage.nostrEvent?.event.kind
       }
     );
@@ -854,6 +875,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const viewedAt = new Date().toISOString();
     let didChange = false;
+    let latestViewedIncomingReactionAt: string | null = null;
 
     for (const messageId of normalizedMessageIds) {
       const existingRow = await chatDataService.getMessageById(messageId);
@@ -888,10 +910,34 @@ export const useMessageStore = defineStore('messageStore', () => {
       }
 
       didChange = true;
+      nextReactions.forEach((reaction) => {
+        const reactionCreatedAt = normalizeTimestamp(reaction.createdAt);
+        if (
+          reaction.viewedByAuthorAt !== viewedAt ||
+          normalizeChatIdentifier(reaction.reactorPublicKey) === loggedInPublicKey ||
+          !reactionCreatedAt
+        ) {
+          return;
+        }
+
+        if (
+          !latestViewedIncomingReactionAt ||
+          toComparableTimestamp(reactionCreatedAt) >
+            toComparableTimestamp(latestViewedIncomingReactionAt)
+        ) {
+          latestViewedIncomingReactionAt = reactionCreatedAt;
+        }
+      });
       await upsertPersistedMessage(updatedRow);
     }
 
     if (didChange) {
+      if (latestViewedIncomingReactionAt) {
+        await chatStore.setLastSeenReceivedActivityAt(
+          normalizedChatId,
+          latestViewedIncomingReactionAt
+        );
+      }
       await syncChatUnseenReactionCount(normalizedChatId);
     }
   }

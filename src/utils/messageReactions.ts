@@ -40,6 +40,9 @@ export function isMessageReaction(value: unknown): value is MessageReaction {
     candidate.name.trim().length > 0 &&
     typeof candidate.reactorPublicKey === 'string' &&
     candidate.reactorPublicKey.trim().length > 0 &&
+    (candidate.createdAt === undefined ||
+      candidate.createdAt === null ||
+      (typeof candidate.createdAt === 'string' && candidate.createdAt.trim().length > 0)) &&
     (candidate.eventId === undefined ||
       candidate.eventId === null ||
       (typeof candidate.eventId === 'string' && candidate.eventId.trim().length > 0)) &&
@@ -61,6 +64,9 @@ export function normalizeMessageReactions(value: unknown): MessageReaction[] {
       emoji: reaction.emoji.trim(),
       name: reaction.name.trim(),
       reactorPublicKey: reaction.reactorPublicKey.trim().toLowerCase(),
+      ...(normalizeTimestamp(reaction.createdAt)
+        ? { createdAt: normalizeTimestamp(reaction.createdAt) }
+        : {}),
       ...(normalizeEventId(reaction.eventId) ? { eventId: normalizeEventId(reaction.eventId) } : {}),
       ...(normalizeTimestamp(reaction.viewedByAuthorAt)
         ? { viewedByAuthorAt: normalizeTimestamp(reaction.viewedByAuthorAt) }
@@ -76,6 +82,7 @@ export function areMessageReactionsEqual(
     first.emoji === second.emoji &&
     first.name === second.name &&
     first.reactorPublicKey === second.reactorPublicKey &&
+    normalizeTimestamp(first.createdAt) === normalizeTimestamp(second.createdAt) &&
     normalizeEventId(first.eventId) === normalizeEventId(second.eventId) &&
     normalizeTimestamp(first.viewedByAuthorAt) === normalizeTimestamp(second.viewedByAuthorAt)
   );

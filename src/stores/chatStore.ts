@@ -21,6 +21,8 @@ interface LiveChatPreviewInput {
   meta?: Record<string, unknown>;
 }
 
+const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
+
 function sortByLatest(chats: Chat[]): Chat[] {
   const toTimestamp = (value: string): number => {
     const parsed = new Date(value).getTime();
@@ -58,6 +60,23 @@ function normalizeChatIdentifier(value: string | null | undefined): string | nul
 function readMetaString(meta: Record<string, unknown>, key: string): string {
   const value = meta[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function getLoggedInPublicKey(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  return normalizeChatIdentifier(window.localStorage.getItem('npub'));
+}
+
+function toComparableTimestamp(value: string | null | undefined): number {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 0;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function readMetaNumber(meta: Record<string, unknown>, key: string): number | null {
@@ -269,6 +288,95 @@ export const useChatStore = defineStore('chatStore', () => {
 
     if (nextChatId) {
       void markAsRead(nextChatId);
+    }
+  }
+
+  async function getLatestIncomingMessageAt(chatId: string): Promise<string | null> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const loggedInPublicKey = getLoggedInPublicKey();
+    if (!normalizedChatId || !loggedInPublicKey) {
+      return null;
+    }
+
+    await chatDataService.init();
+    const rows = await chatDataService.listMessages(normalizedChatId);
+
+    let latestIncomingMessageAt: string | null = null;
+    for (const row of rows) {
+      if (normalizeChatIdentifier(row.author_public_key) === loggedInPublicKey) {
+        continue;
+      }
+
+      if (
+        !latestIncomingMessageAt ||
+        toComparableTimestamp(row.created_at) > toComparableTimestamp(latestIncomingMessageAt)
+      ) {
+        latestIncomingMessageAt = row.created_at;
+      }
+    }
+
+    return latestIncomingMessageAt;
+  }
+
+  async function setLastSeenReceivedActivityAt(chatId: string, at: string): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedAt = at.trim();
+    if (!normalizedChatId || !normalizedAt) {
+      return;
+    }
+
+    let nextMetaToPersist: Record<string, unknown> | null = null;
+    const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
+
+    if (existingChat) {
+      const currentMeta = existingChat.meta as Record<string, unknown>;
+      const currentAt = readMetaString(currentMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY);
+      if (toComparableTimestamp(currentAt) >= toComparableTimestamp(normalizedAt)) {
+        return;
+      }
+
+      nextMetaToPersist = {
+        ...currentMeta,
+        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: normalizedAt
+      };
+
+      chats.value = chats.value.map((chat) =>
+        chat.id === normalizedChatId
+          ? {
+              ...chat,
+              meta: nextMetaToPersist ?? chat.meta
+            }
+          : chat
+      );
+    } else {
+      await chatDataService.init();
+      const existingRow = await chatDataService.getChatByPublicKey(normalizedChatId);
+      if (!existingRow) {
+        return;
+      }
+
+      const currentAt = readMetaString(
+        existingRow.meta,
+        LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY
+      );
+      if (toComparableTimestamp(currentAt) >= toComparableTimestamp(normalizedAt)) {
+        return;
+      }
+
+      nextMetaToPersist = {
+        ...existingRow.meta,
+        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: normalizedAt
+      };
+    }
+
+    if (!nextMetaToPersist) {
+      return;
+    }
+
+    try {
+      await chatDataService.updateChatMeta(normalizedChatId, nextMetaToPersist);
+    } catch (error) {
+      console.error('Failed to persist last seen received activity for chat', error);
     }
   }
 
@@ -640,6 +748,7 @@ export const useChatStore = defineStore('chatStore', () => {
     setVisibleChatId,
     setSearchQuery,
     updateChatPreview,
+    setLastSeenReceivedActivityAt,
     setUnseenReactionCount,
     applyIncomingMessage,
     addContact,

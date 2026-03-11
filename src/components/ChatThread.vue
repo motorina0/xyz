@@ -58,6 +58,16 @@
             <span class="thread-day-separator__line" />
           </div>
           <div
+            v-else-if="item.type === 'unread-separator'"
+            class="thread-unread-separator"
+            tabindex="-1"
+            data-unread-separator="true"
+          >
+            <span class="thread-unread-separator__line" />
+            <span class="thread-unread-separator__label">{{ item.label }}</span>
+            <span class="thread-unread-separator__line" />
+          </div>
+          <div
             v-else
             class="thread-message-entry"
             :class="{
@@ -150,7 +160,9 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
+import { useNostrStore } from 'src/stores/nostrStore';
 import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
 import {
   countUnseenReactionsForAuthor,
@@ -186,18 +198,28 @@ const composerRef = ref<{ focusInputAtEnd: () => void } | null>(null);
 const stickyDayLabel = ref('');
 const activeReply = ref<MessageReplyPreview | null>(null);
 const highlightedMessageId = ref<string | null>(null);
+const chatStore = useChatStore();
 const messageStore = useMessageStore();
+const nostrStore = useNostrStore();
 const isThreadScrolledUp = ref(false);
 const lastReadMessageId = ref<string | null>(null);
 const hasJumpedToLastReadMessage = ref(false);
+const pendingInitialPositionChatId = ref<string | null>(null);
+const openedUnreadBoundaryAt = ref<string | null>(null);
 let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
 let visibleReactionSyncFrameId: number | null = null;
 let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
+const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 
 type ThreadItem =
   | {
       type: 'separator';
+      key: string;
+      label: string;
+    }
+  | {
+      type: 'unread-separator';
       key: string;
       label: string;
     }
@@ -233,6 +255,10 @@ const avatarImageUrl = computed(() => {
   }
 
   return '';
+});
+
+const loggedInPublicKey = computed(() => {
+  return nostrStore.getLoggedInPublicKeyHex()?.trim().toLowerCase() ?? '';
 });
 
 const latestMessageId = computed(() => {
@@ -299,6 +325,85 @@ const reactionVisibilitySignature = computed(() => {
     .join('|');
 });
 
+function toComparableTimestamp(value: string | null | undefined): number {
+  if (typeof value !== 'string' || !value.trim()) {
+    return 0;
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getFirstIncomingActivityTimestampAfter(message: Message, afterTimestamp: string): number | null {
+  const afterComparableTimestamp = toComparableTimestamp(afterTimestamp);
+  let nextActivityTimestamp: number | null = null;
+
+  if (message.sender === 'them') {
+    const messageTimestamp = toComparableTimestamp(message.sentAt);
+    if (messageTimestamp > afterComparableTimestamp) {
+      nextActivityTimestamp = messageTimestamp;
+    }
+  }
+
+  const currentLoggedInPublicKey = loggedInPublicKey.value;
+  const normalizedAuthorPublicKey = message.authorPublicKey.trim().toLowerCase();
+  normalizeMessageReactions(message.meta.reactions).forEach((reaction) => {
+    const isIncomingReaction = currentLoggedInPublicKey
+      ? reaction.reactorPublicKey !== currentLoggedInPublicKey
+      : message.sender === 'me'
+        ? reaction.reactorPublicKey !== normalizedAuthorPublicKey
+        : reaction.reactorPublicKey === normalizedAuthorPublicKey;
+    if (!isIncomingReaction) {
+      return;
+    }
+
+    const reactionTimestamp = toComparableTimestamp(reaction.createdAt);
+    if (reactionTimestamp <= afterComparableTimestamp) {
+      return;
+    }
+
+    if (nextActivityTimestamp === null || reactionTimestamp < nextActivityTimestamp) {
+      nextActivityTimestamp = reactionTimestamp;
+    }
+  });
+
+  return nextActivityTimestamp;
+}
+
+const firstMessageAfterUnreadBoundaryId = computed(() => {
+  const afterTimestamp = openedUnreadBoundaryAt.value;
+  if (!afterTimestamp || props.messages.length === 0) {
+    return null;
+  }
+
+  let firstMatch: {
+    messageId: string;
+    activityTimestamp: number;
+    index: number;
+  } | null = null;
+
+  props.messages.forEach((message, index) => {
+    const activityTimestamp = getFirstIncomingActivityTimestampAfter(message, afterTimestamp);
+    if (activityTimestamp === null) {
+      return;
+    }
+
+    if (
+      !firstMatch ||
+      activityTimestamp < firstMatch.activityTimestamp ||
+      (activityTimestamp === firstMatch.activityTimestamp && index < firstMatch.index)
+    ) {
+      firstMatch = {
+        messageId: message.id,
+        activityTimestamp,
+        index
+      };
+    }
+  });
+
+  return firstMatch?.messageId ?? null;
+});
+
 function getDayKey(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -328,6 +433,7 @@ function formatDayLabel(value: string): string {
 const threadItems = computed<ThreadItem[]>(() => {
   const items: ThreadItem[] = [];
   let lastDayKey = '';
+  const unreadBoundaryMessageId = firstMessageAfterUnreadBoundaryId.value;
 
   for (const message of props.messages) {
     const dayKey = getDayKey(message.sentAt);
@@ -339,6 +445,14 @@ const threadItems = computed<ThreadItem[]>(() => {
         label: dayLabel
       });
       lastDayKey = dayKey;
+    }
+
+    if (unreadBoundaryMessageId && message.id === unreadBoundaryMessageId) {
+      items.push({
+        type: 'unread-separator',
+        key: `unread-separator-${message.id}`,
+        label: 'Unread Messages'
+      });
     }
 
     items.push({
@@ -534,9 +648,19 @@ function findThreadMessageEntry(targetId: string): HTMLElement | null {
     }) ?? null;
 }
 
+function findUnreadSeparatorEntry(): HTMLElement | null {
+  const threadBody = threadBodyRef.value;
+  if (!threadBody) {
+    return null;
+  }
+
+  return threadBody.querySelector<HTMLElement>('[data-unread-separator="true"]');
+}
+
 async function scrollToMessageEntry(
   targetId: string,
-  block: ScrollLogicalPosition
+  block: ScrollLogicalPosition,
+  behavior: ScrollBehavior = 'smooth'
 ): Promise<boolean> {
   await nextTick();
 
@@ -546,11 +670,54 @@ async function scrollToMessageEntry(
   }
 
   targetEntry.scrollIntoView({
-    behavior: 'smooth',
+    behavior,
     block
   });
 
   return true;
+}
+
+async function scrollToUnreadSeparator(
+  block: ScrollLogicalPosition,
+  behavior: ScrollBehavior = 'smooth'
+): Promise<boolean> {
+  await nextTick();
+
+  const separatorEntry = findUnreadSeparatorEntry();
+  if (!separatorEntry) {
+    return false;
+  }
+
+  separatorEntry.scrollIntoView({
+    behavior,
+    block
+  });
+  separatorEntry.focus({ preventScroll: true });
+  return true;
+}
+
+async function initializeThreadPosition(): Promise<void> {
+  const currentChatId = props.chat?.id ?? null;
+  if (!currentChatId || pendingInitialPositionChatId.value !== currentChatId) {
+    return;
+  }
+
+  if (props.messages.length === 0) {
+    return;
+  }
+
+  if (firstMessageAfterUnreadBoundaryId.value && (await scrollToUnreadSeparator('center', 'auto'))) {
+    isThreadScrolledUp.value = true;
+    lastReadMessageId.value = firstMessageAfterUnreadBoundaryId.value;
+    hasJumpedToLastReadMessage.value = true;
+    updateStickyDayLabel();
+    scheduleVisibleReactionViewSync();
+    pendingInitialPositionChatId.value = null;
+    return;
+  }
+
+  pendingInitialPositionChatId.value = null;
+  await scrollToBottom();
 }
 
 function isEntryVisibleWithinThread(entry: HTMLElement): boolean {
@@ -578,7 +745,52 @@ function scheduleVisibleReactionViewSync(): void {
 
 async function syncVisibleReactionViews(): Promise<void> {
   const currentChatId = props.chat?.id ?? null;
-  if (!currentChatId || unseenReactionMessages.value.length === 0) {
+  if (!currentChatId) {
+    return;
+  }
+
+  const visibleMessages = props.messages.filter((message) => {
+    const entry = findThreadMessageEntry(message.id);
+    return entry ? isEntryVisibleWithinThread(entry) : false;
+  });
+
+  let latestVisibleReceivedActivityAt: string | null = null;
+  visibleMessages.forEach((message) => {
+    if (message.sender === 'them') {
+      if (
+        !latestVisibleReceivedActivityAt ||
+        toComparableTimestamp(message.sentAt) > toComparableTimestamp(latestVisibleReceivedActivityAt)
+      ) {
+        latestVisibleReceivedActivityAt = message.sentAt;
+      }
+    }
+
+    const normalizedAuthorPublicKey = message.authorPublicKey.trim().toLowerCase();
+    normalizeMessageReactions(message.meta.reactions).forEach((reaction) => {
+      const isIncomingReaction = loggedInPublicKey.value
+        ? reaction.reactorPublicKey !== loggedInPublicKey.value
+        : message.sender === 'me'
+          ? reaction.reactorPublicKey !== normalizedAuthorPublicKey
+          : reaction.reactorPublicKey === normalizedAuthorPublicKey;
+      if (!isIncomingReaction || !reaction.createdAt) {
+        return;
+      }
+
+      if (
+        !latestVisibleReceivedActivityAt ||
+        toComparableTimestamp(reaction.createdAt) >
+          toComparableTimestamp(latestVisibleReceivedActivityAt)
+      ) {
+        latestVisibleReceivedActivityAt = reaction.createdAt;
+      }
+    });
+  });
+
+  if (latestVisibleReceivedActivityAt) {
+    await chatStore.setLastSeenReceivedActivityAt(currentChatId, latestVisibleReceivedActivityAt);
+  }
+
+  if (unseenReactionMessages.value.length === 0) {
     return;
   }
 
@@ -689,13 +901,28 @@ function handleRefreshChat(): void {
 
 watch(
   () => props.chat?.id ?? null,
-  () => {
+  (chatId) => {
     activeReply.value = null;
     clearReplyTargetHighlight();
-    lastReadMessageId.value = latestMessageId.value;
+    pendingInitialPositionChatId.value = chatId;
+    openedUnreadBoundaryAt.value =
+      chatId && props.chat
+        ? typeof props.chat.meta[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY] === 'string' &&
+          props.chat.meta[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY].trim()
+          ? String(props.chat.meta[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]).trim()
+          : null
+        : null;
+    lastReadMessageId.value = null;
     hasJumpedToLastReadMessage.value = false;
     isThreadScrolledUp.value = false;
-    void scrollToBottom();
+
+    if (!chatId) {
+      pendingInitialPositionChatId.value = null;
+      void scrollToBottom();
+      return;
+    }
+
+    void initializeThreadPosition();
   },
   { immediate: true }
 );
@@ -703,6 +930,11 @@ watch(
 watch(
   () => props.messages.length,
   (nextLength, previousLength) => {
+    if (pendingInitialPositionChatId.value === (props.chat?.id ?? null)) {
+      void initializeThreadPosition();
+      return;
+    }
+
     if (nextLength === previousLength) {
       return;
     }
@@ -953,6 +1185,42 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   letter-spacing: 0.02em;
   color: color-mix(in srgb, var(--q-primary) 45%, var(--tg-text) 55%);
   white-space: nowrap;
+}
+
+.thread-unread-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 14px;
+  outline: none;
+}
+
+.thread-unread-separator__line {
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, var(--q-primary) 34%, var(--tg-border) 66%);
+}
+
+.thread-unread-separator__label {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: var(--tg-reaction-accent-bg);
+  border: 1px solid var(--tg-reaction-accent-border);
+  box-shadow: var(--tg-reaction-accent-shadow-soft);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tg-reaction-accent-text);
+  white-space: nowrap;
+}
+
+.thread-unread-separator:focus-visible .thread-unread-separator__label,
+.thread-unread-separator:focus .thread-unread-separator__label {
+  box-shadow:
+    var(--tg-reaction-accent-shadow-soft),
+    0 0 0 2px color-mix(in srgb, var(--q-primary) 24%, transparent);
 }
 
 .thread-message-entry {
