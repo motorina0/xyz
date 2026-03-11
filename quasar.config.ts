@@ -14,7 +14,8 @@ export default configure(() => {
     },
 
     devServer: {
-      open: false
+      open: false,
+      allowedHosts: ['.ngrok-free.app', '.ngrok.app']
     },
 
     framework: {
