@@ -141,8 +141,16 @@
             'bubble__text--deleted': isDeletedMessage
           }"
         >
-          {{ visibleMessageText }}
+          {{ bubbleMessageText }}
         </p>
+        <button
+          v-if="canExpandMessage && !isMessageExpanded"
+          type="button"
+          class="bubble__more"
+          @click.stop="expandMessage"
+        >
+          More
+        </button>
       </div>
 
         <div class="bubble__meta">
@@ -308,7 +316,7 @@
       </div>
       <div class="bubble__info-row">
         <div class="bubble__info-label">Message</div>
-        <div class="bubble__info-value">{{ visibleMessageText }}</div>
+        <div class="bubble__info-value">{{ baseVisibleMessageText }}</div>
       </div>
     </div>
   </AppDialog>
@@ -323,7 +331,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
@@ -489,7 +497,35 @@ const isDeletedMessage = computed(() => deletedMessageMeta.value !== null);
 const canDeleteMessage = computed(() => {
   return isMine.value && !isDeletedMessage.value && Boolean(props.message.eventId);
 });
-const visibleMessageText = computed(() => {
+const MAX_EXPANDED_MESSAGE_CHARACTERS = 360;
+const MAX_EXPANDED_MESSAGE_LINES = 8;
+const isMessageExpanded = ref(false);
+
+function isMessageTooLong(text: string): boolean {
+  const normalizedText = text.replace(/\r\n/g, '\n');
+  const lineCount = normalizedText.split('\n').length;
+  return (
+    normalizedText.length > MAX_EXPANDED_MESSAGE_CHARACTERS ||
+    lineCount > MAX_EXPANDED_MESSAGE_LINES
+  );
+}
+
+function truncateMessageText(text: string): string {
+  const normalizedText = text.replace(/\r\n/g, '\n');
+  const lines = normalizedText.split('\n');
+  let nextText =
+    lines.length > MAX_EXPANDED_MESSAGE_LINES
+      ? lines.slice(0, MAX_EXPANDED_MESSAGE_LINES).join('\n')
+      : normalizedText;
+
+  if (nextText.length > MAX_EXPANDED_MESSAGE_CHARACTERS) {
+    nextText = nextText.slice(0, MAX_EXPANDED_MESSAGE_CHARACTERS);
+  }
+
+  return `${nextText.trimEnd()}...`;
+}
+
+const baseVisibleMessageText = computed(() => {
   if (!isDeletedMessage.value) {
     return props.message.text;
   }
@@ -507,6 +543,20 @@ const isSingleEmojiMessage = computed(() => {
 
   const trimmedText = props.message.text.trim();
   return trimmedText.length > 0 && SINGLE_EMOJI_PATTERN.test(trimmedText);
+});
+const canExpandMessage = computed(() => {
+  return (
+    !isDeletedMessage.value &&
+    !isSingleEmojiMessage.value &&
+    isMessageTooLong(baseVisibleMessageText.value)
+  );
+});
+const bubbleMessageText = computed(() => {
+  if (!canExpandMessage.value || isMessageExpanded.value) {
+    return baseVisibleMessageText.value;
+  }
+
+  return truncateMessageText(baseVisibleMessageText.value);
 });
 
 const statusSegments = computed<StatusSegment[]>(() => {
@@ -741,7 +791,7 @@ function handleForward(): void {
 
 async function handleCopy(): Promise<void> {
   try {
-    await copyText(visibleMessageText.value);
+    await copyText(baseVisibleMessageText.value);
     $q.notify({
       type: 'positive',
       message: 'Message copied.',
@@ -777,6 +827,10 @@ function openDeletedMessageDialog(): void {
   isDeletedMessageDialogOpen.value = true;
 }
 
+function expandMessage(): void {
+  isMessageExpanded.value = true;
+}
+
 function isRetrying(item: StatusListItem): boolean {
   return retryingRelayKeys.value.includes(item.key);
 }
@@ -810,6 +864,13 @@ const formattedInfoTime = computed(() => {
     timeStyle: 'short'
   }).format(new Date(props.message.sentAt));
 });
+
+watch(
+  () => [props.message.id, props.message.text, isDeletedMessage.value],
+  () => {
+    isMessageExpanded.value = false;
+  }
+);
 </script>
 
 <style scoped>
@@ -896,6 +957,22 @@ const formattedInfoTime = computed(() => {
   white-space: pre-wrap;
   word-break: break-word;
   cursor: pointer;
+}
+
+.bubble__more {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--q-primary);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.bubble__more:hover {
+  text-decoration: underline;
 }
 
 .bubble__text--deleted {
