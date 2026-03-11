@@ -17,9 +17,20 @@
 
     <q-item-section side top class="chat-item__meta">
       <q-item-label caption>{{ formattedTime }}</q-item-label>
-      <q-badge v-if="chat.unreadCount > 0" rounded color="primary" class="q-mt-xs">
-        {{ chat.unreadCount }}
-      </q-badge>
+      <div v-if="chat.unreadCount > 0 || unseenReactionCount > 0" class="chat-item__badges q-mt-xs">
+        <div
+          v-if="unseenReactionCount > 0"
+          class="chat-item__reaction-badge"
+          :aria-label="`${unseenReactionCount} unseen reactions`"
+        >
+          <q-icon name="favorite" size="18px" class="chat-item__reaction-icon" />
+          <span class="chat-item__reaction-count">{{ unseenReactionCount }}</span>
+        </div>
+
+        <q-badge v-if="chat.unreadCount > 0" rounded color="primary">
+          {{ chat.unreadCount }}
+        </q-badge>
+      </div>
     </q-item-section>
 
     <q-item-section side>
@@ -88,6 +99,16 @@ function readMetaString(key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readMetaCount(key: string): number {
+  const value = props.chat.meta[key];
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.floor(numericValue));
+}
+
 function chatPubkeySnippet(value: string): string {
   return value.trim().slice(0, 32);
 }
@@ -133,6 +154,7 @@ const avatarImageUrl = computed(() => {
 });
 
 const isMuted = computed(() => props.chat.meta.muted === true);
+const unseenReactionCount = computed(() => readMetaCount('unseen_reaction_count'));
 
 function handleSelectChat(): void {
   try {
@@ -235,6 +257,49 @@ function emitDeleteChat(): void {
 
 .chat-item__meta {
   flex: 0 0 auto;
+}
+
+.chat-item__badges {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.chat-item__reaction-badge {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--tg-sidebar) 92%, #eef6ff 8%);
+  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #8ea5c1 16%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 6px 14px rgba(15, 56, 104, 0.12);
+  color: color-mix(in srgb, var(--q-primary) 80%, #0f5ea9 20%);
+}
+
+.chat-item__reaction-count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 800;
+  color: #ffffff;
+}
+
+body.body--dark .chat-item__reaction-badge {
+  background: color-mix(in srgb, var(--tg-sidebar) 90%, #22344c 10%);
+  border-color: color-mix(in srgb, var(--tg-border) 84%, #6f88a8 16%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 16px rgba(0, 0, 0, 0.24);
+  color: #9ed0ff;
 }
 
 .q-btn.chat-item__more {

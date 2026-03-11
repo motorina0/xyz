@@ -31,6 +31,7 @@ export interface MessageReaction {
   name: string;
   reactorPublicKey: string;
   eventId?: string | null;
+  viewedByAuthorAt?: string | null;
 }
 
 export interface DeletedMessageMetadata {

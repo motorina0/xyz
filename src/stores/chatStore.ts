@@ -60,6 +60,16 @@ function readMetaString(meta: Record<string, unknown>, key: string): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function readMetaNumber(meta: Record<string, unknown>, key: string): number | null {
+  const value = meta[key];
+  const numericValue = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor(numericValue));
+}
+
 function syncMetaString(
   meta: Record<string, unknown>,
   key: string,
@@ -392,6 +402,39 @@ export const useChatStore = defineStore('chatStore', () => {
     }
   }
 
+  function setUnseenReactionCount(chatId: string, count: number): void {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    const normalizedCount = Math.max(0, Math.floor(Number(count) || 0));
+
+    chats.value = chats.value.map((chat) => {
+      if (chat.id !== normalizedChatId) {
+        return chat;
+      }
+
+      const currentMeta = chat.meta as Record<string, unknown>;
+      const currentCount = readMetaNumber(currentMeta, 'unseen_reaction_count') ?? 0;
+      if (currentCount === normalizedCount) {
+        return chat;
+      }
+
+      const nextMeta = { ...currentMeta };
+      if (normalizedCount > 0) {
+        nextMeta.unseen_reaction_count = normalizedCount;
+      } else {
+        delete nextMeta.unseen_reaction_count;
+      }
+
+      return {
+        ...chat,
+        meta: nextMeta
+      };
+    });
+  }
+
   function applyIncomingMessage(input: LiveChatPreviewInput): void {
     const nextPublicKey = normalizeChatIdentifier(input.publicKey);
 
@@ -597,6 +640,7 @@ export const useChatStore = defineStore('chatStore', () => {
     setVisibleChatId,
     setSearchQuery,
     updateChatPreview,
+    setUnseenReactionCount,
     applyIncomingMessage,
     addContact,
     syncContactProfile

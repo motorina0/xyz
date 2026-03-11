@@ -5,6 +5,7 @@ import { chatDataService } from 'src/services/chatDataService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { relaysService } from 'src/services/relaysService';
+import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type {
   DeletedMessageMetadata,
@@ -16,6 +17,8 @@ import type {
 import {
   areMessageReactionsEqual,
   buildMetaWithReactions,
+  countUnseenReactionsForAuthor,
+  markReactionsViewedByAuthor,
   normalizeMessageReactions
 } from 'src/utils/messageReactions';
 
@@ -108,10 +111,12 @@ function mapMessageRowToMessage(
 }
 
 export const useMessageStore = defineStore('messageStore', () => {
+  const chatStore = useChatStore();
   const nostrStore = useNostrStore();
   const messagesByChat = ref<Record<string, Message[]>>({});
   const loadedChatIds = new Set<string>();
   const loadingChatPromises = new Map<string, Promise<void>>();
+  const unseenReactionSyncPromises = new Map<string, Promise<number>>();
 
   function compareMessages(first: Message, second: Message): number {
     const firstTimestamp = new Date(first.sentAt).getTime();
@@ -200,6 +205,110 @@ export const useMessageStore = defineStore('messageStore', () => {
     return (
       messagesByChat.value[normalizedChatId]?.find((message) => message.id === messageId) ?? null
     );
+  }
+
+  function areReactionListsEqual(
+    currentReactions: MessageReaction[],
+    nextReactions: MessageReaction[]
+  ): boolean {
+    return (
+      currentReactions.length === nextReactions.length &&
+      currentReactions.every((reaction, index) => {
+        const nextReaction = nextReactions[index];
+        return nextReaction ? areMessageReactionsEqual(reaction, nextReaction) : false;
+      })
+    );
+  }
+
+  function readUnseenReactionCountFromMeta(meta: Record<string, unknown>): number {
+    const rawValue = meta.unseen_reaction_count;
+    const numericValue = typeof rawValue === 'number' ? rawValue : Number(rawValue);
+    if (!Number.isFinite(numericValue)) {
+      return 0;
+    }
+
+    return Math.max(0, Math.floor(numericValue));
+  }
+
+  function buildChatMetaWithUnseenReactionCount(
+    meta: Record<string, unknown>,
+    unseenReactionCount: number
+  ): Record<string, unknown> {
+    const normalizedCount = Math.max(0, Math.floor(Number(unseenReactionCount) || 0));
+    const nextMeta = { ...meta };
+
+    if (normalizedCount > 0) {
+      nextMeta.unseen_reaction_count = normalizedCount;
+      return nextMeta;
+    }
+
+    delete nextMeta.unseen_reaction_count;
+    return nextMeta;
+  }
+
+  async function performSyncChatUnseenReactionCount(chatId: string): Promise<number> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return 0;
+    }
+
+    await chatDataService.init();
+
+    const [chatRow, messageRows] = await Promise.all([
+      chatDataService.getChatByPublicKey(normalizedChatId),
+      chatDataService.listMessages(normalizedChatId)
+    ]);
+    const loggedInPublicKey = getLoggedInPublicKey();
+    const nextUnseenReactionCount = loggedInPublicKey
+      ? messageRows.reduce((count, row) => {
+          if (normalizeChatIdentifier(row.author_public_key) !== loggedInPublicKey) {
+            return count;
+          }
+
+          return (
+            count +
+            countUnseenReactionsForAuthor(
+              normalizeMessageReactions(row.meta.reactions),
+              loggedInPublicKey
+            )
+          );
+        }, 0)
+      : 0;
+
+    if (chatRow) {
+      const currentCount = readUnseenReactionCountFromMeta(chatRow.meta);
+      if (currentCount !== nextUnseenReactionCount) {
+        await chatDataService.updateChatMeta(
+          normalizedChatId,
+          buildChatMetaWithUnseenReactionCount(chatRow.meta, nextUnseenReactionCount)
+        );
+      }
+    }
+
+    chatStore.setUnseenReactionCount(normalizedChatId, nextUnseenReactionCount);
+    return nextUnseenReactionCount;
+  }
+
+  async function syncChatUnseenReactionCount(chatId: string): Promise<number> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return 0;
+    }
+
+    const existingSync = unseenReactionSyncPromises.get(normalizedChatId) ?? Promise.resolve(0);
+    const nextSync = existingSync
+      .catch(() => 0)
+      .then(() => performSyncChatUnseenReactionCount(normalizedChatId));
+
+    unseenReactionSyncPromises.set(normalizedChatId, nextSync);
+
+    try {
+      return await nextSync;
+    } finally {
+      if (unseenReactionSyncPromises.get(normalizedChatId) === nextSync) {
+        unseenReactionSyncPromises.delete(normalizedChatId);
+      }
+    }
   }
 
   async function resolveRecipientRelayUrls(chatPublicKey: string): Promise<string[]> {
@@ -443,14 +552,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const currentReactions = normalizeMessageReactions(existingRow.meta.reactions);
     const nextReactions = transform(currentReactions, loggedInPublicKey);
-    const noChanges =
-      currentReactions.length === nextReactions.length &&
-      currentReactions.every((reaction, index) => {
-        const nextReaction = nextReactions[index];
-        return nextReaction ? areMessageReactionsEqual(reaction, nextReaction) : false;
-      });
-
-    if (noChanges) {
+    if (areReactionListsEqual(currentReactions, nextReactions)) {
       return getMessageFromState(normalizedChatId, String(normalizedMessageId));
     }
 
@@ -464,6 +566,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     const updatedMessage = await hydrateMessageRow(updatedRow, normalizedChatId);
     replaceMessageInState(normalizedChatId, updatedMessage);
+    await syncChatUnseenReactionCount(normalizedChatId);
     return updatedMessage;
   }
 
@@ -510,13 +613,15 @@ export const useMessageStore = defineStore('messageStore', () => {
       String(normalizedMessageId),
       (reactions) => {
         const emojiEntry = getEmojiEntryByValue(normalizedEmoji);
+        const isOwnMessage = normalizeChatIdentifier(existingRow.author_public_key) === loggedInPublicKey;
         return [
           ...reactions,
           {
             emoji: normalizedEmoji,
             name: emojiEntry?.label ?? normalizedEmoji,
             reactorPublicKey: loggedInPublicKey,
-            eventId: null
+            eventId: null,
+            ...(isOwnMessage ? { viewedByAuthorAt: new Date().toISOString() } : {})
           }
         ];
       }
@@ -727,6 +832,74 @@ export const useMessageStore = defineStore('messageStore', () => {
     return finalMessage;
   }
 
+  async function markMessagesReactionsViewed(
+    chatId: string,
+    messageIds: string[]
+  ): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const loggedInPublicKey = getLoggedInPublicKey();
+    const normalizedMessageIds = Array.from(
+      new Set(
+        messageIds
+          .map((messageId) => Number.parseInt(messageId, 10))
+          .filter((messageId) => Number.isInteger(messageId) && messageId > 0)
+      )
+    );
+
+    if (!normalizedChatId || !loggedInPublicKey || normalizedMessageIds.length === 0) {
+      return;
+    }
+
+    await chatDataService.init();
+
+    const viewedAt = new Date().toISOString();
+    let didChange = false;
+
+    for (const messageId of normalizedMessageIds) {
+      const existingRow = await chatDataService.getMessageById(messageId);
+      if (!existingRow || normalizeChatIdentifier(existingRow.chat_public_key) !== normalizedChatId) {
+        continue;
+      }
+
+      if (normalizeChatIdentifier(existingRow.author_public_key) !== loggedInPublicKey) {
+        continue;
+      }
+
+      const currentReactions = normalizeMessageReactions(existingRow.meta.reactions);
+      if (countUnseenReactionsForAuthor(currentReactions, loggedInPublicKey) === 0) {
+        continue;
+      }
+
+      const nextReactions = markReactionsViewedByAuthor(
+        currentReactions,
+        loggedInPublicKey,
+        viewedAt
+      );
+      if (areReactionListsEqual(currentReactions, nextReactions)) {
+        continue;
+      }
+
+      const updatedRow = await chatDataService.updateMessageMeta(
+        messageId,
+        buildMetaWithReactions(existingRow.meta, nextReactions)
+      );
+      if (!updatedRow) {
+        continue;
+      }
+
+      didChange = true;
+      await upsertPersistedMessage(updatedRow);
+    }
+
+    if (didChange) {
+      await syncChatUnseenReactionCount(normalizedChatId);
+    }
+  }
+
+  async function markMessageReactionsViewed(chatId: string, messageId: string): Promise<void> {
+    await markMessagesReactionsViewed(chatId, [messageId]);
+  }
+
   function removeChatMessages(chatId: string): void {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -752,6 +925,9 @@ export const useMessageStore = defineStore('messageStore', () => {
     addReaction,
     removeReaction,
     deleteMessage,
+    markMessageReactionsViewed,
+    markMessagesReactionsViewed,
+    syncChatUnseenReactionCount,
     removeChatMessages,
     upsertPersistedMessage,
     refreshPersistedMessage

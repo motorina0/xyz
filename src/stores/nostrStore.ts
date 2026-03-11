@@ -1276,6 +1276,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ]);
   }
 
+  async function syncChatUnseenReactionCount(chatPublicKey: string): Promise<void> {
+    try {
+      const { useMessageStore } = await import('src/stores/messageStore');
+      await useMessageStore().syncChatUnseenReactionCount(chatPublicKey);
+    } catch (error) {
+      console.warn('Failed to synchronize unseen reaction count for chat', chatPublicKey, error);
+    }
+  }
+
   async function upsertReactionOnMessageRow(
     messageRow: MessageRow,
     pendingReaction: PendingIncomingReaction,
@@ -1293,6 +1302,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const normalizedMessageAuthorPubkey = inputSanitizerService.normalizeHexKey(
       messageRow.author_public_key
     );
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    const shouldDefaultReactionAsViewed =
+      loggedInPubkeyHex !== null &&
+      normalizedMessageAuthorPubkey === loggedInPubkeyHex &&
+      pendingReaction.reaction.reactorPublicKey === loggedInPubkeyHex;
+    const defaultViewedByAuthorAt =
+      pendingReaction.reaction.viewedByAuthorAt ??
+      (shouldDefaultReactionAsViewed ? new Date().toISOString() : null);
     if (
       pendingReaction.targetAuthorPublicKey &&
       normalizedMessageAuthorPubkey !== pendingReaction.targetAuthorPublicKey
@@ -1322,13 +1339,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
         eventId:
           normalizeEventId(pendingReaction.reaction.eventId) ??
           normalizeEventId(existingReaction.eventId) ??
-          null
+          null,
+        viewedByAuthorAt:
+          pendingReaction.reaction.viewedByAuthorAt ??
+          existingReaction.viewedByAuthorAt ??
+          defaultViewedByAuthorAt
       };
       const isUnchanged =
         nextReaction.emoji === existingReaction.emoji &&
         nextReaction.name === existingReaction.name &&
         nextReaction.reactorPublicKey === existingReaction.reactorPublicKey &&
-        normalizeEventId(nextReaction.eventId) === normalizeEventId(existingReaction.eventId);
+        normalizeEventId(nextReaction.eventId) === normalizeEventId(existingReaction.eventId) &&
+        nextReaction.viewedByAuthorAt === existingReaction.viewedByAuthorAt;
       if (isUnchanged) {
         return messageRow;
       }
@@ -1345,6 +1367,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
       if (uiThrottleMs > 0) {
+        await syncChatUnseenReactionCount(updatedRow.chat_public_key);
         queuePrivateMessagesUiRefresh({
           throttleMs: uiThrottleMs,
           reloadMessages: true
@@ -1353,6 +1376,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
 
       await refreshMessageInLiveState(updatedRow.id);
+      await syncChatUnseenReactionCount(updatedRow.chat_public_key);
       return updatedRow;
     }
 
@@ -1367,7 +1391,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       messageRow.id,
       buildMetaWithReactions(messageRow.meta, [
         ...currentReactions,
-        pendingReaction.reaction
+        {
+          ...pendingReaction.reaction,
+          ...(defaultViewedByAuthorAt ? { viewedByAuthorAt: defaultViewedByAuthorAt } : {})
+        }
       ])
     );
     if (!updatedRow) {
@@ -1376,6 +1403,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
     if (uiThrottleMs > 0) {
+      await syncChatUnseenReactionCount(updatedRow.chat_public_key);
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
         reloadMessages: true
@@ -1384,6 +1412,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await refreshMessageInLiveState(updatedRow.id);
+    await syncChatUnseenReactionCount(updatedRow.chat_public_key);
     return updatedRow;
   }
 
@@ -1406,7 +1435,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const nextReactions = currentReactions.filter((reaction) => {
       const sameEventId = normalizeEventId(reaction.eventId) === normalizedReactionEventId;
       if (sameEventId) {
-      return false;
+        return false;
       }
 
       return !(
@@ -1429,6 +1458,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
     if (uiThrottleMs > 0) {
+      await syncChatUnseenReactionCount(updatedRow.chat_public_key);
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
         reloadMessages: true
@@ -1437,6 +1467,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await refreshMessageInLiveState(updatedRow.id);
+    await syncChatUnseenReactionCount(updatedRow.chat_public_key);
     return updatedRow;
   }
 
@@ -1649,6 +1680,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
         emoji: reactionEmoji,
         name: getEmojiEntryByValue(reactionEmoji)?.label ?? reactionEmoji,
         reactorPublicKey: senderPubkeyHex,
+        ...(
+          (() => {
+            const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+            if (
+              loggedInPubkeyHex &&
+              targetAuthorPublicKey === loggedInPubkeyHex &&
+              senderPubkeyHex === loggedInPubkeyHex
+            ) {
+              return { viewedByAuthorAt: toIsoTimestampFromUnix(rumorEvent.created_at) };
+            }
+
+            return {};
+          })()
+        ),
         ...(reactionEventId ? { eventId: reactionEventId } : {})
       }
     };

@@ -85,16 +85,35 @@
 
       <div class="thread-composer-anchor">
         <transition name="thread-scroll-jump">
-          <q-btn
-            v-if="showScrollJumpButton"
-            flat
-            dense
-            round
-            icon="keyboard_double_arrow_down"
-            aria-label="Jump to the latest messages"
-            class="thread-scroll-jump"
-            @click="handleScrollJump"
-          />
+          <div v-if="showJumpButtons" class="thread-jump-buttons">
+            <q-btn
+              v-if="showReactionJumpButton"
+              flat
+              dense
+              round
+              aria-label="Jump to the first new reaction"
+              class="thread-scroll-jump thread-scroll-jump--reaction"
+              @click="handleReactionJump"
+            >
+              <span class="thread-reaction-jump__icon" aria-hidden="true">
+                <q-icon name="favorite" size="18px" />
+                <span class="thread-reaction-jump__count">
+                  {{ unseenReactionCount }}
+                </span>
+              </span>
+            </q-btn>
+
+            <q-btn
+              v-if="showScrollJumpButton"
+              flat
+              dense
+              round
+              icon="keyboard_double_arrow_down"
+              aria-label="Jump to the latest messages"
+              class="thread-scroll-jump"
+              @click="handleScrollJump"
+            />
+          </div>
         </transition>
 
         <MessageComposer
@@ -132,7 +151,12 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import { useMessageStore } from 'src/stores/messageStore';
 import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import {
+  countUnseenReactionsForAuthor,
+  normalizeMessageReactions
+} from 'src/utils/messageReactions';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = withDefaults(
@@ -163,11 +187,14 @@ const composerRef = ref<{ focusInputAtEnd: () => void } | null>(null);
 const stickyDayLabel = ref('');
 const activeReply = ref<MessageReplyPreview | null>(null);
 const highlightedMessageId = ref<string | null>(null);
+const messageStore = useMessageStore();
 const isThreadScrolledUp = ref(false);
 const lastReadMessageId = ref<string | null>(null);
 const hasJumpedToLastReadMessage = ref(false);
 let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
+let visibleReactionSyncFrameId: number | null = null;
+let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
 
 type ThreadItem =
   | {
@@ -215,6 +242,58 @@ const latestMessageId = computed(() => {
 
 const showScrollJumpButton = computed(() => {
   return Boolean(props.chat && props.messages.length > 0 && isThreadScrolledUp.value);
+});
+
+const unseenReactionMessages = computed(() => {
+  return props.messages.filter((message) => {
+    if (message.sender !== 'me') {
+      return false;
+    }
+
+    return (
+      countUnseenReactionsForAuthor(
+        normalizeMessageReactions(message.meta.reactions),
+        message.authorPublicKey
+      ) > 0
+    );
+  });
+});
+
+const unseenReactionCount = computed(() => {
+  return unseenReactionMessages.value.reduce((count, message) => {
+    return (
+      count +
+      countUnseenReactionsForAuthor(
+        normalizeMessageReactions(message.meta.reactions),
+        message.authorPublicKey
+      )
+    );
+  }, 0);
+});
+
+const firstUnseenReactionMessageId = computed(() => {
+  return unseenReactionMessages.value[0]?.id ?? null;
+});
+
+const showReactionJumpButton = computed(() => unseenReactionCount.value > 0);
+
+const showJumpButtons = computed(() => {
+  return showReactionJumpButton.value || showScrollJumpButton.value;
+});
+
+const reactionVisibilitySignature = computed(() => {
+  return props.messages
+    .map((message) => {
+      const unseenReactionCountForMessage =
+        message.sender === 'me'
+          ? countUnseenReactionsForAuthor(
+              normalizeMessageReactions(message.meta.reactions),
+              message.authorPublicKey
+            )
+          : 0;
+      return `${message.id}:${unseenReactionCountForMessage}`;
+    })
+    .join('|');
 });
 
 function getDayKey(value: string): string {
@@ -282,6 +361,7 @@ async function scrollToBottom(): Promise<void> {
   lastReadMessageId.value = latestMessageId.value;
   hasJumpedToLastReadMessage.value = false;
   updateStickyDayLabel();
+  scheduleVisibleReactionViewSync();
 }
 
 function isThreadNearBottom(): boolean {
@@ -348,6 +428,7 @@ function handleThreadScroll(): void {
     scrollFrameId = null;
     updateStickyDayLabel();
     updateScrollJumpState();
+    scheduleVisibleReactionViewSync();
   });
 }
 
@@ -469,6 +550,55 @@ async function scrollToMessageEntry(
   return true;
 }
 
+function isEntryVisibleWithinThread(entry: HTMLElement): boolean {
+  const threadBody = threadBodyRef.value;
+  if (!threadBody) {
+    return false;
+  }
+
+  const threadRect = threadBody.getBoundingClientRect();
+  const entryRect = entry.getBoundingClientRect();
+
+  return entryRect.bottom > threadRect.top && entryRect.top < threadRect.bottom;
+}
+
+function scheduleVisibleReactionViewSync(): void {
+  if (visibleReactionSyncFrameId !== null) {
+    cancelAnimationFrame(visibleReactionSyncFrameId);
+  }
+
+  visibleReactionSyncFrameId = window.requestAnimationFrame(() => {
+    visibleReactionSyncFrameId = null;
+    void syncVisibleReactionViews();
+  });
+}
+
+async function syncVisibleReactionViews(): Promise<void> {
+  const currentChatId = props.chat?.id ?? null;
+  if (!currentChatId || unseenReactionMessages.value.length === 0) {
+    return;
+  }
+
+  const visibleMessageIds = unseenReactionMessages.value
+    .filter((message) => {
+      const entry = findThreadMessageEntry(message.id);
+      return entry ? isEntryVisibleWithinThread(entry) : false;
+    })
+    .map((message) => message.id);
+
+  if (visibleMessageIds.length === 0) {
+    return;
+  }
+
+  visibleReactionSyncPromise = visibleReactionSyncPromise
+    .catch(() => undefined)
+    .then(async () => {
+      await messageStore.markMessagesReactionsViewed(currentChatId, visibleMessageIds);
+    });
+
+  await visibleReactionSyncPromise;
+}
+
 async function handleScrollJump(): Promise<void> {
   try {
     if (!props.messages.length) {
@@ -487,6 +617,21 @@ async function handleScrollJump(): Promise<void> {
     await scrollToBottom();
   } catch (error) {
     reportUiError('Failed to jump to the latest messages', error);
+  }
+}
+
+async function handleReactionJump(): Promise<void> {
+  try {
+    if (!firstUnseenReactionMessageId.value) {
+      return;
+    }
+
+    await scrollToMessageEntry(firstUnseenReactionMessageId.value, 'center');
+    window.setTimeout(() => {
+      scheduleVisibleReactionViewSync();
+    }, 220);
+  } catch (error) {
+    reportUiError('Failed to jump to the first new reaction', error);
   }
 }
 
@@ -569,14 +714,26 @@ watch(
     void nextTick(() => {
       updateStickyDayLabel();
       updateScrollJumpState();
+      scheduleVisibleReactionViewSync();
     });
   }
+);
+
+watch(
+  reactionVisibilitySignature,
+  () => {
+    scheduleVisibleReactionViewSync();
+  },
+  { immediate: true }
 );
 
 onBeforeUnmount(() => {
   clearReplyTargetHighlight();
   if (scrollFrameId !== null) {
     cancelAnimationFrame(scrollFrameId);
+  }
+  if (visibleReactionSyncFrameId !== null) {
+    cancelAnimationFrame(visibleReactionSyncFrameId);
   }
 });
 </script>
@@ -637,11 +794,17 @@ onBeforeUnmount(() => {
   position: relative;
 }
 
-.q-btn.thread-scroll-jump {
+.thread-jump-buttons {
   position: absolute;
   right: 18px;
   bottom: 72px;
   z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.q-btn.thread-scroll-jump {
   background: color-mix(in srgb, var(--tg-sidebar) 92%, #eef6ff 8%) !important;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.5),
@@ -660,6 +823,26 @@ onBeforeUnmount(() => {
     inset 0 1px 0 rgba(255, 255, 255, 0.58),
     0 12px 28px rgba(15, 56, 104, 0.18) !important;
   transform: translateY(-1px);
+}
+
+.thread-reaction-jump__icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+
+.thread-reaction-jump__count {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  color: #ffffff;
 }
 
 .thread-scroll-jump-enter-active,
