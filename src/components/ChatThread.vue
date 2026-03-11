@@ -334,6 +334,11 @@ function toComparableTimestamp(value: string | null | undefined): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function readCurrentLastSeenReceivedActivityAt(): string {
+  const rawValue = props.chat?.meta?.[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY];
+  return typeof rawValue === 'string' ? rawValue.trim() : '';
+}
+
 function getFirstIncomingActivityTimestampAfter(message: Message, afterTimestamp: string): number | null {
   const afterComparableTimestamp = toComparableTimestamp(afterTimestamp);
   let nextActivityTimestamp: number | null = null;
@@ -748,6 +753,7 @@ async function syncVisibleReactionViews(): Promise<void> {
   if (!currentChatId) {
     return;
   }
+  const currentLastSeenReceivedActivityAt = readCurrentLastSeenReceivedActivityAt();
 
   const visibleMessages = props.messages.filter((message) => {
     const entry = findThreadMessageEntry(message.id);
@@ -796,19 +802,33 @@ async function syncVisibleReactionViews(): Promise<void> {
   });
 
   if (latestVisibleReceivedActivity) {
-    await chatStore.setLastSeenReceivedActivityAt(currentChatId, latestVisibleReceivedActivity.at);
+    const latestVisibleActivityTimestamp = toComparableTimestamp(latestVisibleReceivedActivity.at);
+    const currentLastSeenTimestamp = toComparableTimestamp(currentLastSeenReceivedActivityAt);
+    const effectiveLastSeenReceivedActivityAt =
+      latestVisibleActivityTimestamp > currentLastSeenTimestamp
+        ? latestVisibleReceivedActivity.at
+        : currentLastSeenReceivedActivityAt;
+
+    if (latestVisibleActivityTimestamp > currentLastSeenTimestamp) {
+      await chatStore.setLastSeenReceivedActivityAt(currentChatId, latestVisibleReceivedActivity.at);
+      nostrStore.scheduleContactCursorPublish(currentChatId, latestVisibleReceivedActivity);
+    }
+
     const nextUnreadMessageCount = props.messages.reduce((count, message) => {
       if (
         message.sender !== 'them' ||
-        toComparableTimestamp(message.sentAt) <= toComparableTimestamp(latestVisibleReceivedActivity.at)
+        toComparableTimestamp(message.sentAt) <=
+          toComparableTimestamp(effectiveLastSeenReceivedActivityAt)
       ) {
         return count;
       }
 
       return count + 1;
     }, 0);
-    await chatStore.setUnreadCount(currentChatId, nextUnreadMessageCount);
-    nostrStore.scheduleContactCursorPublish(currentChatId, latestVisibleReceivedActivity);
+
+    if (nextUnreadMessageCount !== (props.chat?.unreadCount ?? 0)) {
+      await chatStore.setUnreadCount(currentChatId, nextUnreadMessageCount);
+    }
   }
 
   if (unseenReactionMessages.value.length === 0) {
