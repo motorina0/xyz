@@ -376,7 +376,13 @@ function getFirstIncomingActivityTimestampAfter(message: Message, afterTimestamp
 }
 
 const firstMessageAfterUnreadBoundaryId = computed(() => {
-  const afterTimestamp = openedUnreadBoundaryAt.value;
+  const openedUnreadBoundaryTimestamp = openedUnreadBoundaryAt.value;
+  const currentLastSeenReceivedActivityAt = readCurrentLastSeenReceivedActivityAt();
+  const afterTimestamp =
+    toComparableTimestamp(currentLastSeenReceivedActivityAt) >
+      toComparableTimestamp(openedUnreadBoundaryTimestamp)
+      ? currentLastSeenReceivedActivityAt
+      : openedUnreadBoundaryTimestamp;
   if (!afterTimestamp || props.messages.length === 0) {
     return null;
   }
