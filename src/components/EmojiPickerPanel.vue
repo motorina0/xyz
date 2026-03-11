@@ -230,22 +230,27 @@ defineExpose({
   width: 100%;
   min-height: var(--emoji-picker-item-min-height);
   padding: var(--emoji-picker-item-padding);
-  border: 1px solid var(--tg-btn-soft-border);
+  border: 0;
   border-radius: 12px;
-  background: var(--tg-btn-soft-bg);
-  box-shadow: var(--tg-btn-soft-shadow);
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
   cursor: pointer;
   transition:
     transform 0.18s ease,
-    background-color 0.18s ease,
-    border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    color 0.18s ease,
+    opacity 0.18s ease;
 }
 
 .emoji-picker__item:hover {
   transform: translateY(-1px);
-  background: var(--tg-btn-soft-hover-bg);
-  border-color: color-mix(in srgb, var(--q-primary) 26%, var(--tg-btn-soft-border) 74%);
+  color: var(--q-primary);
+  opacity: 1;
+}
+
+.emoji-picker__item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--q-primary) 54%, transparent);
+  outline-offset: 2px;
 }
 
 .emoji-picker__char {
@@ -268,33 +273,36 @@ defineExpose({
   justify-content: center;
   min-height: 34px;
   padding: 0;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 10px;
-  background: var(--tg-btn-soft-bg);
-  box-shadow: var(--tg-btn-soft-shadow);
+  background: transparent;
+  box-shadow: none;
   color: color-mix(in srgb, currentColor 72%, #60758f 28%);
   cursor: pointer;
+  opacity: 0.7;
   transition:
     color 0.18s ease,
-    background-color 0.18s ease,
     transform 0.18s ease,
-    border-color 0.18s ease;
+    opacity 0.18s ease;
 }
 
 .emoji-picker__tab:hover {
-  background: var(--tg-btn-soft-hover-bg);
-  border-color: var(--tg-btn-soft-border);
   color: inherit;
+  opacity: 1;
 }
 
 .emoji-picker__tab--active {
-  background: color-mix(in srgb, var(--q-primary) 12%, var(--tg-btn-soft-hover-bg) 88%);
-  border-color: color-mix(in srgb, var(--q-primary) 26%, var(--tg-btn-soft-border) 74%);
   color: var(--q-primary);
+  opacity: 1;
 }
 
 .emoji-picker__tab:active {
   transform: translateY(1px);
+}
+
+.emoji-picker__tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--q-primary) 54%, transparent);
+  outline-offset: 2px;
 }
 
 .emoji-picker__empty {

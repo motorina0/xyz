@@ -184,20 +184,23 @@
 
       <div v-if="messageReactions.length > 0" class="bubble__reactions">
         <button
-          v-for="(reaction, index) in messageReactions"
-          :key="`${reaction.emoji}-${reaction.reactorPublicKey}-${index}`"
+          v-for="item in messageReactionItems"
+          :key="item.key"
           type="button"
           class="bubble__reaction-chip"
-          :class="{ 'bubble__reaction-chip--removable': canRemoveReaction(reaction) }"
+          :class="{
+            'bubble__reaction-chip--fresh': isFreshReaction(item.key),
+            'bubble__reaction-chip--removable': canRemoveReaction(item.reaction)
+          }"
           :aria-label="
-            canRemoveReaction(reaction)
-              ? `Remove ${reaction.name} reaction`
-              : `${reaction.name} reaction`
+            canRemoveReaction(item.reaction)
+              ? `Remove ${item.reaction.name} reaction`
+              : `${item.reaction.name} reaction`
           "
-          @click.stop="handleRemoveReaction(reaction)"
+          @click.stop="handleRemoveReaction(item.reaction)"
         >
-          <span class="bubble__reaction-emoji">{{ reaction.emoji }}</span>
-          <AppTooltip>{{ reaction.name }}</AppTooltip>
+          <span class="bubble__reaction-emoji">{{ item.reaction.emoji }}</span>
+          <AppTooltip>{{ item.reaction.name }}</AppTooltip>
         </button>
       </div>
     </div>
@@ -331,7 +334,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
@@ -345,6 +348,7 @@ import type {
   MessageReplyPreview
 } from 'src/types/chat';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { isReactionUnseenForAuthor } from 'src/utils/messageReactions';
 import { isMessageRelayStatus } from 'src/utils/messageRelayStatus';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -385,6 +389,12 @@ interface StatusListItem {
   scope: 'recipient' | 'self';
   status: 'published' | 'failed' | 'pending';
   retryable: boolean;
+}
+
+interface MessageReactionItem {
+  key: string;
+  reaction: MessageReaction;
+  isFreshCandidate: boolean;
 }
 
 function isMessageReaction(value: unknown): value is MessageReaction {
@@ -485,6 +495,65 @@ const messageReactions = computed<MessageReaction[]>(() => {
 
   return candidate.filter(isMessageReaction);
 });
+
+function buildMessageReactionBaseKey(reaction: MessageReaction): string {
+  const normalizedEventId =
+    typeof reaction.eventId === 'string' ? reaction.eventId.trim().toLowerCase() : '';
+  if (normalizedEventId) {
+    return normalizedEventId;
+  }
+
+  return [
+    reaction.emoji.trim(),
+    reaction.name.trim().toLowerCase(),
+    reaction.reactorPublicKey.trim().toLowerCase()
+  ].join('::');
+}
+
+const messageReactionItems = computed<MessageReactionItem[]>(() => {
+  const reactionCounts = new Map<string, number>();
+
+  return messageReactions.value.map((reaction) => {
+    const baseKey = buildMessageReactionBaseKey(reaction);
+    const occurrence = reactionCounts.get(baseKey) ?? 0;
+    reactionCounts.set(baseKey, occurrence + 1);
+
+    return {
+      key: `${baseKey}::${occurrence}`,
+      reaction,
+      isFreshCandidate:
+        isMine.value && isReactionUnseenForAuthor(reaction, props.message.authorPublicKey)
+    };
+  });
+});
+
+const freshReactionKeys = ref<Set<string>>(new Set());
+const freshReactionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const hasReactionSnapshot = ref(false);
+
+function markReactionFresh(key: string): void {
+  const existingTimer = freshReactionTimers.get(key);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+  }
+
+  const nextKeys = new Set(freshReactionKeys.value);
+  nextKeys.add(key);
+  freshReactionKeys.value = nextKeys;
+
+  const timerId = setTimeout(() => {
+    freshReactionTimers.delete(key);
+    const pendingKeys = new Set(freshReactionKeys.value);
+    pendingKeys.delete(key);
+    freshReactionKeys.value = pendingKeys;
+  }, 5000);
+
+  freshReactionTimers.set(key, timerId);
+}
+
+function isFreshReaction(key: string): boolean {
+  return freshReactionKeys.value.has(key);
+}
 
 function canRemoveReaction(reaction: MessageReaction): boolean {
   return reaction.reactorPublicKey.trim().toLowerCase() === loggedInPublicKey.value;
@@ -866,11 +935,35 @@ const formattedInfoTime = computed(() => {
 });
 
 watch(
+  () => messageReactionItems.value.map((item) => item.key),
+  (nextKeys, previousKeys) => {
+    if (!hasReactionSnapshot.value) {
+      hasReactionSnapshot.value = true;
+      return;
+    }
+
+    const previousKeySet = new Set(previousKeys ?? []);
+    messageReactionItems.value.forEach((item) => {
+      if (item.isFreshCandidate && !previousKeySet.has(item.key)) {
+        markReactionFresh(item.key);
+      }
+    });
+  }
+);
+
+watch(
   () => [props.message.id, props.message.text, isDeletedMessage.value],
   () => {
     isMessageExpanded.value = false;
   }
 );
+
+onBeforeUnmount(() => {
+  freshReactionTimers.forEach((timerId) => {
+    clearTimeout(timerId);
+  });
+  freshReactionTimers.clear();
+});
 </script>
 
 <style scoped>
@@ -1043,26 +1136,29 @@ watch(
   width: 34px;
   height: 34px;
   padding: 0;
-  border: 1px solid var(--tg-btn-round-border);
+  border: 0;
   border-radius: 999px;
-  background: var(--tg-btn-round-bg);
-  box-shadow: var(--tg-btn-soft-shadow);
+  background: transparent;
+  box-shadow: none;
   color: inherit;
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
   transition:
     transform 0.18s ease,
-    background-color 0.18s ease,
-    border-color 0.18s ease,
     color 0.18s ease,
-    box-shadow 0.18s ease;
+    opacity 0.18s ease;
 }
 
 .bubble__quick-reaction:hover {
   transform: translateY(-1px);
-  background: color-mix(in srgb, var(--q-primary) 12%, var(--tg-btn-soft-hover-bg) 88%);
-  border-color: color-mix(in srgb, var(--q-primary) 24%, var(--tg-btn-round-border) 76%);
+  color: var(--q-primary);
+  opacity: 1;
+}
+
+.bubble__quick-reaction:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--q-primary) 54%, transparent);
+  outline-offset: 2px;
 }
 
 .bubble__quick-reaction--more {
@@ -1094,7 +1190,17 @@ watch(
     transform 0.18s ease,
     background-color 0.18s ease,
     border-color 0.18s ease,
-    box-shadow 0.18s ease;
+    box-shadow 0.18s ease,
+    color 0.18s ease;
+}
+
+.bubble__reaction-chip--fresh {
+  background: var(--tg-reaction-accent-bg);
+  border-color: var(--tg-reaction-accent-border);
+  box-shadow: var(--tg-reaction-accent-shadow);
+  color: var(--tg-reaction-accent-text);
+  transform-origin: center;
+  animation: bubble-reaction-fresh-shake 720ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .bubble__reaction-chip--removable {
@@ -1109,6 +1215,33 @@ watch(
 .bubble__reaction-emoji {
   font-size: 16px;
   line-height: 1;
+}
+
+@keyframes bubble-reaction-fresh-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+
+  15% {
+    transform: translateX(-2px) rotate(-5deg);
+  }
+
+  30% {
+    transform: translateX(2px) rotate(5deg);
+  }
+
+  45% {
+    transform: translateX(-2px) rotate(-4deg);
+  }
+
+  60% {
+    transform: translateX(2px) rotate(4deg);
+  }
+
+  75% {
+    transform: translateX(-1px) rotate(-2deg);
+  }
 }
 
 .bubble__deleted-message-dialog {
