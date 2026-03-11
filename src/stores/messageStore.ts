@@ -409,6 +409,12 @@ export const useMessageStore = defineStore('messageStore', () => {
       throw sendError;
     }
 
+    try {
+      await nostrStore.ensureRespondedPubkeyIsContact(chat.public_key, chat.name);
+    } catch (error) {
+      console.warn('Failed to add responded pubkey to contacts', chat.public_key, error);
+    }
+
     return finalMessage;
   }
 

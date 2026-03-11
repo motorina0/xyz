@@ -2244,6 +2244,55 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await chatStore.syncContactProfile(normalizedTargetPubkey);
   }
 
+  async function ensureRespondedPubkeyIsContact(
+    targetPubkeyHex: string,
+    fallbackName = ''
+  ): Promise<void> {
+    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (
+      !normalizedTargetPubkey ||
+      !loggedInPubkeyHex ||
+      normalizedTargetPubkey === loggedInPubkeyHex
+    ) {
+      return;
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
+    if (existingContact) {
+      return;
+    }
+
+    const initialName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
+    const createdContact = await contactsService.createContact({
+      public_key: normalizedTargetPubkey,
+      name: initialName,
+      given_name: null,
+      meta: {},
+      relays: []
+    });
+    if (!createdContact) {
+      return;
+    }
+
+    await useChatStore().syncContactProfile(normalizedTargetPubkey);
+
+    try {
+      await refreshContactByPublicKey(normalizedTargetPubkey, initialName);
+    } catch (error) {
+      console.warn('Failed to refresh responded contact profile', normalizedTargetPubkey, error);
+    }
+
+    bumpContactListVersion();
+
+    try {
+      await publishPrivateContactList(getAppRelayUrls());
+    } catch (error) {
+      console.warn('Failed to publish private contact list after adding responded contact', normalizedTargetPubkey, error);
+    }
+  }
+
   function bumpRelayStatusVersion(): void {
     relayStatusVersion.value += 1;
   }
@@ -3718,6 +3767,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     publishMyRelayList,
     relayStatusVersion,
     resolveIdentifier,
+    ensureRespondedPubkeyIsContact,
     refreshContactByPublicKey,
     restoreMyRelayList,
     restorePrivateContactList,
