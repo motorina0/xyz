@@ -156,10 +156,6 @@ body.body--dark {
   color: #0f314f;
 }
 
-.tg-pop-menu__list .q-item.q-item--separator {
-  border-color: color-mix(in srgb, var(--tg-border) 90%, #90a6c2 10%);
-}
-
 body.body--dark .tg-pop-menu {
   border-color: color-mix(in srgb, var(--tg-border) 82%, #6282a4 18%);
   background:

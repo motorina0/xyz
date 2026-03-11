@@ -73,7 +73,7 @@
                   @click.stop
                 >
                   <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
-                    <q-list dense separator class="tg-pop-menu__list">
+                    <q-list dense class="tg-pop-menu__list">
                       <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
                         <q-item-section>Chat</q-item-section>
                       </q-item>

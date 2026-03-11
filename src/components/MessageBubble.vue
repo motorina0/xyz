@@ -25,7 +25,7 @@
         @before-hide="handleActionMenuHide"
       >
         <div class="bubble__menu-stack">
-          <q-list dense separator class="tg-pop-menu__list bubble__actions-list">
+          <q-list dense class="tg-pop-menu__list bubble__actions-list">
             <q-item clickable v-close-popup @click="handleReply">
               <q-item-section avatar>
                 <q-icon name="reply" />
