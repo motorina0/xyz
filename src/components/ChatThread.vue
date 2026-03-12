@@ -300,10 +300,6 @@ function formatReactionCount(value: number): string {
   return value > 99 ? '99+' : String(value);
 }
 
-const firstUnseenReactionMessageId = computed(() => {
-  return unseenReactionMessages.value[0]?.id ?? null;
-});
-
 const showReactionJumpButton = computed(() => unseenReactionCount.value > 0);
 
 const showJumpButtons = computed(() => {
@@ -707,6 +703,45 @@ async function scrollToUnreadSeparator(
   return true;
 }
 
+function getClosestUnseenReactionMessageId(): string | null {
+  const fallbackMessageId = unseenReactionMessages.value[0]?.id ?? null;
+  const threadBody = threadBodyRef.value;
+
+  if (!threadBody || unseenReactionMessages.value.length <= 1) {
+    return fallbackMessageId;
+  }
+
+  const threadRect = threadBody.getBoundingClientRect();
+  const viewportCenter = threadRect.top + threadRect.height / 2;
+  let closestMatch: { messageId: string; distance: number; isVisible: boolean } | null = null;
+
+  unseenReactionMessages.value.forEach((message) => {
+    const entry = findThreadMessageEntry(message.id);
+    if (!entry) {
+      return;
+    }
+
+    const entryRect = entry.getBoundingClientRect();
+    const entryCenter = entryRect.top + entryRect.height / 2;
+    const distance = Math.abs(entryCenter - viewportCenter);
+    const isVisible = isEntryVisibleWithinThread(entry);
+
+    if (
+      !closestMatch ||
+      distance < closestMatch.distance ||
+      (distance === closestMatch.distance && isVisible && !closestMatch.isVisible)
+    ) {
+      closestMatch = {
+        messageId: message.id,
+        distance,
+        isVisible
+      };
+    }
+  });
+
+  return closestMatch?.messageId ?? fallbackMessageId;
+}
+
 async function initializeThreadPosition(): Promise<void> {
   const currentChatId = props.chat?.id ?? null;
   if (!currentChatId || pendingInitialPositionChatId.value !== currentChatId) {
@@ -884,16 +919,17 @@ async function handleScrollJump(): Promise<void> {
 
 async function handleReactionJump(): Promise<void> {
   try {
-    if (!firstUnseenReactionMessageId.value) {
+    const closestUnseenReactionMessageId = getClosestUnseenReactionMessageId();
+    if (!closestUnseenReactionMessageId) {
       return;
     }
 
-    await scrollToMessageEntry(firstUnseenReactionMessageId.value, 'center');
+    await scrollToMessageEntry(closestUnseenReactionMessageId, 'center');
     window.setTimeout(() => {
       scheduleVisibleReactionViewSync();
     }, 220);
   } catch (error) {
-    reportUiError('Failed to jump to the first new reaction', error);
+    reportUiError('Failed to jump to the closest new reaction', error);
   }
 }
 
