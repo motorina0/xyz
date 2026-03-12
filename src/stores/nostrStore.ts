@@ -136,6 +136,7 @@ interface GiftWrappedRumorPublishResult {
 
 interface SubscribePrivateMessagesOptions {
   restoreThrottleMs?: number;
+  sinceOverride?: number;
 }
 
 interface QueuePrivateMessageUiRefreshOptions {
@@ -175,11 +176,108 @@ interface ContactCursorState {
   eventId: string | null;
 }
 
+export type DeveloperTraceLevel = 'info' | 'warn' | 'error';
+
+export interface DeveloperTraceEntry {
+  id: string;
+  timestamp: string;
+  level: DeveloperTraceLevel;
+  scope: string;
+  phase: string;
+  details: Record<string, unknown>;
+}
+
+export interface DeveloperRelaySnapshot {
+  present: boolean;
+  url: string | null;
+  connected: boolean;
+  status: number | null;
+  statusName: string | null;
+  attempts: number | null;
+  success: number | null;
+  connectedAt: number | null;
+  nextReconnectAt: number | null;
+  validationRatio: number | null;
+  lastDurationMs: number | null;
+}
+
+export interface DeveloperRelayRow extends DeveloperRelaySnapshot {
+  inReadSet: boolean;
+  inPublishSet: boolean;
+  inPrivateMessagesSubscription: boolean;
+  isConfigured: boolean;
+}
+
+export interface DeveloperPendingReactionSnapshot {
+  targetEventId: string;
+  count: number;
+  entries: Array<{
+    chatPublicKey: string;
+    targetAuthorPublicKey: string | null;
+    emoji: string;
+    reactorPublicKey: string;
+    createdAt: string;
+    eventId: string | null;
+  }>;
+}
+
+export interface DeveloperPendingDeletionSnapshot {
+  targetEventId: string;
+  count: number;
+  entries: Array<{
+    deletionAuthorPublicKey: string;
+    deleteEventId: string | null;
+    deletedAt: string;
+    targetKind: number | null;
+  }>;
+}
+
+export interface DeveloperPrivateMessagesSubscriptionSnapshot {
+  active: boolean;
+  signature: string | null;
+  relayUrls: string[];
+  relaySnapshots: DeveloperRelaySnapshot[];
+  since: number | null;
+  sinceIso: string | null;
+  restoreThrottleMs: number;
+  startedAt: string | null;
+  lastEventSeenAt: string | null;
+  lastEventId: string | null;
+  lastEventCreatedAt: number | null;
+  lastEventCreatedAtIso: string | null;
+  lastEoseAt: string | null;
+}
+
+export interface DeveloperSessionSnapshot {
+  loggedInPubkey: string | null;
+  authMethod: AuthMethod | null;
+  eventSince: number;
+  eventSinceIso: string | null;
+  filterSince: number;
+  filterSinceIso: string | null;
+  isRestoringStartupState: boolean;
+  hasNip07Extension: boolean;
+  appRelayUrls: string[];
+  myRelayEntries: ContactRelay[];
+  effectiveReadRelayUrls: string[];
+  effectivePublishRelayUrls: string[];
+  configuredRelayUrls: string[];
+}
+
+export interface DeveloperDiagnosticsSnapshot {
+  session: DeveloperSessionSnapshot;
+  privateMessagesSubscription: DeveloperPrivateMessagesSubscriptionSnapshot;
+  relayRows: DeveloperRelayRow[];
+  pendingReactions: DeveloperPendingReactionSnapshot[];
+  pendingDeletions: DeveloperPendingDeletionSnapshot[];
+}
+
 const PRIVATE_KEY_STORAGE_KEY = 'nsec';
 const PUBLIC_KEY_STORAGE_KEY = 'npub';
 const AUTH_METHOD_STORAGE_KEY = 'auth-method';
 const EVENT_SINCE_STORAGE_KEY = 'nostr-event-since';
 const PRIVATE_PREFERENCES_STORAGE_KEY = 'privatePreferences';
+const DEVELOPER_DIAGNOSTICS_STORAGE_KEY = 'developer-diagnostics-enabled';
 const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
 const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
@@ -190,6 +288,7 @@ const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
 const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
+const DEVELOPER_TRACE_LIMIT = 200;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 24 * 60 * 60;
 const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
@@ -212,8 +311,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const contactListVersion = ref(0);
   const isRestoringStartupState = ref(false);
   const eventSince = ref(0);
+  const developerDiagnosticsEnabled = ref(readDeveloperDiagnosticsEnabled());
+  const developerDiagnosticsVersion = ref(0);
+  const developerTraceEntries = ref<DeveloperTraceEntry[]>([]);
+  const privateMessagesSubscriptionRelayUrls = ref<string[]>([]);
+  const privateMessagesSubscriptionSince = ref<number | null>(null);
+  const privateMessagesSubscriptionStartedAt = ref<string | null>(null);
+  const privateMessagesSubscriptionLastEventSeenAt = ref<string | null>(null);
+  const privateMessagesSubscriptionLastEventId = ref<string | null>(null);
+  const privateMessagesSubscriptionLastEventCreatedAt = ref<number | null>(null);
+  const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
+  let developerTraceCounter = 0;
   const configuredRelayUrls = new Set<string>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
@@ -257,6 +367,133 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function getDefaultEventSince(): number {
     return Math.max(0, Math.floor(Date.now() / 1000) - DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS);
+  }
+
+  function readDeveloperDiagnosticsEnabled(): boolean {
+    if (!hasStorage()) {
+      return true;
+    }
+
+    return window.localStorage.getItem(DEVELOPER_DIAGNOSTICS_STORAGE_KEY) !== '0';
+  }
+
+  function setDeveloperDiagnosticsEnabled(enabled: boolean): void {
+    developerDiagnosticsEnabled.value = enabled;
+
+    if (hasStorage()) {
+      window.localStorage.setItem(DEVELOPER_DIAGNOSTICS_STORAGE_KEY, enabled ? '1' : '0');
+    }
+
+    if (!enabled) {
+      developerTraceEntries.value = [];
+    }
+
+    developerDiagnosticsVersion.value += 1;
+  }
+
+  function clearDeveloperTraceEntries(): void {
+    developerTraceEntries.value = [];
+    developerDiagnosticsVersion.value += 1;
+  }
+
+  function bumpDeveloperDiagnosticsVersion(): void {
+    developerDiagnosticsVersion.value += 1;
+  }
+
+  function toOptionalIsoTimestampFromUnix(value: number | null | undefined): string | null {
+    if (!Number.isInteger(value) || Number(value) <= 0) {
+      return null;
+    }
+
+    return new Date(Number(value) * 1000).toISOString();
+  }
+
+  function serializeDeveloperTraceValue(value: unknown, depth = 0): unknown {
+    if (depth > 4) {
+      return '[max-depth]';
+    }
+
+    if (
+      value === null ||
+      value === undefined ||
+      typeof value === 'string' ||
+      typeof value === 'number' ||
+      typeof value === 'boolean'
+    ) {
+      return value ?? null;
+    }
+
+    if (value instanceof Date) {
+      return value.toISOString();
+    }
+
+    if (value instanceof Error) {
+      return {
+        name: value.name,
+        message: value.message,
+        stack: value.stack ?? null
+      };
+    }
+
+    if (Array.isArray(value)) {
+      return value.slice(0, 30).map((entry) => serializeDeveloperTraceValue(entry, depth + 1));
+    }
+
+    if (typeof value === 'object') {
+      const result: Record<string, unknown> = {};
+
+      for (const [key, entryValue] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
+        result[key] = serializeDeveloperTraceValue(entryValue, depth + 1);
+      }
+
+      return result;
+    }
+
+    return String(value);
+  }
+
+  function normalizeDeveloperTraceDetails(details: Record<string, unknown>): Record<string, unknown> {
+    const normalized: Record<string, unknown> = {};
+
+    for (const [key, value] of Object.entries(details)) {
+      normalized[key] = serializeDeveloperTraceValue(value);
+    }
+
+    return normalized;
+  }
+
+  function logDeveloperTrace(
+    level: DeveloperTraceLevel,
+    scope: string,
+    phase: string,
+    details: Record<string, unknown> = {}
+  ): void {
+    const logger =
+      level === 'warn'
+        ? console.warn
+        : level === 'error'
+          ? console.error
+          : console.info;
+
+    logger(`[nostr][${scope}] ${phase}`, details);
+
+    if (!developerDiagnosticsEnabled.value) {
+      return;
+    }
+
+    developerTraceCounter += 1;
+    developerTraceEntries.value = [
+      ...developerTraceEntries.value.slice(-(DEVELOPER_TRACE_LIMIT - 1)),
+      {
+        id: `${Date.now()}-${developerTraceCounter}`,
+        timestamp: new Date().toISOString(),
+        level,
+        scope,
+        phase,
+        details: normalizeDeveloperTraceDetails(details)
+      }
+    ];
+    developerDiagnosticsVersion.value += 1;
   }
 
   function setStoredEventSince(value: number): number {
@@ -753,7 +990,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     phase: string,
     details: Record<string, unknown> = {}
   ): void {
-    console.info(`[nostr][subscription:${name}] ${phase}`, details);
+    logDeveloperTrace('info', `subscription:${name}`, phase, details);
   }
 
   function buildFilterSinceDetails(since: number | undefined): Record<string, unknown> {
@@ -816,7 +1053,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   function logInboundEvent(stage: string, details: Record<string, unknown> = {}): void {
-    console.info(`[nostr][inbound] ${stage}`, details);
+    logDeveloperTrace('info', 'inbound', stage, details);
   }
 
   function bumpContactListVersion(): void {
@@ -1193,7 +1430,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     } = {}
   ): Promise<void> {
     if (!Number.isInteger(messageId) || messageId <= 0) {
-      console.info('[nostr][message-relays] skip', {
+      logMessageRelayDiagnostics('skip', {
         reason: 'invalid-message-id',
         messageId,
         relayStatusCount: relayStatuses.length,
@@ -1208,7 +1445,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const currentMessage = await chatDataService.getMessageById(messageId);
     if (!currentMessage) {
-      console.info('[nostr][message-relays] skip', {
+      logMessageRelayDiagnostics('skip', {
         reason: 'message-not-found',
         messageId,
         relayStatusCount: relayStatuses.length,
@@ -1221,7 +1458,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       options.eventId ?? options.event?.id ?? currentMessage.event_id
     );
     if (!normalizedEventId) {
-      console.info('[nostr][message-relays] skip', {
+      logMessageRelayDiagnostics('skip', {
         reason: 'missing-event-id',
         messageId: currentMessage.id,
         relayStatusCount: relayStatuses.length,
@@ -1246,7 +1483,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
-    console.info('[nostr][message-relays] appended', {
+    logMessageRelayDiagnostics('appended', {
       messageId: currentMessage.id,
       eventId: formatSubscriptionLogValue(normalizedEventId),
       relayStatusCount: relayStatuses.length,
@@ -1553,6 +1790,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...existingEntries,
       pendingReaction
     ]);
+    bumpDeveloperDiagnosticsVersion();
   }
 
   function removePendingIncomingReaction(
@@ -1584,6 +1822,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     } else {
       pendingIncomingReactions.delete(normalizedTargetEventId);
     }
+
+    bumpDeveloperDiagnosticsVersion();
   }
 
   function queuePendingIncomingDeletion(
@@ -1610,6 +1850,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...existingEntries,
       pendingDeletion
     ]);
+    bumpDeveloperDiagnosticsVersion();
   }
 
   async function syncChatUnseenReactionCount(chatPublicKey: string): Promise<void> {
@@ -1905,6 +2146,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const entries = pendingIncomingDeletions.get(normalizedTargetEventId) ?? [];
     pendingIncomingDeletions.delete(normalizedTargetEventId);
+    if (entries.length > 0) {
+      bumpDeveloperDiagnosticsVersion();
+    }
     return entries;
   }
 
@@ -3326,9 +3570,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return NDKRelayStatus[status] ?? 'UNKNOWN';
   }
 
-  function buildRelayConnectionStatsSnapshot(stats: NDKRelayConnectionStats | undefined): Record<string, unknown> {
+  function buildRelayConnectionStatsSnapshot(
+    stats: NDKRelayConnectionStats | undefined
+  ): Pick<
+    DeveloperRelaySnapshot,
+    'attempts' | 'success' | 'connectedAt' | 'nextReconnectAt' | 'validationRatio' | 'lastDurationMs'
+  > {
     if (!stats) {
-      return {};
+      return {
+        attempts: null,
+        success: null,
+        connectedAt: null,
+        nextReconnectAt: null,
+        validationRatio: null,
+        lastDurationMs: null
+      };
     }
 
     return {
@@ -3342,10 +3598,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
     };
   }
 
-  function buildRelaySnapshot(relay: NDKRelay | null | undefined): Record<string, unknown> {
+  function buildRelaySnapshot(relay: NDKRelay | null | undefined): DeveloperRelaySnapshot {
     if (!relay) {
       return {
-        present: false
+        present: false,
+        url: null,
+        connected: false,
+        status: null,
+        statusName: null,
+        attempts: null,
+        success: null,
+        connectedAt: null,
+        nextReconnectAt: null,
+        validationRatio: null,
+        lastDurationMs: null
       };
     }
 
@@ -3359,7 +3625,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     };
   }
 
-  function getRelaySnapshots(relayUrls: string[]): Record<string, unknown>[] {
+  function getRelaySnapshots(relayUrls: string[]): DeveloperRelaySnapshot[] {
     return relayUrls.map((relayUrl) => {
       const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
       return buildRelaySnapshot(ndk.pool.getRelay(normalizedRelayUrl, false));
@@ -3367,10 +3633,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   function logRelayLifecycle(eventName: string, relay: NDKRelay): void {
-    console.info(`[nostr][relay:${eventName}]`, {
+    logDeveloperTrace('info', 'relay', eventName, {
       ...buildRelaySnapshot(relay),
       pool: ndk.pool.stats()
     });
+  }
+
+  function logMessageRelayDiagnostics(
+    phase: string,
+    details: Record<string, unknown>,
+    level: DeveloperTraceLevel = 'info'
+  ): void {
+    logDeveloperTrace(level, 'message-relays', phase, details);
   }
 
   function ensureRelayStatusListeners(): void {
@@ -4001,6 +4275,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesRestoreThrottleMs = 0;
     shouldReloadChatsOnPrivateMessagesUiRefresh = false;
     shouldReloadMessagesOnPrivateMessagesUiRefresh = false;
+    privateMessagesSubscriptionRelayUrls.value = [];
+    privateMessagesSubscriptionSince.value = null;
+    bumpDeveloperDiagnosticsVersion();
   }
 
   function queuePrivateMessageIngestion(
@@ -4044,7 +4321,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     try {
       rumorEvent = await giftUnwrap(wrappedEvent);
     } catch (error) {
-      console.warn('[nostr][inbound] unwrap-failed', {
+      logDeveloperTrace('warn', 'inbound', 'unwrap-failed', {
         error,
         reason: 'unwrap-failed',
         ...buildInboundTraceDetails({
@@ -4438,7 +4715,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
     const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
-    const filterSince = getFilterSince();
+    const filterSince =
+      Number.isInteger(options.sinceOverride) && Number(options.sinceOverride) >= 0
+        ? Math.floor(Number(options.sinceOverride))
+        : getFilterSince();
     if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
       logSubscription('private-messages', 'skip', {
         reason: 'already-active',
@@ -4491,6 +4771,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...buildSubscriptionRelayDetails(relayUrls)
     });
 
+    privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
+    privateMessagesSubscriptionSince.value = filterSince;
+    privateMessagesSubscriptionStartedAt.value = new Date().toISOString();
+    privateMessagesSubscriptionLastEoseAt.value = null;
+    bumpDeveloperDiagnosticsVersion();
+
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     privateMessagesSubscription = ndk.subscribe(
       {
@@ -4508,6 +4794,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
             ...buildSubscriptionEventDetails(wrappedEvent),
             ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
           });
+          privateMessagesSubscriptionLastEventSeenAt.value = new Date().toISOString();
+          privateMessagesSubscriptionLastEventId.value = normalizeEventId(wrappedEvent.id) ?? wrappedEvent.id ?? null;
+          privateMessagesSubscriptionLastEventCreatedAt.value =
+            Number.isInteger(wrappedEvent.created_at) ? Number(wrappedEvent.created_at) : null;
+          bumpDeveloperDiagnosticsVersion();
           updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
           queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
         },
@@ -4516,6 +4807,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
             signature,
             restoreThrottleMs: privateMessagesRestoreThrottleMs
           });
+          privateMessagesSubscriptionLastEoseAt.value = new Date().toISOString();
+          bumpDeveloperDiagnosticsVersion();
           privateMessagesRestoreThrottleMs = 0;
           flushPrivateMessagesUiRefreshNow();
         }
@@ -4728,9 +5021,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     pendingContactCursorPublishTimers.clear();
     lastPrivateContactListCreatedAt = 0;
     lastPrivateContactListEventId = '';
+    privateMessagesSubscriptionStartedAt.value = null;
+    privateMessagesSubscriptionLastEventSeenAt.value = null;
+    privateMessagesSubscriptionLastEventId.value = null;
+    privateMessagesSubscriptionLastEventCreatedAt.value = null;
+    privateMessagesSubscriptionLastEoseAt.value = null;
+    developerTraceEntries.value = [];
     stopMyRelayListSubscription();
     stopPrivateContactListSubscription();
     stopPrivateMessagesSubscription();
+    bumpDeveloperDiagnosticsVersion();
 
     if (!hasStorage()) {
       return;
@@ -4764,6 +5064,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     if (hasStorage()) {
       window.localStorage.removeItem(EVENT_SINCE_STORAGE_KEY);
+      window.localStorage.removeItem(DEVELOPER_DIAGNOSTICS_STORAGE_KEY);
       for (const storageKey of RELAY_STORAGE_KEYS) {
         window.localStorage.removeItem(storageKey);
       }
@@ -5098,13 +5399,165 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
+  function buildPendingReactionDiagnostics(): DeveloperPendingReactionSnapshot[] {
+    return Array.from(pendingIncomingReactions.entries())
+      .map(([targetEventId, entries]) => ({
+        targetEventId,
+        count: entries.length,
+        entries: entries.map((entry) => ({
+          chatPublicKey: entry.chatPublicKey,
+          targetAuthorPublicKey: entry.targetAuthorPublicKey,
+          emoji: entry.reaction.emoji,
+          reactorPublicKey: entry.reaction.reactorPublicKey,
+          createdAt: entry.reaction.createdAt,
+          eventId: normalizeEventId(entry.reaction.eventId) ?? null
+        }))
+      }))
+      .sort((first, second) => second.count - first.count);
+  }
+
+  function buildPendingDeletionDiagnostics(): DeveloperPendingDeletionSnapshot[] {
+    return Array.from(pendingIncomingDeletions.entries())
+      .map(([targetEventId, entries]) => ({
+        targetEventId,
+        count: entries.length,
+        entries: entries.map((entry) => ({
+          deletionAuthorPublicKey: entry.deletionAuthorPublicKey,
+          deleteEventId: normalizeEventId(entry.deleteEventId) ?? null,
+          deletedAt: entry.deletedAt,
+          targetKind: entry.targetKind
+        }))
+      }))
+      .sort((first, second) => second.count - first.count);
+  }
+
+  async function getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot> {
+    const relayStore = useRelayStore();
+    const nip65RelayStore = useNip65RelayStore();
+    relayStore.init();
+    nip65RelayStore.init();
+
+    const loggedInPubkey = getLoggedInPublicKeyHex();
+    const authMethod = getStoredAuthMethod();
+    const storedEventSince = ensureStoredEventSince();
+    const filterSince = getFilterSince();
+    const appRelayUrls = getAppRelayUrls();
+    const effectiveReadRelayUrls = await resolveLoggedInReadRelayUrls();
+    const effectivePublishRelayUrls = await resolveLoggedInPublishRelayUrls();
+    const configuredRelayList = Array.from(configuredRelayUrls);
+    const privateMessagesRelayUrls = normalizeRelayStatusUrls(privateMessagesSubscriptionRelayUrls.value);
+    const relayRows = normalizeRelayStatusUrls([
+      ...appRelayUrls,
+      ...effectiveReadRelayUrls,
+      ...effectivePublishRelayUrls,
+      ...privateMessagesRelayUrls,
+      ...configuredRelayList
+    ]).map((relayUrl) => {
+      const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+      const snapshot = buildRelaySnapshot(ndk.pool.getRelay(normalizedRelayUrl, false));
+
+      return {
+        ...snapshot,
+        url: normalizedRelayUrl,
+        inReadSet: effectiveReadRelayUrls.includes(normalizedRelayUrl),
+        inPublishSet: effectivePublishRelayUrls.includes(normalizedRelayUrl),
+        inPrivateMessagesSubscription: privateMessagesRelayUrls.includes(normalizedRelayUrl),
+        isConfigured: configuredRelayUrls.has(normalizedRelayUrl)
+      };
+    });
+
+    return {
+      session: {
+        loggedInPubkey,
+        authMethod,
+        eventSince: storedEventSince,
+        eventSinceIso: toOptionalIsoTimestampFromUnix(storedEventSince),
+        filterSince,
+        filterSinceIso: toOptionalIsoTimestampFromUnix(filterSince),
+        isRestoringStartupState: isRestoringStartupState.value,
+        hasNip07Extension: hasNip07Extension(),
+        appRelayUrls,
+        myRelayEntries: nip65RelayStore.relayEntries.map((entry) => ({ ...entry })),
+        effectiveReadRelayUrls,
+        effectivePublishRelayUrls,
+        configuredRelayUrls: configuredRelayList
+      },
+      privateMessagesSubscription: {
+        active: Boolean(privateMessagesSubscription),
+        signature: privateMessagesSubscriptionSignature || null,
+        relayUrls: privateMessagesRelayUrls,
+        relaySnapshots: getRelaySnapshots(privateMessagesRelayUrls),
+        since: privateMessagesSubscriptionSince.value,
+        sinceIso: toOptionalIsoTimestampFromUnix(privateMessagesSubscriptionSince.value),
+        restoreThrottleMs: privateMessagesRestoreThrottleMs,
+        startedAt: privateMessagesSubscriptionStartedAt.value,
+        lastEventSeenAt: privateMessagesSubscriptionLastEventSeenAt.value,
+        lastEventId: privateMessagesSubscriptionLastEventId.value,
+        lastEventCreatedAt: privateMessagesSubscriptionLastEventCreatedAt.value,
+        lastEventCreatedAtIso: toOptionalIsoTimestampFromUnix(
+          privateMessagesSubscriptionLastEventCreatedAt.value
+        ),
+        lastEoseAt: privateMessagesSubscriptionLastEoseAt.value
+      },
+      relayRows,
+      pendingReactions: buildPendingReactionDiagnostics(),
+      pendingDeletions: buildPendingDeletionDiagnostics()
+    };
+  }
+
+  async function reconnectDeveloperRelay(relayUrl: string): Promise<void> {
+    const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
+    if (!normalizedRelayUrl) {
+      throw new Error('Relay URL is required.');
+    }
+
+    await ensureRelayConnections([normalizedRelayUrl]);
+    bumpDeveloperDiagnosticsVersion();
+  }
+
+  async function reconnectAllDeveloperRelays(): Promise<void> {
+    const snapshot = await getDeveloperDiagnosticsSnapshot();
+    const relayUrls = snapshot.relayRows.map((entry) => entry.url).filter((value): value is string => Boolean(value));
+    if (relayUrls.length === 0) {
+      return;
+    }
+
+    await ensureRelayConnections(relayUrls);
+    bumpDeveloperDiagnosticsVersion();
+  }
+
+  async function restartPrivateMessagesDiagnosticsSubscription(
+    options: {
+      lookbackMinutes?: number;
+    } = {}
+  ): Promise<void> {
+    const lookbackMinutes =
+      typeof options.lookbackMinutes === 'number' && Number.isFinite(options.lookbackMinutes)
+        ? Math.max(1, Math.floor(options.lookbackMinutes))
+        : 0;
+
+    await subscribePrivateMessagesForLoggedInUser(true, {
+      restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+      sinceOverride:
+        lookbackMinutes > 0
+          ? Math.max(0, Math.floor(Date.now() / 1000) - lookbackMinutes * 60)
+          : undefined
+    });
+    bumpDeveloperDiagnosticsVersion();
+  }
+
   return {
     clearPrivateKey,
+    clearDeveloperTraceEntries,
     contactListVersion,
+    developerDiagnosticsEnabled,
+    developerDiagnosticsVersion,
+    developerTraceEntries,
     encodeNpub,
     ensureRelayConnections,
     fetchRelayNip11Info,
     fetchMyRelayList,
+    getDeveloperDiagnosticsSnapshot,
     getNip05Data,
     hasNip07Extension,
     getLoggedInPublicKeyHex,
@@ -5125,6 +5578,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restorePrivateContactList,
     restorePrivatePreferences,
     restoreStartupState,
+    reconnectAllDeveloperRelays,
+    reconnectDeveloperRelay,
+    restartPrivateMessagesDiagnosticsSubscription,
     retryDirectMessageRelay,
     scheduleContactCursorPublish,
     sendDirectMessage,
@@ -5136,6 +5592,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     subscribePrivateContactListUpdates,
     subscribePrivateMessagesForLoggedInUser,
     updateLoggedInUserRelayList,
+    setDeveloperDiagnosticsEnabled,
     syncLoggedInContactProfile,
     syncRecentChatContacts,
     validateNpub,

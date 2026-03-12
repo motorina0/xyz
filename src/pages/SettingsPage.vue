@@ -94,7 +94,8 @@ type SettingsRouteName =
   | 'settings-theme'
   | 'settings-relays'
   | 'settings-language'
-  | 'settings-notifications';
+  | 'settings-notifications'
+  | 'settings-developer';
 
 interface SettingsItem {
   key: string;
@@ -114,6 +115,12 @@ const settingsItems: SettingsItem[] = [
     label: 'Notifications',
     icon: 'notifications',
     routeName: 'settings-notifications'
+  },
+  {
+    key: 'developer',
+    label: 'Developer',
+    icon: 'terminal',
+    routeName: 'settings-developer'
   },
   { key: 'logout', label: 'Log Out', icon: 'logout', action: 'logout' }
 ];
