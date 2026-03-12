@@ -4408,7 +4408,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const chatPubkey = isSelfSentMessage
-      ? recipients.find((pubkey) => pubkey !== loggedInPubkeyHex) ?? null
+      ? recipients.find((pubkey) => pubkey !== loggedInPubkeyHex) ??
+        (recipients.includes(loggedInPubkeyHex) ? loggedInPubkeyHex : null)
       : senderPubkeyHex;
     if (!chatPubkey) {
       logInboundEvent('drop', {
