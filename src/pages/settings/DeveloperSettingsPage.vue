@@ -1201,7 +1201,7 @@ function formatTraceDetailsPreview(value: unknown): string {
 
 .developer-queues {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 14px;
 }
 
@@ -1270,10 +1270,6 @@ function formatTraceDetailsPreview(value: unknown): string {
 
 @media (max-width: 900px) {
   .developer-facts {
-    grid-template-columns: 1fr;
-  }
-
-  .developer-queues {
     grid-template-columns: 1fr;
   }
 
