@@ -6,6 +6,7 @@ import NDK, {
   NDKNip07Signer,
   NDKPublishError,
   NDKPrivateKeySigner,
+  NDKRelayAuthPolicies,
   type NDKRelay,
   type NDKRelayConnectionStats,
   NDKRelayList,
@@ -305,6 +306,7 @@ type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[numbe
 
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
+  ndk.relayAuthDefaultPolicy = NDKRelayAuthPolicies.signIn({ ndk });
   const chatStore = useChatStore();
   const INITIAL_CONNECT_TIMEOUT_MS = 3000;
   const relayStatusVersion = ref(0);
@@ -328,6 +330,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
+  const relayAuthFailureListenerUrls = new Set<string>();
   let restoreStartupStatePromise: Promise<void> | null = null;
   let restoreMyRelayListPromise: Promise<void> | null = null;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
@@ -3668,11 +3671,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
       bumpRelayStatusVersion();
       logRelayLifecycle('disconnect', relay);
     });
+    ndk.pool.on('relay:auth', (relay, challenge) => {
+      bumpRelayStatusVersion();
+      logDeveloperTrace('info', 'relay', 'auth-requested', {
+        ...buildRelaySnapshot(relay),
+        challengeLength: challenge.length
+      });
+    });
+    ndk.pool.on('relay:authed', (relay) => {
+      bumpRelayStatusVersion();
+      logDeveloperTrace('info', 'relay', 'authed', buildRelaySnapshot(relay));
+    });
     ndk.pool.on('flapping', (relay) => {
       bumpRelayStatusVersion();
       logRelayLifecycle('flapping', relay);
     });
     hasRelayStatusListeners = true;
+  }
+
+  function ensureRelayAuthFailureListener(relay: NDKRelay | null | undefined): void {
+    if (!relay || relayAuthFailureListenerUrls.has(relay.url)) {
+      return;
+    }
+
+    relay.on('auth:failed', (error) => {
+      bumpRelayStatusVersion();
+      logDeveloperTrace('warn', 'relay', 'auth-failed', {
+        ...buildRelaySnapshot(relay),
+        error
+      });
+    });
+    relayAuthFailureListenerUrls.add(relay.url);
   }
 
   async function getOrCreateSigner(): Promise<NDKSigner> {
@@ -3730,6 +3759,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
       if (configuredRelayUrls.has(normalizedRelayUrl)) {
         const existingRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
+        ensureRelayAuthFailureListener(existingRelay);
         if (existingRelay && !existingRelay.connected) {
           console.info('[nostr][relay-connect] reconnecting configured relay', {
             reason: 'ensureRelayConnections',
@@ -3751,6 +3781,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
       configuredRelayUrls.add(normalizedRelayUrl);
       const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
+      ensureRelayAuthFailureListener(addedRelay);
       if (addedRelay && !addedRelay.connected) {
         console.info('[nostr][relay-connect] connecting new explicit relay', {
           reason: 'ensureRelayConnections',
