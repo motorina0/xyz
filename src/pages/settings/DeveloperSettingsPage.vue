@@ -860,8 +860,8 @@ async function handleRefreshPendingQueues(): Promise<void> {
 
     const clearedEntryCount = Math.max(0, summary.initialEntryCount - summary.remainingEntryCount);
     const clearedEntryLabel = clearedEntryCount === 1 ? 'item' : 'items';
-    const fetchedWrappedEventLabel =
-      summary.fetchedWrappedEventCount === 1 ? 'wrapped event' : 'wrapped events';
+    const checkedTargetLabel =
+      summary.initialTargetCount === 1 ? 'pending target' : 'pending targets';
     const pendingEntryLabel = summary.remainingEntryCount === 1 ? 'item' : 'items';
 
     $q.notify({
@@ -869,7 +869,7 @@ async function handleRefreshPendingQueues(): Promise<void> {
       message:
         summary.remainingEntryCount === 0
           ? `Pending queues refreshed. Cleared ${clearedEntryCount} ${clearedEntryLabel}.`
-          : `Pending queues refreshed. Searched ${summary.fetchedWrappedEventCount} ${fetchedWrappedEventLabel}; ${summary.remainingEntryCount} ${pendingEntryLabel} still pending.`,
+          : `Pending queues refreshed. Checked ${summary.initialTargetCount} ${checkedTargetLabel}; ${summary.remainingEntryCount} ${pendingEntryLabel} still pending.`,
       position: 'top-right'
     });
   } catch (error) {

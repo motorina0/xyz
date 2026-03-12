@@ -276,7 +276,6 @@ export interface DeveloperDiagnosticsSnapshot {
 export interface DeveloperPendingQueueRefreshSummary {
   initialTargetCount: number;
   initialEntryCount: number;
-  fetchedWrappedEventCount: number;
   remainingTargetCount: number;
   remainingEntryCount: number;
 }
@@ -5592,17 +5591,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return didChange;
   }
 
-  function getDeveloperPendingQueueRefreshSinceCandidates(): number[] {
-    const primarySince =
-      Number.isInteger(privateMessagesSubscriptionSince.value) &&
-      Number(privateMessagesSubscriptionSince.value) >= 0
-        ? Math.floor(Number(privateMessagesSubscriptionSince.value))
-        : getFilterSince();
-    const fallbackSince = getDefaultEventSince();
-
-    return primarySince > fallbackSince ? [primarySince, fallbackSince] : [fallbackSince];
-  }
-
   async function refreshDeveloperPendingQueues(): Promise<DeveloperPendingQueueRefreshSummary> {
     await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
 
@@ -5612,98 +5600,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return {
         initialTargetCount,
         initialEntryCount,
-        fetchedWrappedEventCount: 0,
         remainingTargetCount: 0,
         remainingEntryCount: 0
       };
     }
 
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      throw new Error('Login is required to refresh pending queues.');
-    }
-
-    const relayUrls = await resolveLoggedInReadRelayUrls();
-    if (relayUrls.length === 0) {
-      throw new Error('No read relays available to refresh pending queues.');
-    }
-
-    let didChange = await applyPendingQueuesForStoredTargets(
+    const didChange = await applyPendingQueuesForStoredTargets(
       getPendingDeveloperQueueTargetEventIds(),
       {
         uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
       }
     );
-    const processedWrappedEventIds = new Set<string>();
 
-    if (getPendingDeveloperQueueEntryCount() > 0) {
-      await ensureRelayConnections(relayUrls);
-      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-
-      for (const since of getDeveloperPendingQueueRefreshSinceCandidates()) {
-        if (getPendingDeveloperQueueEntryCount() === 0) {
-          break;
-        }
-
-        const fetchedWrappedEvents = await ndk.fetchEvents(
-          {
-            kinds: [NDKKind.GiftWrap],
-            '#p': [loggedInPubkeyHex],
-            since
-          },
-          {
-            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-          },
-          relaySet
-        );
-        const wrappedEventsToProcess = Array.from(fetchedWrappedEvents)
-          .map((event) => (event instanceof NDKEvent ? event : new NDKEvent(ndk, event)))
-          .filter((wrappedEvent) => {
-            const wrappedEventId = normalizeEventId(wrappedEvent.id);
-            if (!wrappedEventId) {
-              return true;
-            }
-
-            if (processedWrappedEventIds.has(wrappedEventId)) {
-              return false;
-            }
-
-            processedWrappedEventIds.add(wrappedEventId);
-            return true;
-          })
-          .sort((first, second) => {
-            const firstCreatedAt =
-              Number.isInteger(first.created_at) ? Number(first.created_at) : 0;
-            const secondCreatedAt =
-              Number.isInteger(second.created_at) ? Number(second.created_at) : 0;
-            if (firstCreatedAt !== secondCreatedAt) {
-              return firstCreatedAt - secondCreatedAt;
-            }
-
-            return (first.id ?? '').localeCompare(second.id ?? '');
-          });
-
-        for (const wrappedEvent of wrappedEventsToProcess) {
-          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
-          await processIncomingPrivateMessage(wrappedEvent, loggedInPubkeyHex, {
-            uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
-          });
-        }
-
-        if (
-          await applyPendingQueuesForStoredTargets(
-            getPendingDeveloperQueueTargetEventIds(),
-            {
-              uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
-            }
-          )
-        ) {
-          didChange = true;
-        }
-      }
-    }
-
-    if (didChange || processedWrappedEventIds.size > 0) {
+    if (didChange) {
       flushPrivateMessagesUiRefreshNow();
       bumpDeveloperDiagnosticsVersion();
     }
@@ -5711,7 +5620,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return {
       initialTargetCount,
       initialEntryCount,
-      fetchedWrappedEventCount: processedWrappedEventIds.size,
       remainingTargetCount: getPendingDeveloperQueueTargetEventIds().length,
       remainingEntryCount: getPendingDeveloperQueueEntryCount()
     };
