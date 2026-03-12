@@ -93,7 +93,7 @@
         </template>
       </q-input>
 
-      <q-btn color="primary" label="Send" class="composer__send" @click="handleSend" />
+      <q-btn color="primary" icon="send" class="composer__send" @click="handleSend" />
     </div>
   </div>
 </template>
@@ -533,6 +533,9 @@ defineExpose({
 
 .composer__send {
   border-radius: 999px;
-  min-width: 74px;
+  min-width: 40px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
 }
 </style>
