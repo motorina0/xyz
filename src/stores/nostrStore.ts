@@ -29,6 +29,11 @@ import NDK, {
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
+import {
+  developerTraceDataService,
+  type DeveloperTraceEntry,
+  type DeveloperTraceLevel
+} from 'src/services/developerTraceDataService';
 import { imageCacheService } from 'src/services/imageCacheService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
@@ -59,6 +64,11 @@ import {
   clearBrowserNotificationsPreference
 } from 'src/utils/browserNotificationPreference';
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
+
+export type {
+  DeveloperTraceEntry,
+  DeveloperTraceLevel
+} from 'src/services/developerTraceDataService';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;
@@ -178,17 +188,6 @@ interface ContactCursorContent {
 interface ContactCursorState {
   at: string;
   eventId: string | null;
-}
-
-export type DeveloperTraceLevel = 'info' | 'warn' | 'error';
-
-export interface DeveloperTraceEntry {
-  id: string;
-  timestamp: string;
-  level: DeveloperTraceLevel;
-  scope: string;
-  phase: string;
-  details: Record<string, unknown>;
 }
 
 export interface DeveloperRelaySnapshot {
@@ -341,7 +340,6 @@ const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
 const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
-const DEVELOPER_TRACE_LIMIT = 200;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
 const EVENT_FILTER_LOOKBACK_SECONDS = 24 * 60 * 60;
 const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
@@ -386,7 +384,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
   const developerDiagnosticsEnabled = ref(readDeveloperDiagnosticsEnabled());
   const developerDiagnosticsVersion = ref(0);
-  const developerTraceEntries = ref<DeveloperTraceEntry[]>([]);
+  const developerTraceVersion = ref(0);
   const privateMessagesSubscriptionRelayUrls = ref<string[]>([]);
   const privateMessagesSubscriptionSince = ref<number | null>(null);
   const privateMessagesSubscriptionStartedAt = ref<string | null>(null);
@@ -635,19 +633,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     if (!enabled) {
-      developerTraceEntries.value = [];
+      void clearDeveloperTraceEntries().catch((error) => {
+        console.error('Failed to clear developer trace entries.', error);
+      });
     }
 
     developerDiagnosticsVersion.value += 1;
   }
 
-  function clearDeveloperTraceEntries(): void {
-    developerTraceEntries.value = [];
+  function bumpDeveloperDiagnosticsVersion(): void {
     developerDiagnosticsVersion.value += 1;
   }
 
-  function bumpDeveloperDiagnosticsVersion(): void {
-    developerDiagnosticsVersion.value += 1;
+  function bumpDeveloperTraceVersion(): void {
+    developerTraceVersion.value += 1;
   }
 
   function toOptionalIsoTimestampFromUnix(value: number | null | undefined): string | null {
@@ -718,32 +717,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
     phase: string,
     details: Record<string, unknown> = {}
   ): void {
-    const logger =
-      level === 'warn'
-        ? console.warn
-        : level === 'error'
-          ? console.error
-          : console.info;
-
-    logger(`[nostr][${scope}] ${phase}`, details);
-
     if (!developerDiagnosticsEnabled.value) {
       return;
     }
 
     developerTraceCounter += 1;
-    developerTraceEntries.value = [
-      ...developerTraceEntries.value.slice(-(DEVELOPER_TRACE_LIMIT - 1)),
-      {
-        id: `${Date.now()}-${developerTraceCounter}`,
-        timestamp: new Date().toISOString(),
-        level,
-        scope,
-        phase,
-        details: normalizeDeveloperTraceDetails(details)
-      }
-    ];
-    developerDiagnosticsVersion.value += 1;
+    const entry: DeveloperTraceEntry = {
+      id: `${Date.now()}-${developerTraceCounter}`,
+      timestamp: new Date().toISOString(),
+      level,
+      scope,
+      phase,
+      details: normalizeDeveloperTraceDetails(details)
+    };
+
+    void developerTraceDataService
+      .appendEntry(entry)
+      .then(() => {
+        bumpDeveloperTraceVersion();
+      })
+      .catch((error) => {
+        console.error('Failed to persist developer trace entry.', error);
+      });
+  }
+
+  async function listDeveloperTraceEntries(): Promise<DeveloperTraceEntry[]> {
+    return developerTraceDataService.listEntries();
+  }
+
+  async function clearDeveloperTraceEntries(): Promise<void> {
+    await developerTraceDataService.clearEntries();
+    bumpDeveloperTraceVersion();
   }
 
   function setStoredEventSince(value: number): number {
@@ -4073,7 +4077,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         const existingRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
         ensureRelayAuthFailureListener(existingRelay);
         if (existingRelay && !existingRelay.connected) {
-          console.info('[nostr][relay-connect] reconnecting configured relay', {
+          logDeveloperTrace('info', 'relay-connect', 'reconnecting configured relay', {
             reason: 'ensureRelayConnections',
             ...buildRelaySnapshot(existingRelay)
           });
@@ -4095,7 +4099,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
       ensureRelayAuthFailureListener(addedRelay);
       if (addedRelay && !addedRelay.connected) {
-        console.info('[nostr][relay-connect] connecting new explicit relay', {
+        logDeveloperTrace('info', 'relay-connect', 'connecting new explicit relay', {
           reason: 'ensureRelayConnections',
           ...buildRelaySnapshot(addedRelay)
         });
@@ -5462,7 +5466,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesSubscriptionLastEventId.value = null;
     privateMessagesSubscriptionLastEventCreatedAt.value = null;
     privateMessagesSubscriptionLastEoseAt.value = null;
-    developerTraceEntries.value = [];
+    void clearDeveloperTraceEntries().catch((error) => {
+      console.error('Failed to clear developer trace entries.', error);
+    });
     stopMyRelayListSubscription();
     stopPrivateContactListSubscription();
     stopPrivateMessagesSubscription();
@@ -6167,7 +6173,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     contactListVersion,
     developerDiagnosticsEnabled,
     developerDiagnosticsVersion,
-    developerTraceEntries,
+    developerTraceVersion,
     encodeNpub,
     ensureRelayConnections,
     fetchRelayNip11Info,
@@ -6180,6 +6186,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshDeveloperPendingQueues,
     getRelayConnectionState,
     isRestoringStartupState,
+    listDeveloperTraceEntries,
     loginWithExtension,
     logout,
     publishPrivateContactList,

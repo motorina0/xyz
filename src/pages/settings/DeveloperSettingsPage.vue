@@ -18,7 +18,7 @@
           <div>
             <div class="text-body1">Debug logging</div>
             <div class="text-caption text-grey-6">
-              Keep an in-app ring buffer of relay and ingest traces for this session.
+              Store relay and ingest traces in IndexedDB for developer diagnostics.
             </div>
           </div>
 
@@ -664,21 +664,19 @@ const expandedCards = ref<Record<ExpandableDeveloperCardKey, boolean>>({
 
 let refreshRequestId = 0;
 let refreshDebounceId: ReturnType<typeof globalThis.setTimeout> | null = null;
+let traceRefreshDebounceId: ReturnType<typeof globalThis.setTimeout> | null = null;
 const TRACE_PAGE_SIZE = 20;
 const displayedTraceEntries = ref<DeveloperTraceEntry[]>([]);
+const latestTraceEntries = ref<DeveloperTraceEntry[]>([]);
 const tracePage = ref(1);
 const expandedTraceDetailIds = ref<Record<string, boolean>>({});
-
-const liveTraceEntries = computed<DeveloperTraceEntry[]>(() => {
-  return [...nostrStore.developerTraceEntries].reverse();
-});
 
 const displayedTraceEntryIds = computed(() => {
   return new Set(displayedTraceEntries.value.map((entry) => entry.id));
 });
 
 const newTraceEntryCount = computed(() => {
-  return liveTraceEntries.value.filter((entry) => !displayedTraceEntryIds.value.has(entry.id)).length;
+  return latestTraceEntries.value.filter((entry) => !displayedTraceEntryIds.value.has(entry.id)).length;
 });
 
 const totalTracePages = computed(() => {
@@ -717,14 +715,37 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => nostrStore.developerTraceVersion,
+  () => {
+    if (traceRefreshDebounceId !== null) {
+      globalThis.clearTimeout(traceRefreshDebounceId);
+    }
+
+    traceRefreshDebounceId = globalThis.setTimeout(() => {
+      traceRefreshDebounceId = null;
+      void refreshLatestTraceEntries().catch((error) => {
+        reportUiError('Failed to refresh latest trace data', error, 'Failed to refresh recent trace.');
+      });
+    }, 120);
+  }
+);
+
 onBeforeUnmount(() => {
   if (refreshDebounceId !== null) {
     globalThis.clearTimeout(refreshDebounceId);
     refreshDebounceId = null;
   }
+
+  if (traceRefreshDebounceId !== null) {
+    globalThis.clearTimeout(traceRefreshDebounceId);
+    traceRefreshDebounceId = null;
+  }
 });
 
-refreshRecentTraceEntries();
+void refreshRecentTraceEntries().catch((error) => {
+  reportUiError('Failed to load recent trace data', error, 'Failed to load recent trace.');
+});
 
 async function refreshDiagnostics(): Promise<void> {
   const requestId = ++refreshRequestId;
@@ -879,19 +900,32 @@ async function handleRefreshPendingQueues(): Promise<void> {
   }
 }
 
-function handleClearTrace(): void {
-  nostrStore.clearDeveloperTraceEntries();
-  refreshRecentTraceEntries();
+async function handleClearTrace(): Promise<void> {
+  try {
+    await nostrStore.clearDeveloperTraceEntries();
+    await refreshRecentTraceEntries();
+  } catch (error) {
+    reportUiError('Failed to clear developer trace', error, 'Failed to clear developer trace.');
+  }
 }
 
-function refreshRecentTraceEntries(): void {
-  displayedTraceEntries.value = [...liveTraceEntries.value];
+async function refreshLatestTraceEntries(): Promise<void> {
+  latestTraceEntries.value = await nostrStore.listDeveloperTraceEntries();
+}
+
+async function refreshRecentTraceEntries(): Promise<void> {
+  await refreshLatestTraceEntries();
+  displayedTraceEntries.value = [...latestTraceEntries.value];
   tracePage.value = 1;
   expandedTraceDetailIds.value = {};
 }
 
-function handleRefreshRecentTrace(): void {
-  refreshRecentTraceEntries();
+async function handleRefreshRecentTrace(): Promise<void> {
+  try {
+    await refreshRecentTraceEntries();
+  } catch (error) {
+    reportUiError('Failed to refresh recent trace', error, 'Failed to refresh recent trace.');
+  }
 }
 
 function toggleTraceDetail(entryId: string): void {
@@ -938,11 +972,12 @@ async function handleDownloadDiagnostics(): Promise<void> {
 
 async function buildDiagnosticsExport(): Promise<string> {
   const snapshot = diagnostics.value ?? (await nostrStore.getDeveloperDiagnosticsSnapshot());
+  const traceEntries = await nostrStore.listDeveloperTraceEntries();
   return JSON.stringify(
     {
       exportedAt: new Date().toISOString(),
       diagnostics: snapshot,
-      traceEntries: nostrStore.developerTraceEntries
+      traceEntries
     },
     null,
     2
