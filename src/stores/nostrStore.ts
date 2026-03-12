@@ -756,6 +756,69 @@ export const useNostrStore = defineStore('nostrStore', () => {
     console.info(`[nostr][subscription:${name}] ${phase}`, details);
   }
 
+  function buildFilterSinceDetails(since: number | undefined): Record<string, unknown> {
+    const normalizedSince = Number.isInteger(since) ? Number(since) : null;
+    return {
+      since: normalizedSince,
+      sinceIso:
+        normalizedSince && normalizedSince > 0
+          ? new Date(normalizedSince * 1000).toISOString()
+          : null
+    };
+  }
+
+  function buildInboundTraceDetails(options: {
+    wrappedEvent?: Pick<NDKEvent, 'id' | 'kind' | 'created_at'> | null;
+    rumorEvent?: Pick<NDKEvent, 'id' | 'kind' | 'created_at'> | null;
+    loggedInPubkeyHex?: string | null;
+    senderPubkeyHex?: string | null;
+    chatPubkey?: string | null;
+    targetEventId?: string | null;
+    relayUrls?: string[];
+    recipients?: string[];
+  } = {}): Record<string, unknown> {
+    const relayUrls = Array.isArray(options.relayUrls)
+      ? options.relayUrls.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const recipients = Array.isArray(options.recipients)
+      ? options.recipients.filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      : [];
+    const wrappedEventId =
+      normalizeEventId(options.wrappedEvent?.id ?? null) ?? options.wrappedEvent?.id ?? null;
+    const rumorEventId =
+      normalizeEventId(options.rumorEvent?.id ?? null) ?? options.rumorEvent?.id ?? null;
+    const createdAt = options.rumorEvent?.created_at ?? options.wrappedEvent?.created_at;
+    const normalizedCreatedAt = Number.isInteger(createdAt) ? Number(createdAt) : null;
+
+    return {
+      wrappedEventId: formatSubscriptionLogValue(wrappedEventId),
+      wrappedKind: options.wrappedEvent?.kind ?? null,
+      rumorEventId: formatSubscriptionLogValue(rumorEventId),
+      rumorKind: options.rumorEvent?.kind ?? null,
+      createdAt: normalizedCreatedAt,
+      createdAtIso:
+        normalizedCreatedAt && normalizedCreatedAt > 0
+          ? new Date(normalizedCreatedAt * 1000).toISOString()
+          : null,
+      senderPubkey: formatSubscriptionLogValue(options.senderPubkeyHex),
+      loggedInPubkey: formatSubscriptionLogValue(options.loggedInPubkeyHex),
+      chatPubkey: formatSubscriptionLogValue(options.chatPubkey),
+      targetEventId: formatSubscriptionLogValue(options.targetEventId),
+      relayCount: relayUrls.length,
+      relayUrls,
+      ...(recipients.length > 0
+        ? {
+            recipientCount: recipients.length,
+            recipients: recipients.map((value) => formatSubscriptionLogValue(value))
+          }
+        : {})
+    };
+  }
+
+  function logInboundEvent(stage: string, details: Record<string, unknown> = {}): void {
+    console.info(`[nostr][inbound] ${stage}`, details);
+  }
+
   function bumpContactListVersion(): void {
     contactListVersion.value += 1;
   }
@@ -1129,12 +1192,28 @@ export const useNostrStore = defineStore('nostrStore', () => {
       uiThrottleMs?: number;
     } = {}
   ): Promise<void> {
-    if (!Number.isInteger(messageId) || messageId <= 0 || relayStatuses.length === 0) {
+    if (!Number.isInteger(messageId) || messageId <= 0) {
+      console.info('[nostr][message-relays] skip', {
+        reason: 'invalid-message-id',
+        messageId,
+        relayStatusCount: relayStatuses.length,
+        eventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null)
+      });
+      return;
+    }
+
+    if (relayStatuses.length === 0) {
       return;
     }
 
     const currentMessage = await chatDataService.getMessageById(messageId);
     if (!currentMessage) {
+      console.info('[nostr][message-relays] skip', {
+        reason: 'message-not-found',
+        messageId,
+        relayStatusCount: relayStatuses.length,
+        eventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null)
+      });
       return;
     }
 
@@ -1142,6 +1221,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
       options.eventId ?? options.event?.id ?? currentMessage.event_id
     );
     if (!normalizedEventId) {
+      console.info('[nostr][message-relays] skip', {
+        reason: 'missing-event-id',
+        messageId: currentMessage.id,
+        relayStatusCount: relayStatuses.length,
+        currentMessageEventId: formatSubscriptionLogValue(currentMessage.event_id),
+        optionEventId: formatSubscriptionLogValue(options.eventId ?? options.event?.id ?? null)
+      });
       return;
     }
 
@@ -1160,6 +1246,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+    console.info('[nostr][message-relays] appended', {
+      messageId: currentMessage.id,
+      eventId: formatSubscriptionLogValue(normalizedEventId),
+      relayStatusCount: relayStatuses.length,
+      direction: options.direction ?? null,
+      uiThrottleMs,
+      refreshMode: uiThrottleMs > 0 ? 'queued-ui-refresh' : 'live-state-refresh'
+    });
     if (uiThrottleMs > 0) {
       queuePrivateMessagesUiRefresh({
         throttleMs: uiThrottleMs,
@@ -1895,7 +1989,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const targetEventId = readReactionTargetEventId(rumorEvent);
     const targetAuthorPublicKey = readReactionTargetAuthorPubkey(rumorEvent);
     const reactionEventId = normalizeEventId(options.rumorNostrEvent?.id ?? rumorEvent.id);
+    const relayUrls = normalizeRelayStatusUrls(options.relayStatuses.map((entry) => entry.relay_url));
     if (!reactionEmoji || !targetEventId) {
+      logInboundEvent('reaction-drop', {
+        reason: 'missing-reaction-data',
+        hasReactionEmoji: Boolean(reactionEmoji),
+        hasTargetEventId: Boolean(targetEventId),
+        ...buildInboundTraceDetails({
+          rumorEvent,
+          senderPubkeyHex,
+          chatPubkey,
+          targetEventId,
+          relayUrls
+        })
+      });
       return;
     }
 
@@ -1915,6 +2022,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
         senderPubkeyHex
       );
       if (pendingDeletion) {
+        logInboundEvent('reaction-drop', {
+          reason: 'pending-deletion-match',
+          deleteEventId: formatSubscriptionLogValue(pendingDeletion.deleteEventId),
+          ...buildInboundTraceDetails({
+            rumorEvent,
+            senderPubkeyHex,
+            chatPubkey,
+            targetEventId,
+            relayUrls
+          })
+        });
         await nostrEventDataService.deleteEventsByIds([reactionEventId]);
         return;
       }
@@ -1948,11 +2066,32 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const targetMessage = await chatDataService.getMessageByEventId(targetEventId);
     if (!targetMessage) {
+      logInboundEvent('reaction-pending', {
+        reason: 'target-message-missing',
+        ...buildInboundTraceDetails({
+          rumorEvent,
+          senderPubkeyHex,
+          chatPubkey,
+          targetEventId,
+          relayUrls
+        })
+      });
       queuePendingIncomingReaction(targetEventId, pendingReaction);
       return;
     }
 
     await upsertReactionOnMessageRow(targetMessage, pendingReaction, options);
+    logInboundEvent('reaction-applied', {
+      messageId: targetMessage.id,
+      targetMessageEventId: formatSubscriptionLogValue(targetMessage.event_id),
+      ...buildInboundTraceDetails({
+        rumorEvent,
+        senderPubkeyHex,
+        chatPubkey,
+        targetEventId,
+        relayUrls
+      })
+    });
   }
 
   async function buildReplyPreviewFromTargetEvent(
@@ -3888,7 +4027,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
       uiThrottleMs?: number;
     } = {}
   ): Promise<void> {
+    const wrappedRelayUrls = extractRelayUrlsFromEvent(wrappedEvent);
     if (wrappedEvent.kind !== NDKKind.GiftWrap) {
+      logInboundEvent('drop', {
+        reason: 'unsupported-wrapper-kind',
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          loggedInPubkeyHex,
+          relayUrls: wrappedRelayUrls
+        })
+      });
       return;
     }
 
@@ -3896,12 +4044,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
     try {
       rumorEvent = await giftUnwrap(wrappedEvent);
     } catch (error) {
-      console.warn('Failed to unwrap incoming gift wrap event', error);
+      console.warn('[nostr][inbound] unwrap-failed', {
+        error,
+        reason: 'unwrap-failed',
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          loggedInPubkeyHex,
+          relayUrls: wrappedRelayUrls
+        })
+      });
       return;
     }
 
     const senderPubkeyHex = inputSanitizerService.normalizeHexKey(rumorEvent.pubkey ?? '');
     if (!senderPubkeyHex) {
+      logInboundEvent('drop', {
+        reason: 'invalid-sender-pubkey',
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          relayUrls: wrappedRelayUrls
+        })
+      });
       return;
     }
 
@@ -3911,6 +4076,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       .filter((value): value is string => Boolean(value));
     const isSelfSentMessage = senderPubkeyHex === loggedInPubkeyHex;
     if (!isSelfSentMessage && !recipients.includes(loggedInPubkeyHex)) {
+      logInboundEvent('drop', {
+        reason: 'recipient-mismatch',
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       return;
     }
 
@@ -3918,13 +4094,25 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ? recipients.find((pubkey) => pubkey !== loggedInPubkeyHex) ?? null
       : senderPubkeyHex;
     if (!chatPubkey) {
+      logInboundEvent('drop', {
+        reason: 'missing-chat-pubkey',
+        isSelfSentMessage,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       return;
     }
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
 
     const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
-    const receivedRelayStatuses = buildInboundRelayStatuses(extractRelayUrlsFromEvent(wrappedEvent));
+    const receivedRelayStatuses = buildInboundRelayStatuses(wrappedRelayUrls);
     const direction: NostrEventDirection = isSelfSentMessage ? 'out' : 'in';
     const replyTargetEventId = readReplyTargetEventId(rumorEvent);
 
@@ -3937,6 +4125,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
 
     if (rumorEvent.kind === NDKKind.EventDeletion) {
+      logInboundEvent('route', {
+        route: 'deletion',
+        direction,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       await processIncomingDeletionRumorEvent(rumorEvent, senderPubkeyHex, {
         uiThrottleMs
       });
@@ -3944,6 +4145,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     if (rumorEvent.kind === NDKKind.Reaction) {
+      logInboundEvent('route', {
+        route: 'reaction',
+        direction,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       await processIncomingReactionRumorEvent(
         rumorEvent,
         chatPubkey,
@@ -3959,11 +4173,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     if (rumorEvent.kind !== NDKKind.PrivateDirectMessage) {
+      logInboundEvent('drop', {
+        reason: 'unsupported-rumor-kind',
+        direction,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       return;
     }
 
     const messageText = rumorEvent.content.trim();
     if (!messageText) {
+      logInboundEvent('drop', {
+        reason: 'empty-content',
+        direction,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       return;
     }
 
@@ -3989,6 +4229,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
         updatedExistingMessage = await applyPendingIncomingDeletionsForMessage(updatedExistingMessage, {
           uiThrottleMs
         });
+        logInboundEvent('message-persisted', {
+          persistence: 'duplicate-existing-message',
+          direction,
+          messageId: updatedExistingMessage.id,
+          uiThrottleMs,
+          ...buildInboundTraceDetails({
+            wrappedEvent,
+            rumorEvent,
+            loggedInPubkeyHex,
+            senderPubkeyHex,
+            chatPubkey,
+            relayUrls: wrappedRelayUrls,
+            recipients
+          })
+        });
         return;
       }
     }
@@ -4013,6 +4268,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
       createdChat ??
       (await chatDataService.getChatByPublicKey(chatPubkey));
     if (!chat) {
+      logInboundEvent('drop', {
+        reason: 'chat-create-failed',
+        direction,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       return;
     }
 
@@ -4039,6 +4307,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
     });
     if (!createdMessage) {
+      logInboundEvent('drop', {
+        reason: 'message-create-failed',
+        direction,
+        ...buildInboundTraceDetails({
+          wrappedEvent,
+          rumorEvent,
+          loggedInPubkeyHex,
+          senderPubkeyHex,
+          chatPubkey,
+          relayUrls: wrappedRelayUrls,
+          recipients
+        })
+      });
       return;
     }
     let nextMessageRow = await applyPendingIncomingReactionsForMessage(
@@ -4071,6 +4352,24 @@ export const useNostrStore = defineStore('nostrStore', () => {
       createdAt,
       nextUnreadCount
     );
+
+    logInboundEvent('message-persisted', {
+      persistence: 'created',
+      direction,
+      messageId: nextMessageRow.id,
+      chatId: chat.id,
+      unreadCount: nextUnreadCount,
+      uiThrottleMs,
+      ...buildInboundTraceDetails({
+        wrappedEvent,
+        rumorEvent,
+        loggedInPubkeyHex,
+        senderPubkeyHex,
+        chatPubkey,
+        relayUrls: wrappedRelayUrls,
+        recipients
+      })
+    });
 
     if (!isSelfSentMessage) {
       showIncomingMessageBrowserNotification({
@@ -4115,8 +4414,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     options: SubscribePrivateMessagesOptions = {}
   ): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    const authMethod = getStoredAuthMethod();
 
-    if (!loggedInPubkeyHex || !getStoredAuthMethod()) {
+    if (!loggedInPubkeyHex || !authMethod) {
+      logSubscription('private-messages', 'skip', {
+        reason: 'missing-login',
+        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        authMethod: authMethod ?? null
+      });
       stopPrivateMessagesSubscription('missing-login');
       return;
     }
@@ -4124,15 +4429,22 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await contactsService.init();
     const relayUrls = await resolveLoggedInReadRelayUrls();
     if (relayUrls.length === 0) {
+      logSubscription('private-messages', 'skip', {
+        reason: 'no-relays',
+        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        authMethod
+      });
       stopPrivateMessagesSubscription('no-relays');
       return;
     }
     const signature = `${loggedInPubkeyHex}:${relaySignature(relayUrls)}`;
+    const filterSince = getFilterSince();
     if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
       logSubscription('private-messages', 'skip', {
         reason: 'already-active',
         signature,
         pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+        authMethod,
         ...buildSubscriptionRelayDetails(relayUrls)
       });
       return;
@@ -4142,8 +4454,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       force,
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      since: getFilterSince(),
+      authMethod,
+      ...buildFilterSinceDetails(filterSince),
       restoreThrottleMs: normalizeThrottleMs(options.restoreThrottleMs),
+      relaySnapshots: getRelaySnapshots(relayUrls),
       ...buildSubscriptionRelayDetails(relayUrls)
     });
 
@@ -4151,13 +4465,29 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await getOrCreateSigner();
     stopPrivateMessagesSubscription();
     privateMessagesRestoreThrottleMs = normalizeThrottleMs(options.restoreThrottleMs);
+    const relaySnapshots = getRelaySnapshots(relayUrls);
+    const disconnectedRelayUrls = relayUrls.filter((relayUrl) => {
+      const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
+      return !relay || !relay.connected;
+    });
+
+    if (disconnectedRelayUrls.length > 0) {
+      logSubscription('private-messages', 'relay-health', {
+        reason: 'subscription-relays-disconnected',
+        signature,
+        disconnectedRelayUrls,
+        relaySnapshots
+      });
+    }
 
     logSubscription('private-messages', 'start', {
       force,
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-      since: getFilterSince(),
+      authMethod,
+      ...buildFilterSinceDetails(filterSince),
       restoreThrottleMs: privateMessagesRestoreThrottleMs,
+      relaySnapshots,
       ...buildSubscriptionRelayDetails(relayUrls)
     });
 
@@ -4166,7 +4496,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       {
         kinds: [NDKKind.GiftWrap],
         '#p': [loggedInPubkeyHex],
-        since: getFilterSince()
+        since: filterSince
       },
       {
         relaySet,
@@ -4196,7 +4526,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
     logSubscription('private-messages', 'active', {
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
+      authMethod,
+      ...buildFilterSinceDetails(filterSince),
       restoreThrottleMs: privateMessagesRestoreThrottleMs,
+      relaySnapshots,
       ...buildSubscriptionRelayDetails(relayUrls)
     });
   }
