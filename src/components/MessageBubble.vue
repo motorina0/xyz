@@ -229,7 +229,10 @@
           >
             <span class="bubble__status-list-item-main">
               <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
-              <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+              <span class="bubble__status-list-copy">
+                <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+                <span v-if="item.detail" class="bubble__status-list-detail">{{ item.detail }}</span>
+              </span>
             </span>
             <q-btn
               v-if="item.retryable"
@@ -266,7 +269,10 @@
           >
             <span class="bubble__status-list-item-main">
               <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
-              <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+              <span class="bubble__status-list-copy">
+                <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
+                <span v-if="item.detail" class="bubble__status-list-detail">{{ item.detail }}</span>
+              </span>
             </span>
             <q-btn
               v-if="item.retryable"
@@ -385,6 +391,7 @@ interface StatusSegment {
 interface StatusListItem {
   key: string;
   relayUrl: string;
+  detail?: string;
   dotClass: string;
   scope: 'recipient' | 'self';
   status: 'published' | 'failed' | 'pending';
@@ -706,6 +713,7 @@ function buildStatusListItems(
     .map((relayStatus) => ({
       key: `${relayStatus.status}-${relayStatus.scope}-${relayStatus.relay_url}`,
       relayUrl: formatRelayStatusItem(relayStatus),
+      detail: relayStatus.detail,
       dotClass: dotClassByStatus[relayStatus.status],
       scope: relayStatus.scope,
       status: relayStatus.status,
@@ -1384,6 +1392,12 @@ onBeforeUnmount(() => {
   gap: 7px;
 }
 
+.bubble__status-list-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
 .bubble__status-list-item--empty {
   list-style: none;
   opacity: 0.72;
@@ -1412,6 +1426,12 @@ onBeforeUnmount(() => {
 
 .bubble__status-list-text {
   min-width: 0;
+  word-break: break-word;
+}
+
+.bubble__status-list-detail {
+  min-width: 0;
+  color: rgba(100, 116, 139, 0.95);
   word-break: break-word;
 }
 

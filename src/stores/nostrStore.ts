@@ -5433,6 +5433,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
 
     if (publishResult.error) {
+      const failedRelayStatus = publishResult.relayStatuses.find(
+        (relayStatus) =>
+          relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
+      );
+      const detail = failedRelayStatus?.detail?.trim();
+      if (detail) {
+        throw new Error(detail);
+      }
+
       throw publishResult.error;
     }
   }

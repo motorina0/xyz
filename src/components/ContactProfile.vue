@@ -957,7 +957,10 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 }
 
 .profile-section__content {
-  padding: 0 14px 14px;
+  margin: 6px 12px 12px;
+  padding: 12px 14px 14px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--tg-sidebar) 88%, var(--tg-border) 12%);
 }
 
 .profile-card {
