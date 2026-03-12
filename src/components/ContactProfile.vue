@@ -59,7 +59,22 @@
           :loading="isLoadingContact"
           :error="Boolean(pubkeyError)"
           :error-message="pubkeyError"
-        />
+        >
+          <template v-if="props.showPubkeyCopyActions" #append>
+            <q-btn
+              flat
+              dense
+              round
+              icon="content_copy"
+              color="primary"
+              aria-label="Copy hex public key"
+              :disable="!displayHexPubkey.trim()"
+              @click.stop="handleCopyProfileValue(displayHexPubkey, 'Hex public key')"
+            >
+              <AppTooltip>Copy hex public key</AppTooltip>
+            </q-btn>
+          </template>
+        </q-input>
         <q-input
           :model-value="displayNpub"
           class="tg-input q-mt-xs"
@@ -69,7 +84,22 @@
           readonly
           label="npub"
           placeholder="npub1..."
-        />
+        >
+          <template v-if="props.showPubkeyCopyActions" #append>
+            <q-btn
+              flat
+              dense
+              round
+              icon="content_copy"
+              color="primary"
+              aria-label="Copy npub"
+              :disable="!displayNpub.trim()"
+              @click.stop="handleCopyProfileValue(displayNpub, 'npub')"
+            >
+              <AppTooltip>Copy npub</AppTooltip>
+            </q-btn>
+          </template>
+        </q-input>
         <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
       </div>
 
@@ -311,6 +341,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { isValidPubkey, normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
+import { useQuasar } from 'quasar';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
@@ -328,12 +359,14 @@ interface Props {
   pubkey: string;
   readOnly?: boolean;
   showHeader?: boolean;
+  showPubkeyCopyActions?: boolean;
   showRelaysEditAction?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   readOnly: false,
   showHeader: false,
+  showPubkeyCopyActions: false,
   showRelaysEditAction: false
 });
 
@@ -344,6 +377,7 @@ const emit = defineEmits<{
   (event: 'open-relays-settings'): void;
 }>();
 
+const $q = useQuasar();
 const nostrStore = useNostrStore();
 const localPubkey = computed({
   get: () => props.pubkey ?? '',
@@ -687,6 +721,49 @@ function handleOpenChat(): void {
     emit('open-chat');
   } catch (error) {
     reportUiError('Failed to open chat from contact profile', error);
+  }
+}
+
+async function copyText(value: string): Promise<void> {
+  const text = value.trim();
+  if (!text) {
+    return;
+  }
+
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  if (typeof document === 'undefined') {
+    throw new Error('Clipboard is not available.');
+  }
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', 'true');
+  textarea.style.position = 'absolute';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
+async function handleCopyProfileValue(value: string, label: string): Promise<void> {
+  try {
+    await copyText(value);
+    $q.notify({
+      type: 'positive',
+      message: `${label} copied.`,
+      position: 'top-right'
+    });
+  } catch (error) {
+    reportUiError(
+      `Failed to copy ${label.toLowerCase()}`,
+      error,
+      `Failed to copy ${label.toLowerCase()}.`
+    );
   }
 }
 

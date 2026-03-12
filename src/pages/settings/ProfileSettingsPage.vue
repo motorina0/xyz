@@ -15,6 +15,7 @@
       v-model="profileMetadata"
       v-model:pubkey="profilePubkey"
       :read-only="false"
+      :show-pubkey-copy-actions="true"
       :show-relays-edit-action="true"
       @open-relays-settings="handleOpenRelaysSettings"
     />
