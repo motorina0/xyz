@@ -2,11 +2,12 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService } from 'src/services/chatDataService';
+import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
-import { relaysService } from 'src/services/relaysService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+import { useRelayStore } from 'src/stores/relayStore';
 import type {
   DeletedMessageMetadata,
   Message,
@@ -24,7 +25,7 @@ import {
 
 type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
 
-interface SendMessageOptions {
+interface RelaySendOptions {
   relayUrls?: string[];
 }
 
@@ -329,11 +330,48 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
   }
 
-  async function resolveRecipientRelayUrls(chatPublicKey: string): Promise<string[]> {
-    const contactRelays = await relaysService.listRelaysByPublicKey(chatPublicKey);
-    const preferredRelays = contactRelays.filter((relay) => relay.write).map((relay) => relay.url);
+  function resolvePreferredContactRelayUrls(
+    relays: Array<{ url: string; write: boolean }> | undefined
+  ): string[] {
+    const contactRelays = Array.isArray(relays) ? relays : [];
+    const preferredRelays = contactRelays.filter((relay) => relay.write !== false).map((relay) => relay.url);
     const fallbackRelays = contactRelays.map((relay) => relay.url);
-    return preferredRelays.length > 0 ? preferredRelays : fallbackRelays;
+    return inputSanitizerService.normalizeStringArray(
+      preferredRelays.length > 0 ? preferredRelays : fallbackRelays
+    );
+  }
+
+  function resolveAppRelayUrls(): string[] {
+    const relayStore = useRelayStore();
+    relayStore.init();
+    return inputSanitizerService.normalizeStringArray(relayStore.relays);
+  }
+
+  async function resolveRecipientRelayUrls(chatPublicKey: string): Promise<string[]> {
+    await contactsService.init();
+    const contact = await contactsService.getContactByPublicKey(chatPublicKey);
+    const contactRelayUrls = resolvePreferredContactRelayUrls(contact?.relays);
+    const appRelayUrls = contact?.sendMessagesToAppRelays ? resolveAppRelayUrls() : [];
+    return inputSanitizerService.normalizeStringArray([...contactRelayUrls, ...appRelayUrls]);
+  }
+
+  async function resolveSendRelayUrls(
+    chatPublicKey: string,
+    relayUrls: string[] | undefined
+  ): Promise<string[]> {
+    const normalizedRelayUrls = Array.isArray(relayUrls)
+      ? inputSanitizerService.normalizeStringArray(relayUrls)
+      : await resolveRecipientRelayUrls(chatPublicKey);
+
+    if (normalizedRelayUrls.length === 0) {
+      if (Array.isArray(relayUrls)) {
+        throw new Error('Cannot send encrypted event without application relays.');
+      }
+
+      throw new MissingContactRelaysError(chatPublicKey);
+    }
+
+    return normalizedRelayUrls;
   }
 
   async function resolveReplyTargetEventId(
@@ -452,7 +490,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     chatId: string,
     text: string,
     replyTo: MessageReplyPreview | null = null,
-    options: SendMessageOptions = {}
+    options: RelaySendOptions = {}
   ): Promise<Message | null> {
     const cleanText = text.trim();
 
@@ -471,16 +509,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const recipientRelayUrls = Array.isArray(options.relayUrls)
-      ? inputSanitizerService.normalizeStringArray(options.relayUrls)
-      : await resolveRecipientRelayUrls(chat.public_key);
-    if (recipientRelayUrls.length === 0) {
-      if (Array.isArray(options.relayUrls)) {
-        throw new Error('Cannot send encrypted event without application relays.');
-      }
-
-      throw new MissingContactRelaysError(chat.public_key);
-    }
+    const recipientRelayUrls = await resolveSendRelayUrls(chat.public_key, options.relayUrls);
 
     const replyTargetEventId = await resolveReplyTargetEventId(replyTo);
     const replyPreview = replyTo
@@ -591,7 +620,8 @@ export const useMessageStore = defineStore('messageStore', () => {
   async function addReaction(
     chatId: string,
     messageId: string,
-    emoji: string
+    emoji: string,
+    options: RelaySendOptions = {}
   ): Promise<Message | null> {
     const normalizedEmoji = emoji.trim();
     if (!normalizedEmoji) {
@@ -626,6 +656,16 @@ export const useMessageStore = defineStore('messageStore', () => {
       return getMessageFromState(normalizedChatId, String(normalizedMessageId));
     }
 
+    let reactionRecipientPublicKey: string | null = null;
+    let reactionRelayUrls: string[] = [];
+    if (existingRow.event_id) {
+      const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
+      if (chat) {
+        reactionRecipientPublicKey = chat.public_key;
+        reactionRelayUrls = await resolveSendRelayUrls(chat.public_key, options.relayUrls);
+      }
+    }
+
     const updatedMessage = await updateMessageReactions(
       normalizedChatId,
       String(normalizedMessageId),
@@ -651,22 +691,18 @@ export const useMessageStore = defineStore('messageStore', () => {
       return updatedMessage;
     }
 
-    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
-    if (!chat) {
+    if (!reactionRecipientPublicKey || reactionRelayUrls.length === 0) {
       return updatedMessage;
     }
 
-    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
     const createdAt = new Date().toISOString();
-    // const allRelays = await relaysService.listAllRelays();
 
     const publishedReactionEvent = await nostrStore.sendDirectMessageReaction(
-      chat.public_key,
+      reactionRecipientPublicKey,
       normalizedEmoji,
       existingRow.event_id,
       existingRow.author_public_key,
-      // recipientRelayUrls.concat(allRelays),
-      recipientRelayUrls,
+      reactionRelayUrls,
       {
         createdAt,
         targetKind: updatedMessage.nostrEvent?.event.kind
@@ -725,6 +761,17 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
+    const reactionEventId = normalizeEventId(reactionToRemove.eventId);
+    let reactionDeletionRecipientPublicKey: string | null = null;
+    let reactionDeletionRelayUrls: string[] = [];
+    if (reactionEventId) {
+      const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
+      if (chat) {
+        reactionDeletionRecipientPublicKey = chat.public_key;
+        reactionDeletionRelayUrls = await resolveSendRelayUrls(chat.public_key, undefined);
+      }
+    }
+
     const updatedMessage = await updateMessageReactions(chatId, messageId, (reactions) => {
       return reactions.filter((reaction) => {
         return !(
@@ -739,22 +786,19 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const reactionEventId = normalizeEventId(reactionToRemove.eventId);
     if (!reactionEventId) {
       return updatedMessage;
     }
 
-    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
-    if (!chat) {
+    if (!reactionDeletionRecipientPublicKey || reactionDeletionRelayUrls.length === 0) {
       return updatedMessage;
     }
 
-    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
     await nostrStore.sendDirectMessageDeletion(
-      chat.public_key,
+      reactionDeletionRecipientPublicKey,
       reactionEventId,
       7,
-      recipientRelayUrls,
+      reactionDeletionRelayUrls,
       {
         createdAt: new Date().toISOString()
       }
@@ -793,6 +837,14 @@ export const useMessageStore = defineStore('messageStore', () => {
     const targetKind = Number.isInteger(existingRow.meta.kind)
       ? Number(existingRow.meta.kind)
       : 14;
+    let deletionRecipientPublicKey: string | null = null;
+    let deletionRelayUrls: string[] = [];
+    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
+    if (chat) {
+      deletionRecipientPublicKey = chat.public_key;
+      deletionRelayUrls = await resolveSendRelayUrls(chat.public_key, undefined);
+    }
+
     const updatedRow = await chatDataService.updateMessageMeta(
       normalizedMessageId,
       {
@@ -811,17 +863,15 @@ export const useMessageStore = defineStore('messageStore', () => {
     const updatedMessage = await hydrateMessageRow(updatedRow, normalizedChatId);
     replaceMessageInState(normalizedChatId, updatedMessage);
 
-    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
-    if (!chat) {
+    if (!deletionRecipientPublicKey || deletionRelayUrls.length === 0) {
       return updatedMessage;
     }
 
-    const recipientRelayUrls = await resolveRecipientRelayUrls(chat.public_key);
     const deleteEvent = await nostrStore.sendDirectMessageDeletion(
-      chat.public_key,
+      deletionRecipientPublicKey,
       existingRow.event_id,
       targetKind,
-      recipientRelayUrls,
+      deletionRelayUrls,
       {
         createdAt: new Date().toISOString()
       }

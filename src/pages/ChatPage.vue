@@ -9,6 +9,9 @@
         @send="handleSend"
         @back="goBack"
         @open-profile="handleOpenProfile"
+        @react="handleReactToMessage"
+        @delete-message="handleDeleteMessage"
+        @remove-reaction="handleRemoveReaction"
         @refresh-chat="handleRefreshChat"
       />
     </div>
@@ -27,8 +30,8 @@ import {
 } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
-import type { MessageReplyPreview } from 'src/types/chat';
-import { confirmUseAppRelaysDialog } from 'src/utils/messageRelayFallback';
+import type { Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -99,6 +102,10 @@ function goBack(): void {
   }
 }
 
+async function resolveFallbackRelayUrls(chatPublicKey: string): Promise<string[] | null> {
+  return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays);
+}
+
 async function handleSend(payload: { text: string; replyTo: MessageReplyPreview | null }): Promise<void> {
   try {
     if (!activeChatId.value) {
@@ -117,8 +124,8 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
         throw error;
       }
 
-      const shouldUseAppRelays = await confirmUseAppRelaysDialog($q);
-      if (!shouldUseAppRelays) {
+      const fallbackRelayUrls = await resolveFallbackRelayUrls(error.chatPublicKey);
+      if (!fallbackRelayUrls) {
         return;
       }
 
@@ -127,7 +134,7 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
         payload.text,
         payload.replyTo,
         {
-          relayUrls: relayStore.relays
+          relayUrls: fallbackRelayUrls
         }
       );
     }
@@ -137,6 +144,61 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
     }
   } catch (error) {
     reportUiError('Failed to send message from chat page', error, 'Failed to send message.');
+  }
+}
+
+async function handleReactToMessage(payload: { message: Message; emoji: string }): Promise<void> {
+  try {
+    try {
+      await messageStore.addReaction(payload.message.chatId, payload.message.id, payload.emoji);
+    } catch (error) {
+      if (!isMissingContactRelaysError(error)) {
+        throw error;
+      }
+
+      const fallbackRelayUrls = await resolveFallbackRelayUrls(error.chatPublicKey);
+      if (!fallbackRelayUrls) {
+        return;
+      }
+
+      await messageStore.addReaction(
+        payload.message.chatId,
+        payload.message.id,
+        payload.emoji,
+        {
+          relayUrls: fallbackRelayUrls
+        }
+      );
+    }
+  } catch (error) {
+    reportUiError('Failed to add reaction from chat page', error, 'Failed to add reaction.');
+  }
+}
+
+async function handleDeleteMessage(message: Message): Promise<void> {
+  try {
+    await messageStore.deleteMessage(message.chatId, message.id);
+  } catch (error) {
+    reportUiError('Failed to delete message from chat page', error, 'Failed to delete message.');
+  }
+}
+
+async function handleRemoveReaction(payload: {
+  message: Message;
+  reaction: MessageReaction;
+}): Promise<void> {
+  try {
+    await messageStore.removeReaction(
+      payload.message.chatId,
+      payload.message.id,
+      payload.reaction
+    );
+  } catch (error) {
+    reportUiError(
+      'Failed to remove reaction from chat page',
+      error,
+      'Failed to remove reaction.'
+    );
   }
 }
 

@@ -1,13 +1,22 @@
 import type { QVueGlobals } from 'quasar';
+import { contactsService } from 'src/services/contactsService';
+import { inputSanitizerService } from 'src/services/inputSanitizerService';
 
 export const CONTACT_RELAY_FALLBACK_MESSAGE =
   'No relays found for this contact. Do you want to use the application default relays?';
 
-export function confirmUseAppRelaysDialog($q: QVueGlobals): Promise<boolean> {
+const REMEMBER_THIS_OPTION = 'remember-this';
+
+export interface AppRelayFallbackDecision {
+  shouldUseAppRelays: boolean;
+  rememberThis: boolean;
+}
+
+export function confirmUseAppRelaysDialog($q: QVueGlobals): Promise<AppRelayFallbackDecision> {
   return new Promise((resolve) => {
     let settled = false;
 
-    const settle = (value: boolean): void => {
+    const settle = (value: AppRelayFallbackDecision): void => {
       if (settled) {
         return;
       }
@@ -20,6 +29,17 @@ export function confirmUseAppRelaysDialog($q: QVueGlobals): Promise<boolean> {
       title: 'Use App Relays',
       message: CONTACT_RELAY_FALLBACK_MESSAGE,
       persistent: true,
+      options: {
+        type: 'checkbox',
+        model: [] as string[],
+        items: [
+          {
+            label: 'Remember this',
+            value: REMEMBER_THIS_OPTION,
+            color: 'primary'
+          }
+        ]
+      },
       ok: {
         label: 'Yes',
         color: 'primary',
@@ -31,8 +51,71 @@ export function confirmUseAppRelaysDialog($q: QVueGlobals): Promise<boolean> {
         noCaps: true
       }
     })
-      .onOk(() => settle(true))
-      .onCancel(() => settle(false))
-      .onDismiss(() => settle(false));
+      .onOk((selectedValues: unknown) =>
+        settle({
+          shouldUseAppRelays: true,
+          rememberThis:
+            Array.isArray(selectedValues) && selectedValues.includes(REMEMBER_THIS_OPTION)
+        })
+      )
+      .onCancel(() =>
+        settle({
+          shouldUseAppRelays: false,
+          rememberThis: false
+        })
+      )
+      .onDismiss(() =>
+        settle({
+          shouldUseAppRelays: false,
+          rememberThis: false
+        })
+      );
   });
+}
+
+export async function resolveContactAppRelayFallback(
+  $q: QVueGlobals,
+  contactPublicKey: string,
+  appRelayUrls: string[]
+): Promise<string[] | null> {
+  const decision = await confirmUseAppRelaysDialog($q);
+  if (!decision.shouldUseAppRelays) {
+    return null;
+  }
+
+  const normalizedRelayUrls = inputSanitizerService.normalizeStringArray(appRelayUrls);
+  if (normalizedRelayUrls.length === 0) {
+    $q.notify({
+      type: 'warning',
+      message: 'No app relays configured.',
+      position: 'top'
+    });
+    return null;
+  }
+
+  if (decision.rememberThis) {
+    try {
+      await contactsService.init();
+      const updatedContact = await contactsService.updateSendMessagesToAppRelays(
+        contactPublicKey,
+        true
+      );
+      if (!updatedContact) {
+        throw new Error('Contact not found.');
+      }
+    } catch (error) {
+      console.warn(
+        'Failed to save app relay fallback preference for contact',
+        contactPublicKey,
+        error
+      );
+      $q.notify({
+        type: 'warning',
+        message: 'Could not save this preference. App relays will be used this time only.',
+        position: 'top'
+      });
+    }
+  }
+
+  return normalizedRelayUrls;
 }

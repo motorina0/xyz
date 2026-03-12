@@ -309,6 +309,25 @@
           </template>
 
           <div class="profile-card__section profile-section__content">
+            <div class="profile-card__bot-row">
+              <div>
+                <div class="text-body2">Send via App Relays</div>
+                <div class="text-caption text-grey-6">
+                  Use app relays for outbound messages and reactions. If this contact later adds
+                  relays, both relay lists are used.
+                </div>
+              </div>
+
+              <q-toggle
+                v-model="localProfile.sendMessagesToAppRelays"
+                color="primary"
+                checked-icon="cloud_upload"
+                unchecked-icon="cloud_off"
+                :disable="!normalizedHeaderPubkey"
+                @update:model-value="handleSendMessagesToAppRelaysUpdate"
+              />
+            </div>
+
             <RelayEditorPanel
               :new-relay="''"
               :relays="relayList"
@@ -372,6 +391,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (event: 'update:modelValue', value: ContactProfileForm): void;
   (event: 'update:pubkey', value: string): void;
+  (event: 'update:send-messages-to-app-relays', value: boolean): void;
   (event: 'open-chat'): void;
   (event: 'open-relays-settings'): void;
 }>();
@@ -483,7 +503,8 @@ function cloneProfile(value: ContactProfileForm): ContactProfileForm {
       month: value?.birthday?.month ?? null,
       day: value?.birthday?.day ?? null
     },
-    relays: [...(value?.relays ?? [])]
+    relays: [...(value?.relays ?? [])],
+    sendMessagesToAppRelays: value?.sendMessagesToAppRelays === true
   };
 }
 
@@ -687,6 +708,10 @@ function relayWriteEnabled(): boolean {
   return true;
 }
 
+function handleSendMessagesToAppRelaysUpdate(value: boolean): void {
+  emit('update:send-messages-to-app-relays', value === true);
+}
+
 function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
   const picture = contact.meta.picture ?? '';
 
@@ -707,7 +732,8 @@ function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
       month: contact.meta.birthday?.month ?? null,
       day: contact.meta.birthday?.day ?? null
     },
-    relays: (contact.relays ?? []).map((relay) => relay.url)
+    relays: (contact.relays ?? []).map((relay) => relay.url),
+    sendMessagesToAppRelays: contact.sendMessagesToAppRelays === true
   };
 }
 
@@ -805,7 +831,8 @@ function isSameProfile(a: ContactProfileForm, b: ContactProfileForm): boolean {
     a.birthday.month === b.birthday.month &&
     a.birthday.day === b.birthday.day &&
     a.relays.length === b.relays.length &&
-    a.relays.every((relay, index) => relay === b.relays[index])
+    a.relays.every((relay, index) => relay === b.relays[index]) &&
+    a.sendMessagesToAppRelays === b.sendMessagesToAppRelays
   );
 }
 

@@ -122,6 +122,7 @@
               v-model:pubkey="selectedContactPubkey"
               :read-only="true"
               :show-header="true"
+              @update:send-messages-to-app-relays="handleSendMessagesToAppRelaysUpdate"
               @open-chat="handleOpenChat"
             />
           </div>
@@ -385,8 +386,20 @@ function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
       month: contact.meta.birthday?.month ?? null,
       day: contact.meta.birthday?.day ?? null
     },
-    relays: (contact.relays ?? []).map((relay) => relay.url)
+    relays: (contact.relays ?? []).map((relay) => relay.url),
+    sendMessagesToAppRelays: contact.sendMessagesToAppRelays === true
   };
+}
+
+function updateContactInState(updatedContact: ContactRecord): void {
+  contacts.value = contacts.value.map((contact) =>
+    contact.id === updatedContact.id ? updatedContact : contact
+  );
+
+  if (selectedContactId.value === updatedContact.id) {
+    selectedContactPubkey.value = updatedContact.public_key;
+    selectedContactProfile.value = mapContactToProfileForm(updatedContact);
+  }
 }
 
 async function initializeContacts(): Promise<void> {
@@ -722,6 +735,45 @@ async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<
     }
   } catch (error) {
     reportUiError('Failed to refresh contact profile from menu', error, 'Failed to refresh profile.');
+  }
+}
+
+async function handleSendMessagesToAppRelaysUpdate(value: boolean): Promise<void> {
+  const normalizedPubkey = selectedContactPubkey.value.trim().toLowerCase();
+  if (!normalizedPubkey) {
+    return;
+  }
+
+  const currentContact =
+    contacts.value.find((contact) => contact.public_key.trim().toLowerCase() === normalizedPubkey) ??
+    null;
+  const previousValue = currentContact?.sendMessagesToAppRelays ?? false;
+
+  try {
+    const updatedContact = await contactsService.updateSendMessagesToAppRelays(
+      normalizedPubkey,
+      value
+    );
+    if (!updatedContact) {
+      throw new Error('Contact not found.');
+    }
+
+    updateContactInState(updatedContact);
+  } catch (error) {
+    if (currentContact) {
+      updateContactInState(currentContact);
+    } else {
+      selectedContactProfile.value = {
+        ...selectedContactProfile.value,
+        sendMessagesToAppRelays: previousValue
+      };
+    }
+
+    reportUiError(
+      'Failed to update contact app relay preference',
+      error,
+      'Failed to update relay preference.'
+    );
   }
 }
 

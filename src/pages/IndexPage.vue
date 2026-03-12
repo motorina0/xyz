@@ -73,7 +73,7 @@ import {
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import type { Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
-import { confirmUseAppRelaysDialog } from 'src/utils/messageRelayFallback';
+import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -159,6 +159,10 @@ function handleSelectChat(chatId: string): void {
   }
 }
 
+async function resolveFallbackRelayUrls(chatPublicKey: string): Promise<string[] | null> {
+  return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays);
+}
+
 async function handleSend(payload: { text: string; replyTo: MessageReplyPreview | null }): Promise<void> {
   try {
     if (!activeChatId.value) {
@@ -177,8 +181,8 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
         throw error;
       }
 
-      const shouldUseAppRelays = await confirmUseAppRelaysDialog($q);
-      if (!shouldUseAppRelays) {
+      const fallbackRelayUrls = await resolveFallbackRelayUrls(error.chatPublicKey);
+      if (!fallbackRelayUrls) {
         return;
       }
 
@@ -187,7 +191,7 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
         payload.text,
         payload.replyTo,
         {
-          relayUrls: relayStore.relays
+          relayUrls: fallbackRelayUrls
         }
       );
     }
@@ -202,7 +206,27 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
 
 async function handleReactToMessage(payload: { message: Message; emoji: string }): Promise<void> {
   try {
-    await messageStore.addReaction(payload.message.chatId, payload.message.id, payload.emoji);
+    try {
+      await messageStore.addReaction(payload.message.chatId, payload.message.id, payload.emoji);
+    } catch (error) {
+      if (!isMissingContactRelaysError(error)) {
+        throw error;
+      }
+
+      const fallbackRelayUrls = await resolveFallbackRelayUrls(error.chatPublicKey);
+      if (!fallbackRelayUrls) {
+        return;
+      }
+
+      await messageStore.addReaction(
+        payload.message.chatId,
+        payload.message.id,
+        payload.emoji,
+        {
+          relayUrls: fallbackRelayUrls
+        }
+      );
+    }
   } catch (error) {
     reportUiError('Failed to add message reaction', error, 'Failed to add reaction.');
   }

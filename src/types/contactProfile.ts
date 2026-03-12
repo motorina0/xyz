@@ -15,6 +15,7 @@ export interface ContactProfileForm {
     day: number | null;
   };
   relays: string[];
+  sendMessagesToAppRelays: boolean;
 }
 
 export function createEmptyContactProfileForm(): ContactProfileForm {
@@ -34,6 +35,7 @@ export function createEmptyContactProfileForm(): ContactProfileForm {
       month: null,
       day: null
     },
-    relays: []
+    relays: [],
+    sendMessagesToAppRelays: false
   };
 }

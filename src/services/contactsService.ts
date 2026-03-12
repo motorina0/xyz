@@ -14,6 +14,7 @@ interface RawContactStoreRecord {
   name: string;
   given_name?: string | null;
   relays?: unknown;
+  sendMessagesToAppRelays?: unknown;
   meta: unknown;
 }
 
@@ -23,6 +24,7 @@ interface ContactStoreRecord {
   name: string;
   given_name: string | null;
   relays: ContactRelay[];
+  sendMessagesToAppRelays: boolean;
   meta: ContactMetadata;
 }
 
@@ -32,7 +34,7 @@ type DebugExecResult = Array<{
 }>;
 
 const CONTACTS_DB_NAME = 'contacts-indexeddb-v1';
-const CONTACTS_DB_VERSION = 2;
+const CONTACTS_DB_VERSION = 3;
 
 const CONTACTS_STORE = 'contacts';
 const CONTACTS_PUBLIC_KEY_INDEX = 'public_key';
@@ -90,6 +92,23 @@ function normalizeOptionalString(value: unknown): string | null {
 
 function normalizeNameValue(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeBooleanFlag(value: unknown): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value === 1;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    return normalized === 'true' || normalized === '1';
+  }
+
+  return false;
 }
 
 function parseStoredMeta(value: unknown): ContactMetadata {
@@ -208,6 +227,7 @@ function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null 
     name,
     given_name: givenName,
     relays: normalizeRelayList(raw.relays),
+    sendMessagesToAppRelays: normalizeBooleanFlag(raw.sendMessagesToAppRelays),
     meta: parseStoredMeta(raw.meta)
   };
 }
@@ -219,6 +239,7 @@ function toContactRecord(record: ContactStoreRecord): ContactRecord {
     name: record.name,
     given_name: record.given_name,
     relays: normalizeRelayList(record.relays),
+    sendMessagesToAppRelays: normalizeBooleanFlag(record.sendMessagesToAppRelays),
     meta: parseStoredMeta(record.meta)
   };
 }
@@ -345,12 +366,14 @@ class ContactsService {
     const givenName = input.given_name?.trim() || null;
     const meta = inputSanitizerService.normalizeContactMetadata(input.meta);
     const relays = normalizeRelayList(input.relays ?? []);
+    const sendMessagesToAppRelays = input.sendMessagesToAppRelays === true;
 
     const record: Omit<ContactStoreRecord, 'id'> = {
       public_key: publicKey,
       name,
       given_name: givenName,
       relays,
+      sendMessagesToAppRelays,
       meta
     };
 
@@ -442,6 +465,14 @@ class ContactsService {
       }
     }
 
+    if (input.sendMessagesToAppRelays !== undefined) {
+      const nextSendMessagesToAppRelays = input.sendMessagesToAppRelays === true;
+      if (nextRecord.sendMessagesToAppRelays !== nextSendMessagesToAppRelays) {
+        nextRecord.sendMessagesToAppRelays = nextSendMessagesToAppRelays;
+        didUpdateRecord = true;
+      }
+    }
+
     if (input.meta !== undefined) {
       const nextMeta = inputSanitizerService.normalizeContactMetadata(input.meta);
       if (!contactMetaEquals(nextRecord.meta, nextMeta)) {
@@ -466,6 +497,25 @@ class ContactsService {
     }
 
     return toContactRecord(nextRecord);
+  }
+
+  async updateSendMessagesToAppRelays(
+    publicKey: string,
+    sendMessagesToAppRelays: boolean
+  ): Promise<ContactRecord | null> {
+    const normalizedPublicKey = inputSanitizerService.normalizePublicKey(publicKey);
+    if (!normalizedPublicKey) {
+      return null;
+    }
+
+    const contact = await this.getContactByPublicKey(normalizedPublicKey);
+    if (!contact) {
+      return null;
+    }
+
+    return this.updateContact(contact.id, {
+      sendMessagesToAppRelays
+    });
   }
 
   async deleteContact(id: number): Promise<boolean> {
@@ -507,14 +557,23 @@ class ContactsService {
     const contacts = await this.listContacts();
     return [
       {
-        columns: ['id', 'public_key', 'name', 'given_name', 'meta', 'relays'],
+        columns: [
+          'id',
+          'public_key',
+          'name',
+          'given_name',
+          'meta',
+          'relays',
+          'sendMessagesToAppRelays'
+        ],
         values: contacts.map((contact) => [
           contact.id,
           contact.public_key,
           contact.name,
           contact.given_name,
           contact.meta,
-          contact.relays ?? []
+          contact.relays ?? [],
+          contact.sendMessagesToAppRelays
         ])
       }
     ];

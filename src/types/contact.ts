@@ -38,6 +38,7 @@ export interface ContactRecord {
   given_name: string | null;
   meta: ContactMetadata;
   relays?: ContactRelay[];
+  sendMessagesToAppRelays: boolean;
 }
 
 export interface CreateContactInput {
@@ -46,6 +47,7 @@ export interface CreateContactInput {
   given_name?: string | null;
   meta?: ContactMetadata;
   relays?: ContactRelay[];
+  sendMessagesToAppRelays?: boolean;
 }
 
 export interface UpdateContactInput {
@@ -54,4 +56,5 @@ export interface UpdateContactInput {
   given_name?: string | null;
   meta?: ContactMetadata;
   relays?: ContactRelay[];
+  sendMessagesToAppRelays?: boolean;
 }
