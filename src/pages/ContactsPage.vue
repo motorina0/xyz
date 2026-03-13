@@ -9,16 +9,29 @@
         <div class="contacts-sidebar__top">
           <div class="contacts-sidebar__row">
             <div class="contacts-sidebar__title">Contacts</div>
-            <q-btn
-              dense
-              flat
-              round
-              icon="person_add_alt"
-              aria-label="Add Contact"
-              @click="openAddContactDialog"
-            >
-              <AppTooltip>Add Contact</AppTooltip>
-            </q-btn>
+            <div class="contacts-sidebar__actions">
+              <q-btn
+                dense
+                flat
+                round
+                icon="refresh"
+                aria-label="Refresh Contacts"
+                :loading="isRefreshingContacts"
+                @click="handleRefreshContacts"
+              >
+                <AppTooltip>Refresh Contacts</AppTooltip>
+              </q-btn>
+              <q-btn
+                dense
+                flat
+                round
+                icon="person_add_alt"
+                aria-label="Add Contact"
+                @click="openAddContactDialog"
+              >
+                <AppTooltip>Add Contact</AppTooltip>
+              </q-btn>
+            </div>
           </div>
 
           <q-input
@@ -222,6 +235,7 @@ const contactQuery = ref('');
 const isAddContactDialogOpen = ref(false);
 const isLoadingContacts = ref(false);
 const isCreatingContact = ref(false);
+const isRefreshingContacts = ref(false);
 const newContactIdentifier = ref('');
 const newContactGivenName = ref('');
 const newContactIdentifierError = ref('');
@@ -726,9 +740,74 @@ async function handleContactMenuChat(contact: ContactRecord): Promise<void> {
   }
 }
 
+async function refreshStoredContact(contact: ContactRecord): Promise<ContactRecord | null> {
+  await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact));
+  return contactsService.getContactByPublicKey(contact.public_key);
+}
+
+async function handleRefreshContacts(): Promise<void> {
+  if (isRefreshingContacts.value) {
+    return;
+  }
+
+  isRefreshingContacts.value = true;
+
+  try {
+    await contactsService.init();
+    const storedContacts = await contactsService.listContacts();
+
+    if (storedContacts.length === 0) {
+      await loadContacts(contactQuery.value);
+      $q.notify({
+        type: 'info',
+        message: 'No contacts to refresh.',
+        position: 'top'
+      });
+      return;
+    }
+
+    let refreshedCount = 0;
+    let failedCount = 0;
+
+    for (const contact of storedContacts) {
+      try {
+        await refreshStoredContact(contact);
+        refreshedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        console.warn('Failed to refresh contact profile from contacts header', contact.public_key, error);
+      }
+    }
+
+    await loadContacts(contactQuery.value);
+
+    if (failedCount === 0) {
+      $q.notify({
+        type: 'positive',
+        message: `Refreshed ${refreshedCount} contact${refreshedCount === 1 ? '' : 's'}.`,
+        position: 'top'
+      });
+      return;
+    }
+
+    $q.notify({
+      type: refreshedCount > 0 ? 'warning' : 'negative',
+      message:
+        refreshedCount > 0
+          ? `Refreshed ${refreshedCount} contact${refreshedCount === 1 ? '' : 's'}; ${failedCount} failed.`
+          : 'Failed to refresh contacts.',
+      position: 'top'
+    });
+  } catch (error) {
+    reportUiError('Failed to refresh contacts from header', error, 'Failed to refresh contacts.');
+  } finally {
+    isRefreshingContacts.value = false;
+  }
+}
+
 async function handleContactMenuRefreshProfile(contact: ContactRecord): Promise<void> {
   try {
-    await nostrStore.refreshContactByPublicKey(contact.public_key, contactDisplayName(contact));
+    await refreshStoredContact(contact);
     await loadContacts(contactQuery.value);
 
     const refreshedContact = await contactsService.getContactByPublicKey(contact.public_key);
@@ -897,6 +976,12 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
+}
+
+.contacts-sidebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .contacts-sidebar__title {
