@@ -1138,7 +1138,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
           subscribePrivateMessagesForLoggedInUser()
         );
         await runStartupTask('Failed to sync recent chat contacts on startup', () =>
-          syncRecentChatContacts(seedRelayUrls, 10)
+          syncRecentChatContacts(seedRelayUrls)
         );
       } finally {
         isRestoringStartupState.value = false;
@@ -5342,7 +5342,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return syncLoggedInContactProfilePromise;
   }
 
-  async function syncRecentChatContacts(relayUrls: string[], limit = 10): Promise<void> {
+  async function syncRecentChatContacts(relayUrls: string[]): Promise<void> {
     if (syncRecentChatContactsPromise) {
       return syncRecentChatContactsPromise;
     }
@@ -5350,13 +5350,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     syncRecentChatContactsPromise = (async () => {
       const profileTracker = createStartupBatchTracker('recent-chat-profiles');
       const relayTracker = createStartupBatchTracker('recent-chat-relays');
-      const normalizedLimit =
-        Number.isInteger(limit) && Number(limit) > 0 ? Math.min(Number(limit), 50) : 10;
       try {
-        if (normalizedLimit <= 0) {
-          return;
-        }
-
         const activeRelays = inputSanitizerService.normalizeStringArray(relayUrls);
         if (activeRelays.length > 0) {
           try {
@@ -5386,9 +5380,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
           }
 
           recentPublicKeys.add(normalizedPubkey);
-          if (recentPublicKeys.size >= normalizedLimit) {
-            break;
-          }
         }
 
         if (recentPublicKeys.size === 0) {
