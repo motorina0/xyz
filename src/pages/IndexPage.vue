@@ -23,9 +23,13 @@
 
         <ChatList
           class="sidebar-list"
-          :chats="chatStore.chats"
+          :chats="sidebarChats"
           :selected-chat-id="selectedChatId"
+          :show-requests-row="showRequestsRow"
+          :request-count="requestCount"
+          :requests-active="requestsRowActive"
           @select="handleSelectChat"
+          @open-requests="handleOpenRequests"
           @view-profile="handleViewChatProfile"
           @refresh-profile="handleRefreshChatProfile"
           @refresh-chat="handleRefreshChat"
@@ -55,6 +59,15 @@
         @refresh-chat="handleRefreshChat"
       />
       </section>
+
+      <ChatRequestsDialog
+        v-model="isRequestsDialogOpen"
+        :requests="requestChats"
+        @open="handleOpenRequestChat"
+        @accept="handleAcceptRequest"
+        @delete-chat="handleDeleteChat"
+        @block="handleBlockChat"
+      />
     </div>
   </q-page>
 </template>
@@ -66,6 +79,7 @@ import { useQuasar } from 'quasar';
 import AppStatus from 'src/components/AppStatus.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatList from 'src/components/ChatList.vue';
+import ChatRequestsDialog from 'src/components/ChatRequestsDialog.vue';
 import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import {
@@ -89,6 +103,7 @@ const relayStore = useRelayStore();
 relayStore.init();
 
 const isMobile = computed(() => $q.screen.lt.md);
+const isRequestsDialogOpen = ref(false);
 const visibleViewportHeight = ref<number | null>(null);
 const activeChatId = computed(() => {
   const rawChatId = route.params.pubkey;
@@ -101,7 +116,16 @@ const activeChatId = computed(() => {
 const activeChat = computed(() => {
   return chatStore.chats.find((chat) => chat.id === activeChatId.value) ?? null;
 });
-const selectedChatId = computed(() => activeChatId.value || null);
+const sidebarChats = computed(() => chatStore.visibleChats);
+const requestChats = computed(() => chatStore.requestChats);
+const showRequestsRow = computed(() => chatStore.requestCount > 0);
+const requestCount = computed(() => chatStore.requestCount);
+const requestsRowActive = computed(() => {
+  return isRequestsDialogOpen.value || chatStore.isRequestChat(activeChatId.value);
+});
+const selectedChatId = computed(() => {
+  return chatStore.isRequestChat(activeChatId.value) ? null : activeChatId.value || null;
+});
 const isMobileThreadOpen = computed(() => isMobile.value && Boolean(activeChatId.value));
 const chatIdSignature = computed(() => chatStore.chats.map((chat) => chat.id).join('|'));
 const isThreadInitializing = computed(() => {
@@ -161,6 +185,19 @@ function handleSelectChat(chatId: string): void {
   }
 }
 
+function handleOpenRequests(): void {
+  isRequestsDialogOpen.value = true;
+}
+
+function getFallbackSidebarChatId(): string {
+  return chatStore.inboxChats[0]?.id ?? '';
+}
+
+function handleOpenRequestChat(chatId: string): void {
+  isRequestsDialogOpen.value = false;
+  handleSelectChat(chatId);
+}
+
 async function resolveFallbackRelayUrls(chatPublicKey: string): Promise<string[] | null> {
   return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays);
 }
@@ -200,6 +237,9 @@ async function handleSend(payload: { text: string; replyTo: MessageReplyPreview 
 
     if (created) {
       await chatStore.updateChatPreview(activeChatId.value, created.text, created.sentAt);
+      await chatStore.acceptChat(activeChatId.value, {
+        lastOutgoingMessageAt: created.sentAt
+      });
     }
   } catch (error) {
     reportUiError('Failed to send chat message', error, 'Failed to send message.');
@@ -315,6 +355,14 @@ async function handleRefreshChat(chatId: string): Promise<void> {
   }
 }
 
+async function handleAcceptRequest(chatId: string): Promise<void> {
+  try {
+    await chatStore.acceptChat(chatId);
+  } catch (error) {
+    reportUiError('Failed to accept chat request', error, 'Failed to accept request.');
+  }
+}
+
 async function handleMuteChat(chatId: string): Promise<void> {
   try {
     await chatStore.muteChat(chatId);
@@ -339,7 +387,7 @@ async function handleDeleteChat(chatId: string): Promise<void> {
       messageStore.removeChatMessages(chatId);
 
       if (isActiveChat) {
-        const nextChatId = !isMobile.value ? chatStore.selectedChatId : null;
+        const nextChatId = !isMobile.value ? getFallbackSidebarChatId() : '';
         if (nextChatId) {
           void router.replace({ name: 'chats', params: { pubkey: nextChatId } });
         } else {
@@ -349,6 +397,24 @@ async function handleDeleteChat(chatId: string): Promise<void> {
     }
   } catch (error) {
     reportUiError('Failed to delete chat', error);
+  }
+}
+
+async function handleBlockChat(chatId: string): Promise<void> {
+  try {
+    const isActiveChat = activeChatId.value === chatId;
+    await chatStore.blockChat(chatId);
+
+    if (isActiveChat) {
+      const nextChatId = !isMobile.value ? getFallbackSidebarChatId() : '';
+      if (nextChatId) {
+        void router.replace({ name: 'chats', params: { pubkey: nextChatId } });
+      } else {
+        void router.replace({ name: 'chats' });
+      }
+    }
+  } catch (error) {
+    reportUiError('Failed to block chat request', error, 'Failed to block request.');
   }
 }
 
@@ -370,7 +436,7 @@ async function syncChatRoute(): Promise<void> {
         return;
       }
 
-      const fallbackChatId = chatStore.chats[0]?.id ?? '';
+      const fallbackChatId = getFallbackSidebarChatId();
       if (fallbackChatId) {
         await router.replace({ name: 'chats', params: { pubkey: fallbackChatId } });
       }
@@ -378,8 +444,12 @@ async function syncChatRoute(): Promise<void> {
     }
 
     const matchingChat = chatStore.chats.find((chat) => chat.id === chatId) ?? null;
-    if (!matchingChat) {
-      const fallbackChatId = !isMobile.value ? chatStore.chats[0]?.id ?? '' : '';
+    const isBlockedChat =
+      matchingChat !== null &&
+      !chatStore.inboxChats.some((chat) => chat.id === chatId) &&
+      !chatStore.requestChats.some((chat) => chat.id === chatId);
+    if (!matchingChat || isBlockedChat) {
+      const fallbackChatId = !isMobile.value ? getFallbackSidebarChatId() : '';
       if (fallbackChatId) {
         await router.replace({ name: 'chats', params: { pubkey: fallbackChatId } });
       } else {

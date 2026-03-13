@@ -1,7 +1,20 @@
 import type { NostrEvent } from '@nostr-dev-kit/ndk';
 
+export type ChatInboxState = 'accepted' | 'blocked';
+
 export interface ChatMetadata {
   avatar?: string;
+  picture?: string;
+  given_name?: string;
+  contact_name?: string;
+  muted?: boolean;
+  unseen_reaction_count?: number;
+  last_seen_received_activity_at?: string;
+  inbox_state?: ChatInboxState;
+  accepted_at?: string;
+  blocked_at?: string;
+  last_incoming_message_at?: string;
+  last_outgoing_message_at?: string;
   [key: string]: unknown;
 }
 

@@ -1400,6 +1400,54 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
+  async function shouldNotifyForAcceptedChatOnly(
+    chatPubkey: string,
+    chatMeta: Record<string, unknown> | null | undefined
+  ): Promise<boolean> {
+    const inboxState =
+      chatMeta && typeof chatMeta.inbox_state === 'string' ? chatMeta.inbox_state.trim() : '';
+    if (inboxState === 'blocked') {
+      return false;
+    }
+
+    if (inboxState === 'accepted') {
+      return true;
+    }
+
+    const acceptedAt =
+      chatMeta && typeof chatMeta.accepted_at === 'string' ? chatMeta.accepted_at.trim() : '';
+    if (acceptedAt) {
+      return true;
+    }
+
+    const lastOutgoingMessageAt =
+      chatMeta && typeof chatMeta.last_outgoing_message_at === 'string'
+        ? chatMeta.last_outgoing_message_at.trim()
+        : '';
+    if (lastOutgoingMessageAt) {
+      return true;
+    }
+
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      return false;
+    }
+
+    try {
+      const messageRows = await chatDataService.listMessages(chatPubkey);
+      return messageRows.some(
+        (messageRow) =>
+          inputSanitizerService.normalizeHexKey(messageRow.author_public_key) === loggedInPubkeyHex
+      );
+    } catch (error) {
+      console.warn(
+        'Failed to confirm accepted-chat state for browser notification eligibility',
+        error
+      );
+      return false;
+    }
+  }
+
   function showIncomingMessageBrowserNotification(options: {
     chatPubkey: string;
     title: string;
@@ -4928,6 +4976,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     const createdAt = toIsoTimestampFromUnix(rumorEvent.created_at);
+    const isBlockedChat = chat.meta?.inbox_state === 'blocked';
     const replyPreview = replyTargetEventId
       ? await buildReplyPreviewFromTargetEvent(
           replyTargetEventId,
@@ -4965,6 +5014,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
       return;
     }
+
+    await chatStore.recordIncomingActivity(chat.public_key, createdAt);
     let nextMessageRow = await applyPendingIncomingReactionsForMessage(
       createdMessage,
       {
@@ -4985,6 +5036,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const nextUnreadCount = isSelfSentMessage
       ? Number(chat.unread_count ?? 0)
+      : isBlockedChat
+        ? 0
       : chatStore.visibleChatId === chat.public_key
         ? 0
         : Number(chat.unread_count ?? 0) + 1;
@@ -5014,7 +5067,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
       })
     });
 
-    if (!isSelfSentMessage) {
+    if (
+      !isSelfSentMessage &&
+      !isBlockedChat &&
+      (await shouldNotifyForAcceptedChatOnly(chat.public_key, chat.meta ?? {}))
+    ) {
       showIncomingMessageBrowserNotification({
         chatPubkey: chat.public_key,
         title: deriveChatName(contact, chatPubkey),

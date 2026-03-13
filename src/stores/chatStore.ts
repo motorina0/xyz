@@ -3,7 +3,7 @@ import { computed, ref } from 'vue';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
-import type { Chat } from 'src/types/chat';
+import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
 
 interface ChatContactContext {
@@ -21,7 +21,19 @@ interface LiveChatPreviewInput {
   meta?: Record<string, unknown>;
 }
 
+interface ChatActivitySnapshot {
+  lastIncomingMessageAt: string;
+  lastOutgoingMessageAt: string;
+}
+
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
+const CHAT_INBOX_STATE_META_KEY = 'inbox_state';
+const CHAT_ACCEPTED_AT_META_KEY = 'accepted_at';
+const CHAT_BLOCKED_AT_META_KEY = 'blocked_at';
+const CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY = 'last_incoming_message_at';
+const CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY = 'last_outgoing_message_at';
+
+type ChatListCategory = 'chat' | 'request' | 'blocked';
 
 function sortByLatest(chats: Chat[]): Chat[] {
   const toTimestamp = (value: string): number => {
@@ -60,6 +72,11 @@ function normalizeChatIdentifier(value: string | null | undefined): string | nul
 function readMetaString(meta: Record<string, unknown>, key: string): string {
   const value = meta[key];
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function readMetaInboxState(meta: Record<string, unknown>): ChatInboxState | null {
+  const value = readMetaString(meta, CHAT_INBOX_STATE_META_KEY);
+  return value === 'accepted' || value === 'blocked' ? value : null;
 }
 
 function getLoggedInPublicKey(): string | null {
@@ -112,6 +129,185 @@ function syncMetaString(
 
   meta[key] = normalizedValue;
   return true;
+}
+
+function syncMetaLatestTimestamp(
+  meta: Record<string, unknown>,
+  key: string,
+  value: string
+): boolean {
+  const normalizedValue = value.trim();
+  if (!normalizedValue) {
+    return false;
+  }
+
+  const currentValue = readMetaString(meta, key);
+  if (toComparableTimestamp(currentValue) >= toComparableTimestamp(normalizedValue)) {
+    return false;
+  }
+
+  meta[key] = normalizedValue;
+  return true;
+}
+
+function syncMetaInboxState(
+  meta: Record<string, unknown>,
+  nextState: ChatInboxState
+): boolean {
+  const currentState = readMetaInboxState(meta);
+  if (currentState === nextState) {
+    return false;
+  }
+
+  meta[CHAT_INBOX_STATE_META_KEY] = nextState;
+  return true;
+}
+
+function resolveChatCategory(meta: Record<string, unknown>): ChatListCategory {
+  const inboxState = readMetaInboxState(meta);
+  if (inboxState === 'blocked') {
+    return 'blocked';
+  }
+
+  if (
+    inboxState === 'accepted' ||
+    readMetaString(meta, CHAT_ACCEPTED_AT_META_KEY) ||
+    readMetaString(meta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY)
+  ) {
+    return 'chat';
+  }
+
+  if (readMetaString(meta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY)) {
+    return 'request';
+  }
+
+  return 'chat';
+}
+
+function resolveDefaultSelectedChatId(chatList: Chat[]): string | null {
+  return chatList.find((chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'chat')?.id ?? null;
+}
+
+function buildChatSearchText(chat: Chat): string {
+  const candidates = [
+    chat.name,
+    chat.publicKey,
+    chat.lastMessage,
+    readMetaString(chat.meta as Record<string, unknown>, 'given_name'),
+    readMetaString(chat.meta as Record<string, unknown>, 'contact_name')
+  ];
+
+  return candidates
+    .map((candidate) => candidate.trim().toLowerCase())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function chatMatchesSearch(chat: Chat, query: string): boolean {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return buildChatSearchText(chat).includes(normalizedQuery);
+}
+
+function buildChatActivitySnapshotByPublicKey(
+  messageRows: Awaited<ReturnType<typeof chatDataService.listAllMessages>>,
+  loggedInPublicKey: string | null
+): Map<string, ChatActivitySnapshot> {
+  const snapshotsByPublicKey = new Map<string, ChatActivitySnapshot>();
+  if (!loggedInPublicKey) {
+    return snapshotsByPublicKey;
+  }
+
+  for (const row of messageRows) {
+    const chatPublicKey = normalizeChatIdentifier(row.chat_public_key);
+    if (!chatPublicKey) {
+      continue;
+    }
+
+    const snapshot = snapshotsByPublicKey.get(chatPublicKey) ?? {
+      lastIncomingMessageAt: '',
+      lastOutgoingMessageAt: ''
+    };
+    const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
+
+    if (authorPublicKey === loggedInPublicKey) {
+      if (
+        toComparableTimestamp(row.created_at) >
+        toComparableTimestamp(snapshot.lastOutgoingMessageAt)
+      ) {
+        snapshot.lastOutgoingMessageAt = row.created_at;
+      }
+    } else if (
+      toComparableTimestamp(row.created_at) >
+      toComparableTimestamp(snapshot.lastIncomingMessageAt)
+    ) {
+      snapshot.lastIncomingMessageAt = row.created_at;
+    }
+
+    snapshotsByPublicKey.set(chatPublicKey, snapshot);
+  }
+
+  return snapshotsByPublicKey;
+}
+
+function syncChatActivityMeta(
+  meta: Record<string, unknown>,
+  snapshot: ChatActivitySnapshot | undefined
+): Record<string, unknown> {
+  if (!snapshot) {
+    return meta;
+  }
+
+  const currentInboxState = readMetaInboxState(meta);
+  let nextMeta = meta;
+
+  const ensureWritableMeta = (): Record<string, unknown> => {
+    if (nextMeta === meta) {
+      nextMeta = { ...meta };
+    }
+
+    return nextMeta;
+  };
+
+  if (
+    snapshot.lastIncomingMessageAt &&
+    toComparableTimestamp(snapshot.lastIncomingMessageAt) >
+      toComparableTimestamp(readMetaString(meta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY))
+  ) {
+    syncMetaLatestTimestamp(
+      ensureWritableMeta(),
+      CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY,
+      snapshot.lastIncomingMessageAt
+    );
+  }
+
+  if (
+    snapshot.lastOutgoingMessageAt &&
+    currentInboxState !== 'blocked' &&
+    (
+      toComparableTimestamp(snapshot.lastOutgoingMessageAt) >
+        toComparableTimestamp(readMetaString(meta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY)) ||
+      currentInboxState !== 'accepted' ||
+      toComparableTimestamp(snapshot.lastOutgoingMessageAt) >
+        toComparableTimestamp(readMetaString(meta, CHAT_ACCEPTED_AT_META_KEY)) ||
+      readMetaString(meta, CHAT_BLOCKED_AT_META_KEY)
+    )
+  ) {
+    const writableMeta = ensureWritableMeta();
+    syncMetaLatestTimestamp(
+      writableMeta,
+      CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY,
+      snapshot.lastOutgoingMessageAt
+    );
+    syncMetaInboxState(writableMeta, 'accepted');
+    syncMetaLatestTimestamp(writableMeta, CHAT_ACCEPTED_AT_META_KEY, snapshot.lastOutgoingMessageAt);
+    delete writableMeta[CHAT_BLOCKED_AT_META_KEY];
+  }
+
+  return nextMeta;
 }
 
 function resolvePictureFromContactMeta(meta: Record<string, unknown>): string {
@@ -206,33 +402,65 @@ export const useChatStore = defineStore('chatStore', () => {
   const selectedChat = computed(
     () => chats.value.find((chat) => chat.id === selectedChatId.value) ?? null
   );
+  const inboxChats = computed(() =>
+    chats.value.filter((chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'chat')
+  );
+  const requestChats = computed(() =>
+    chats.value.filter((chat) => resolveChatCategory(chat.meta as Record<string, unknown>) === 'request')
+  );
+  const visibleChats = computed(() =>
+    inboxChats.value.filter((chat) => chatMatchesSearch(chat, searchQuery.value))
+  );
+  const requestCount = computed(() => requestChats.value.length);
 
   async function loadChatsIntoState(): Promise<void> {
     await Promise.all([chatDataService.init(), contactsService.init()]);
-    const [rows, contacts] = await Promise.all([
+    const [rows, contacts, messageRows] = await Promise.all([
       chatDataService.listChats(),
-      contactsService.listContacts()
+      contactsService.listContacts(),
+      chatDataService.listAllMessages()
     ]);
     const contactContextByPublicKey = new Map<string, ChatContactContext>();
+    const activitySnapshotByPublicKey = buildChatActivitySnapshotByPublicKey(
+      messageRows,
+      getLoggedInPublicKey()
+    );
+    const metaSyncPromises: Promise<void>[] = [];
 
     for (const contact of contacts) {
       contactContextByPublicKey.set(contact.public_key.toLowerCase(), toContactContext(contact));
     }
 
     chats.value = sortByLatest(
-      rows.map((row) =>
-        mapChatRowToChat(
-          row,
+      rows.map((row) => {
+        const nextMeta = syncChatActivityMeta(
+          row.meta,
+          activitySnapshotByPublicKey.get(row.public_key.toLowerCase())
+        );
+        if (nextMeta !== row.meta) {
+          metaSyncPromises.push(
+            chatDataService.updateChatMeta(row.public_key, nextMeta).catch((error) => {
+              console.error('Failed to persist derived chat inbox metadata', error);
+            })
+          );
+        }
+
+        return mapChatRowToChat(
+          {
+            ...row,
+            meta: nextMeta
+          },
           contactContextByPublicKey.get(row.public_key.toLowerCase())
-        )
-      )
+        );
+      })
     );
+    await Promise.all(metaSyncPromises);
 
     if (selectedChatId.value && chats.value.some((chat) => chat.id === selectedChatId.value)) {
       return;
     }
 
-    selectedChatId.value = chats.value[0]?.id ?? null;
+    selectedChatId.value = resolveDefaultSelectedChatId(chats.value);
   }
 
   async function init(): Promise<void> {
@@ -375,6 +603,148 @@ export const useChatStore = defineStore('chatStore', () => {
     }
   }
 
+  function isRequestChat(chatId: string | null | undefined): boolean {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return false;
+    }
+
+    const chat = chats.value.find((candidate) => candidate.id === normalizedChatId);
+    if (!chat) {
+      return false;
+    }
+
+    return resolveChatCategory(chat.meta as Record<string, unknown>) === 'request';
+  }
+
+  async function recordIncomingActivity(chatId: string, at: string): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedAt = at.trim();
+    if (!normalizedChatId || !normalizedAt) {
+      return;
+    }
+
+    let nextMetaToPersist: ChatMetadata | null = null;
+    const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
+
+    if (existingChat) {
+      const currentMeta = existingChat.meta as Record<string, unknown>;
+      const currentAt = readMetaString(currentMeta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY);
+      if (toComparableTimestamp(currentAt) >= toComparableTimestamp(normalizedAt)) {
+        return;
+      }
+
+      nextMetaToPersist = {
+        ...(currentMeta as ChatMetadata),
+        [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: normalizedAt
+      };
+
+      chats.value = chats.value.map((chat) =>
+        chat.id === normalizedChatId
+          ? {
+              ...chat,
+              meta: nextMetaToPersist ?? chat.meta
+            }
+          : chat
+      );
+    } else {
+      await chatDataService.init();
+      const existingRow = await chatDataService.getChatByPublicKey(normalizedChatId);
+      if (!existingRow) {
+        return;
+      }
+
+      const currentAt = readMetaString(existingRow.meta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY);
+      if (toComparableTimestamp(currentAt) >= toComparableTimestamp(normalizedAt)) {
+        return;
+      }
+
+      nextMetaToPersist = {
+        ...(existingRow.meta as ChatMetadata),
+        [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: normalizedAt
+      };
+    }
+
+    if (!nextMetaToPersist) {
+      return;
+    }
+
+    try {
+      await chatDataService.updateChatMeta(normalizedChatId, nextMetaToPersist);
+    } catch (error) {
+      console.error('Failed to persist inbound chat activity', error);
+    }
+  }
+
+  async function acceptChat(
+    chatId: string,
+    options: {
+      acceptedAt?: string;
+      lastOutgoingMessageAt?: string;
+    } = {}
+  ): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const acceptedAt =
+      options.acceptedAt?.trim() ||
+      options.lastOutgoingMessageAt?.trim() ||
+      new Date().toISOString();
+    const lastOutgoingMessageAt = options.lastOutgoingMessageAt?.trim() || '';
+    if (!normalizedChatId || !acceptedAt) {
+      return;
+    }
+
+    let nextMetaToPersist: ChatMetadata | null = null;
+    const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
+
+    const applyAcceptedMeta = (meta: Record<string, unknown>): ChatMetadata => {
+      const nextMeta: ChatMetadata = {
+        ...(meta as ChatMetadata),
+        [CHAT_INBOX_STATE_META_KEY]: 'accepted',
+        [CHAT_ACCEPTED_AT_META_KEY]: acceptedAt
+      };
+
+      if (lastOutgoingMessageAt) {
+        const currentOutgoingAt = readMetaString(nextMeta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY);
+        if (toComparableTimestamp(lastOutgoingMessageAt) > toComparableTimestamp(currentOutgoingAt)) {
+          nextMeta[CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY] = lastOutgoingMessageAt;
+        }
+      }
+
+      delete nextMeta[CHAT_BLOCKED_AT_META_KEY];
+      return nextMeta;
+    };
+
+    if (existingChat) {
+      nextMetaToPersist = applyAcceptedMeta(existingChat.meta as Record<string, unknown>);
+      chats.value = chats.value.map((chat) =>
+        chat.id === normalizedChatId
+          ? {
+              ...chat,
+              meta: nextMetaToPersist ?? chat.meta
+            }
+          : chat
+      );
+    } else {
+      await chatDataService.init();
+      const existingRow = await chatDataService.getChatByPublicKey(normalizedChatId);
+      if (!existingRow) {
+        return;
+      }
+
+      nextMetaToPersist = applyAcceptedMeta(existingRow.meta);
+    }
+
+    if (!nextMetaToPersist) {
+      return;
+    }
+
+    try {
+      await chatDataService.updateChatMeta(normalizedChatId, nextMetaToPersist);
+    } catch (error) {
+      console.error('Failed to accept chat request', error);
+    }
+  }
+
   async function markAsRead(chatId: string): Promise<void> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -429,6 +799,66 @@ export const useChatStore = defineStore('chatStore', () => {
     }
   }
 
+  async function blockChat(chatId: string): Promise<void> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    const blockedAt = new Date().toISOString();
+    let nextMetaToPersist: ChatMetadata | null = null;
+
+    chats.value = chats.value.map((chat) => {
+      if (chat.id !== normalizedChatId) {
+        return chat;
+      }
+
+      nextMetaToPersist = {
+        ...(chat.meta as ChatMetadata),
+        [CHAT_INBOX_STATE_META_KEY]: 'blocked',
+        [CHAT_BLOCKED_AT_META_KEY]: blockedAt
+      };
+      return {
+        ...chat,
+        unreadCount: 0,
+        meta: nextMetaToPersist
+      };
+    });
+
+    if (!nextMetaToPersist) {
+      await chatDataService.init();
+      const existingRow = await chatDataService.getChatByPublicKey(normalizedChatId);
+      if (!existingRow) {
+        return;
+      }
+
+      nextMetaToPersist = {
+        ...(existingRow.meta as ChatMetadata),
+        [CHAT_INBOX_STATE_META_KEY]: 'blocked',
+        [CHAT_BLOCKED_AT_META_KEY]: blockedAt
+      };
+    }
+
+    if (selectedChatId.value === normalizedChatId) {
+      selectedChatId.value = resolveDefaultSelectedChatId(
+        chats.value.filter((chat) => chat.id !== normalizedChatId)
+      );
+    }
+
+    if (!nextMetaToPersist) {
+      return;
+    }
+
+    try {
+      await Promise.all([
+        chatDataService.updateChatMeta(normalizedChatId, nextMetaToPersist),
+        chatDataService.markChatAsRead(normalizedChatId)
+      ]);
+    } catch (error) {
+      console.error('Failed to block chat request', error);
+    }
+  }
+
   async function deleteChat(chatId: string): Promise<boolean> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -456,7 +886,7 @@ export const useChatStore = defineStore('chatStore', () => {
       chats.value = nextChats;
 
       if (selectedChatId.value === normalizedChatId) {
-        selectedChatId.value = nextChats[0]?.id ?? null;
+        selectedChatId.value = resolveDefaultSelectedChatId(nextChats);
       }
 
       return true;
@@ -572,9 +1002,14 @@ export const useChatStore = defineStore('chatStore', () => {
     const fallbackName = input.fallbackName.trim() || nextPublicKey;
     const nextChatId = nextPublicKey;
     const existingChat = chats.value.find((chat) => chat.id === nextChatId) ?? null;
-    const currentMeta =
-      (existingChat?.meta as Record<string, unknown> | undefined) ??
-      (input.meta ? { ...input.meta } : {});
+    const currentMeta = {
+      ...((existingChat?.meta as Record<string, unknown> | undefined) ?? {}),
+      ...(input.meta ? { ...input.meta } : {})
+    };
+    const currentIncomingAt = readMetaString(currentMeta, CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY);
+    if (toComparableTimestamp(input.at) > toComparableTimestamp(currentIncomingAt)) {
+      currentMeta[CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY] = input.at;
+    }
     const nextName = existingChat?.name || fallbackName;
     const nextMeta = syncChatMeta(
       currentMeta,
@@ -674,7 +1109,9 @@ export const useChatStore = defineStore('chatStore', () => {
         avatar: buildAvatar(contactContext?.givenName || contactContext?.contactName || cleanName),
         ...(contactContext?.picture ? { picture: contactContext.picture } : {}),
         ...(contactContext?.givenName ? { given_name: contactContext.givenName } : {}),
-        ...(contactContext?.contactName ? { contact_name: contactContext.contactName } : {})
+        ...(contactContext?.contactName ? { contact_name: contactContext.contactName } : {}),
+        [CHAT_INBOX_STATE_META_KEY]: 'accepted',
+        [CHAT_ACCEPTED_AT_META_KEY]: now
       }
     });
     if (!created) {
@@ -753,13 +1190,21 @@ export const useChatStore = defineStore('chatStore', () => {
 
   return {
     chats,
+    inboxChats,
+    visibleChats,
+    requestChats,
+    requestCount,
     isLoaded,
     searchQuery,
     selectedChat,
     selectedChatId,
     visibleChatId,
+    isRequestChat,
+    recordIncomingActivity,
+    acceptChat,
     markAsRead,
     muteChat,
+    blockChat,
     deleteChat,
     init,
     reload,

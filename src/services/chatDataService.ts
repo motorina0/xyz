@@ -511,6 +511,18 @@ class ChatDataService {
     return records.sort(sortMessagesByCreated).map((record) => toMessageRow(record));
   }
 
+  async listAllMessages(): Promise<MessageRow[]> {
+    const db = await this.getDatabase();
+    const transaction = db.transaction(MESSAGES_STORE, 'readonly');
+    const store = transaction.objectStore(MESSAGES_STORE);
+    const records = await requestToPromise<MessageRecord[]>(
+      store.getAll() as IDBRequest<MessageRecord[]>
+    );
+    await waitForTransaction(transaction);
+
+    return records.sort(sortMessagesByCreated).map((record) => toMessageRow(record));
+  }
+
   async getMessageById(messageId: number): Promise<MessageRow | null> {
     if (!Number.isInteger(messageId) || messageId <= 0) {
       return null;
