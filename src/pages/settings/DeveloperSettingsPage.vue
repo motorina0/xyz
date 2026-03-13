@@ -556,7 +556,46 @@
               </div>
 
               <div v-else class="developer-trace-table-shell">
-                <q-markup-table flat class="developer-table developer-trace-table">
+                <div class="developer-trace-filters">
+                  <q-select
+                    v-model="traceLevelFilter"
+                    dense
+                    outlined
+                    clearable
+                    options-dense
+                    :options="traceLevelOptions"
+                    label="Level"
+                    class="developer-trace-filters__field"
+                  />
+
+                  <q-select
+                    v-model="traceScopeFilter"
+                    dense
+                    outlined
+                    clearable
+                    options-dense
+                    :options="traceScopeOptions"
+                    label="Scope"
+                    class="developer-trace-filters__field"
+                  />
+
+                  <q-select
+                    v-model="tracePhaseFilter"
+                    dense
+                    outlined
+                    clearable
+                    options-dense
+                    :options="tracePhaseOptions"
+                    label="Phase"
+                    class="developer-trace-filters__field"
+                  />
+                </div>
+
+                <div v-if="filteredTraceEntries.length === 0" class="developer-empty-state">
+                  No trace entries match the current filters.
+                </div>
+
+                <q-markup-table v-else flat class="developer-table developer-trace-table">
                   <thead>
                     <tr>
                       <th class="text-left">Timestamp</th>
@@ -668,6 +707,9 @@ let traceRefreshDebounceId: ReturnType<typeof globalThis.setTimeout> | null = nu
 const TRACE_PAGE_SIZE = 20;
 const displayedTraceEntries = ref<DeveloperTraceEntry[]>([]);
 const latestTraceEntries = ref<DeveloperTraceEntry[]>([]);
+const traceLevelFilter = ref<DeveloperTraceLevel | null>(null);
+const traceScopeFilter = ref<string | null>(null);
+const tracePhaseFilter = ref<string | null>(null);
 const tracePage = ref(1);
 const expandedTraceDetailIds = ref<Record<string, boolean>>({});
 
@@ -679,13 +721,37 @@ const newTraceEntryCount = computed(() => {
   return latestTraceEntries.value.filter((entry) => !displayedTraceEntryIds.value.has(entry.id)).length;
 });
 
+const traceLevelOptions = computed<DeveloperTraceLevel[]>(() => {
+  const availableLevels = new Set(displayedTraceEntries.value.map((entry) => entry.level));
+  return (['info', 'warn', 'error'] as DeveloperTraceLevel[]).filter((level) =>
+    availableLevels.has(level)
+  );
+});
+
+const traceScopeOptions = computed(() => {
+  return listDistinctTraceFilterValues(displayedTraceEntries.value, (entry) => entry.scope);
+});
+
+const tracePhaseOptions = computed(() => {
+  return listDistinctTraceFilterValues(
+    displayedTraceEntries.value.filter((entry) =>
+      matchesSelectedTraceFilters(entry, { includePhase: false })
+    ),
+    (entry) => entry.phase
+  );
+});
+
+const filteredTraceEntries = computed(() => {
+  return displayedTraceEntries.value.filter((entry) => matchesSelectedTraceFilters(entry));
+});
+
 const totalTracePages = computed(() => {
-  return Math.max(1, Math.ceil(displayedTraceEntries.value.length / TRACE_PAGE_SIZE));
+  return Math.max(1, Math.ceil(filteredTraceEntries.value.length / TRACE_PAGE_SIZE));
 });
 
 const paginatedTraceEntries = computed(() => {
   const startIndex = (tracePage.value - 1) * TRACE_PAGE_SIZE;
-  return displayedTraceEntries.value.slice(startIndex, startIndex + TRACE_PAGE_SIZE);
+  return filteredTraceEntries.value.slice(startIndex, startIndex + TRACE_PAGE_SIZE);
 });
 
 const totalPendingReactions = computed(() => {
@@ -730,6 +796,11 @@ watch(
     }, 120);
   }
 );
+
+watch([traceLevelFilter, traceScopeFilter, tracePhaseFilter], () => {
+  syncTraceFiltersWithAvailableOptions();
+  tracePage.value = 1;
+});
 
 onBeforeUnmount(() => {
   if (refreshDebounceId !== null) {
@@ -916,6 +987,7 @@ async function refreshLatestTraceEntries(): Promise<void> {
 async function refreshRecentTraceEntries(): Promise<void> {
   await refreshLatestTraceEntries();
   displayedTraceEntries.value = [...latestTraceEntries.value];
+  syncTraceFiltersWithAvailableOptions();
   tracePage.value = 1;
   expandedTraceDetailIds.value = {};
 }
@@ -1035,6 +1107,48 @@ function formatTraceDetailsPreview(value: unknown): string {
   }
 
   return `${compactValue.slice(0, 125)}...`;
+}
+
+function matchesSelectedTraceFilters(
+  entry: DeveloperTraceEntry,
+  options: { includePhase?: boolean } = {}
+): boolean {
+  if (traceLevelFilter.value && entry.level !== traceLevelFilter.value) {
+    return false;
+  }
+
+  if (traceScopeFilter.value && entry.scope !== traceScopeFilter.value) {
+    return false;
+  }
+
+  if (options.includePhase !== false && tracePhaseFilter.value && entry.phase !== tracePhaseFilter.value) {
+    return false;
+  }
+
+  return true;
+}
+
+function listDistinctTraceFilterValues(
+  entries: DeveloperTraceEntry[],
+  getValue: (entry: DeveloperTraceEntry) => string
+): string[] {
+  return Array.from(new Set(entries.map(getValue)))
+    .filter((value) => value.trim().length > 0)
+    .sort((first, second) => first.localeCompare(second, undefined, { sensitivity: 'base' }));
+}
+
+function syncTraceFiltersWithAvailableOptions(): void {
+  if (traceLevelFilter.value && !traceLevelOptions.value.includes(traceLevelFilter.value)) {
+    traceLevelFilter.value = null;
+  }
+
+  if (traceScopeFilter.value && !traceScopeOptions.value.includes(traceScopeFilter.value)) {
+    traceScopeFilter.value = null;
+  }
+
+  if (tracePhaseFilter.value && !tracePhaseOptions.value.includes(tracePhaseFilter.value)) {
+    tracePhaseFilter.value = null;
+  }
 }
 </script>
 
@@ -1291,6 +1405,17 @@ function formatTraceDetailsPreview(value: unknown): string {
 .developer-trace-table-shell {
   display: grid;
   gap: 14px;
+}
+
+.developer-trace-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.developer-trace-filters__field {
+  min-width: 160px;
+  flex: 1 1 180px;
 }
 
 .developer-trace-table__pagination {
