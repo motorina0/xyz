@@ -182,6 +182,7 @@ interface PendingIncomingDeletion {
 }
 
 type SubscriptionLogName =
+  | 'contact-profile'
   | 'contact-relay-list'
   | 'my-relay-list'
   | 'private-contact-list'
@@ -210,6 +211,11 @@ interface ContactRelayListFetchResult {
 }
 
 interface ContactRelayListEventState {
+  createdAt: number;
+  eventId: string;
+}
+
+interface ContactProfileEventState {
   createdAt: number;
   eventId: string;
 }
@@ -443,6 +449,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const pendingIncomingDeletions = new Map<string, PendingIncomingDeletion[]>();
   const pendingContactCursorPublishTimers = new Map<string, ReturnType<typeof globalThis.setTimeout>>();
   const pendingContactCursorPublishStates = new Map<string, ContactCursorState>();
+  let contactProfileSubscription: ReturnType<typeof ndk.subscribe> | null = null;
+  let contactProfileSubscriptionSignature = '';
+  let contactProfileApplyQueue = Promise.resolve();
+  const lastContactProfileEventStateByPubkey = new Map<string, ContactProfileEventState>();
   let contactRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let contactRelayListSubscriptionSignature = '';
   let contactRelayListApplyQueue = Promise.resolve();
@@ -487,7 +497,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         (entry) => `${entry.url}:${entry.read !== false}:${entry.write !== false}`
       ),
     () => {
-      queueContactRelayListSubscriptionRefresh();
+      queueTrackedContactSubscriptionsRefresh();
     }
   );
 
@@ -1489,6 +1499,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
         );
         await runStartupTask('Failed to sync recent chat contacts on startup', () =>
           syncRecentChatContacts(seedRelayUrls)
+        );
+        await runStartupTask('Failed to subscribe to contact profile updates on startup', () =>
+          subscribeContactProfileUpdates(seedRelayUrls)
         );
         await runStartupTask('Failed to subscribe to contact relay list updates on startup', () =>
           subscribeContactRelayListUpdates(seedRelayUrls)
@@ -3626,6 +3639,172 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function buildContactProfileEventState(
+    event: Pick<NDKEvent, 'created_at' | 'id'>
+  ): ContactProfileEventState {
+    return {
+      createdAt: Number(event.created_at ?? 0),
+      eventId: event.id?.trim() ?? ''
+    };
+  }
+
+  function pruneTrackedContactProfileEventState(activePubkeys: string[]): void {
+    const activePubkeySet = new Set(activePubkeys);
+    for (const pubkey of lastContactProfileEventStateByPubkey.keys()) {
+      if (!activePubkeySet.has(pubkey)) {
+        lastContactProfileEventStateByPubkey.delete(pubkey);
+      }
+    }
+  }
+
+  function shouldApplyContactProfileEvent(event: Pick<NDKEvent, 'created_at' | 'id' | 'pubkey'>): boolean {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
+    if (!normalizedPubkey) {
+      return false;
+    }
+
+    const nextState = buildContactProfileEventState(event);
+    const previousState = lastContactProfileEventStateByPubkey.get(normalizedPubkey);
+    if (!previousState) {
+      return true;
+    }
+
+    if (nextState.createdAt > previousState.createdAt) {
+      return true;
+    }
+
+    if (nextState.createdAt < previousState.createdAt) {
+      return false;
+    }
+
+    return nextState.eventId !== previousState.eventId;
+  }
+
+  function markContactProfileEventApplied(
+    pubkeyHex: string,
+    eventState: ContactProfileEventState
+  ): void {
+    lastContactProfileEventStateByPubkey.set(pubkeyHex, eventState);
+  }
+
+  function parseContactProfileEvent(event: Pick<NDKEvent, 'content'>): NDKUserProfile | null {
+    const content = event.content?.trim() ?? '';
+    if (!content) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(content);
+      return isPlainRecord(parsed) ? (parsed as NDKUserProfile) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function extractContactProfileEventStateFromProfile(
+    profile: NDKUserProfile | null
+  ): ContactProfileEventState | null {
+    const rawProfileEvent = profile?.profileEvent;
+    if (typeof rawProfileEvent !== 'string' || !rawProfileEvent.trim()) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(rawProfileEvent);
+      if (!isPlainRecord(parsed)) {
+        return null;
+      }
+
+      return {
+        createdAt:
+          Number.isInteger(parsed.created_at) || typeof parsed.created_at === 'number'
+            ? Number(parsed.created_at)
+            : 0,
+        eventId: typeof parsed.id === 'string' ? parsed.id.trim() : ''
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  function queueContactProfileSubscriptionRefresh(
+    seedRelayUrls: string[] = [],
+    force = false
+  ): void {
+    void subscribeContactProfileUpdates(seedRelayUrls, force).catch((error) => {
+      console.warn('Failed to refresh contact profile subscription', error);
+    });
+  }
+
+  function queueTrackedContactSubscriptionsRefresh(
+    seedRelayUrls: string[] = [],
+    force = false
+  ): void {
+    queueContactProfileSubscriptionRefresh(seedRelayUrls, force);
+    queueContactRelayListSubscriptionRefresh(seedRelayUrls, force);
+  }
+
+  async function applyContactProfileEvent(event: NDKEvent): Promise<void> {
+    if (!shouldApplyContactProfileEvent(event)) {
+      return;
+    }
+
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
+    if (!normalizedPubkey || normalizedPubkey === getLoggedInPublicKeyHex()) {
+      return;
+    }
+
+    const nextProfile = parseContactProfileEvent(event);
+    if (!nextProfile) {
+      return;
+    }
+
+    const nextEventState = buildContactProfileEventState(event);
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
+    if (!existingContact) {
+      markContactProfileEventApplied(normalizedPubkey, nextEventState);
+      return;
+    }
+
+    const nextMeta = buildUpdatedContactMeta(
+      existingContact.meta,
+      nextProfile,
+      existingContact.meta.npub?.trim() || encodeNpub(normalizedPubkey) || '',
+      existingContact.meta.nprofile?.trim() || encodeNprofile(normalizedPubkey) || ''
+    );
+    const nextName =
+      nextMeta.display_name?.trim() ||
+      nextMeta.name?.trim() ||
+      existingContact.name?.trim() ||
+      normalizedPubkey.slice(0, 16);
+
+    if (existingContact.name === nextName && contactMetadataEqual(existingContact.meta, nextMeta)) {
+      markContactProfileEventApplied(normalizedPubkey, nextEventState);
+      return;
+    }
+
+    const updatedContact = await contactsService.updateContact(existingContact.id, {
+      name: nextName,
+      meta: nextMeta
+    });
+    if (!updatedContact) {
+      return;
+    }
+
+    await chatStore.syncContactProfile(normalizedPubkey);
+    markContactProfileEventApplied(normalizedPubkey, nextEventState);
+    bumpContactListVersion();
+  }
+
+  function queueContactProfileEventApplication(event: NDKEvent): void {
+    contactProfileApplyQueue = contactProfileApplyQueue
+      .then(() => applyContactProfileEvent(event))
+      .catch((error) => {
+        console.error('Failed to process contact profile event', error);
+      });
+  }
+
   async function applyContactRelayListEvent(event: NDKEvent): Promise<void> {
     if (!shouldApplyContactRelayListEvent(event)) {
       return;
@@ -4250,7 +4429,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayTracker?.seal();
 
     bumpContactListVersion();
-    queueContactRelayListSubscriptionRefresh();
+    queueTrackedContactSubscriptionsRefresh();
   }
 
   async function applyPrivateContactListEvent(event: NDKEvent): Promise<void> {
@@ -4350,6 +4529,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       resolvedNpub,
       resolvedNprofile
     );
+    const fetchedProfileEventState = extractContactProfileEventStateFromProfile(fetchedProfile);
 
     const fallbackContactName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
     const nextName =
@@ -4396,6 +4576,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
         return;
       }
       await chatStore.syncContactProfile(normalizedTargetPubkey);
+      if (fetchedProfileEventState) {
+        markContactProfileEventApplied(normalizedTargetPubkey, fetchedProfileEventState);
+      }
       if (explicitRelayList !== null) {
         markContactRelayListEventApplied(normalizedTargetPubkey, {
           createdAt: explicitRelayList.createdAt,
@@ -4419,6 +4602,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return;
     }
     await chatStore.syncContactProfile(normalizedTargetPubkey);
+    if (fetchedProfileEventState) {
+      markContactProfileEventApplied(normalizedTargetPubkey, fetchedProfileEventState);
+    }
     if (explicitRelayList !== null) {
       markContactRelayListEventApplied(normalizedTargetPubkey, {
         createdAt: explicitRelayList.createdAt,
@@ -4919,7 +5105,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       } catch (error) {
         console.warn('Failed to subscribe to private messages', error);
       }
-      queueContactRelayListSubscriptionRefresh();
+      queueTrackedContactSubscriptionsRefresh();
       return;
     }
 
@@ -4927,7 +5113,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       relays: normalizedRelayEntries
     });
     await subscribePrivateMessagesForLoggedInUser(true);
-    queueContactRelayListSubscriptionRefresh();
+    queueTrackedContactSubscriptionsRefresh();
   }
 
   async function fetchMyRelayListEntries(seedRelayUrls: string[] = []): Promise<ContactRelay[] | null> {
@@ -5152,7 +5338,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       updateStoredEventSinceFromCreatedAt(listEvent.created_at);
       markPrivateContactListEventApplied(listEvent);
     } finally {
-      queueContactRelayListSubscriptionRefresh(seedRelayUrls);
+      queueTrackedContactSubscriptionsRefresh(seedRelayUrls);
     }
   }
 
@@ -5308,6 +5494,114 @@ export const useNostrStore = defineStore('nostrStore', () => {
       signature,
       pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
       ...buildSubscriptionRelayDetails(relayUrls)
+    });
+  }
+
+  function stopContactProfileSubscription(reason = 'replace'): void {
+    if (contactProfileSubscription) {
+      logSubscription('contact-profile', 'stop', {
+        reason,
+        signature: contactProfileSubscriptionSignature || null
+      });
+      contactProfileSubscription.stop();
+      contactProfileSubscription = null;
+    }
+
+    contactProfileSubscriptionSignature = '';
+  }
+
+  async function subscribeContactProfileUpdates(
+    seedRelayUrls: string[] = [],
+    force = false
+  ): Promise<void> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      pruneTrackedContactProfileEventState([]);
+      stopContactProfileSubscription('missing-login');
+      return;
+    }
+
+    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      stopContactProfileSubscription('no-relays');
+      return;
+    }
+
+    const contactPubkeys = await listTrackedContactPubkeys();
+    pruneTrackedContactProfileEventState(contactPubkeys);
+    if (contactPubkeys.length === 0) {
+      stopContactProfileSubscription('no-contacts');
+      return;
+    }
+
+    const signature = `${relaySignature(relayUrls)}:${contactPubkeys.join(',')}`;
+    if (!force && contactProfileSubscription && contactProfileSubscriptionSignature === signature) {
+      logSubscription('contact-profile', 'skip', {
+        reason: 'already-active',
+        signature,
+        ...buildSubscriptionRelayDetails(relayUrls),
+        recipientCount: contactPubkeys.length,
+        recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+      });
+      return;
+    }
+
+    logSubscription('contact-profile', 'prepare', {
+      force,
+      signature,
+      since: getFilterSince(),
+      ...buildSubscriptionRelayDetails(relayUrls),
+      recipientCount: contactPubkeys.length,
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+    });
+
+    await ensureRelayConnections(relayUrls);
+    await getLoggedInSignerUser();
+    stopContactProfileSubscription();
+
+    logSubscription('contact-profile', 'start', {
+      force,
+      signature,
+      since: getFilterSince(),
+      ...buildSubscriptionRelayDetails(relayUrls),
+      recipientCount: contactPubkeys.length,
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
+    });
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    contactProfileSubscription = ndk.subscribe(
+      {
+        kinds: [NDKKind.Metadata],
+        authors: contactPubkeys,
+        since: getFilterSince()
+      },
+      {
+        relaySet,
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+        onEvent: (event) => {
+          const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          logSubscription('contact-profile', 'event', {
+            signature,
+            ...buildSubscriptionEventDetails(wrappedEvent),
+            ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
+          });
+          updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+          queueContactProfileEventApplication(wrappedEvent);
+        },
+        onEose: () => {
+          logSubscription('contact-profile', 'eose', {
+            signature
+          });
+        }
+      }
+    );
+    contactProfileSubscriptionSignature = signature;
+
+    logSubscription('contact-profile', 'active', {
+      signature,
+      ...buildSubscriptionRelayDetails(relayUrls),
+      recipientCount: contactPubkeys.length,
+      recipients: contactPubkeys.map((value) => formatSubscriptionLogValue(value))
     });
   }
 
@@ -6609,6 +6903,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       globalThis.clearTimeout(timerId);
     });
     pendingContactCursorPublishTimers.clear();
+    lastContactProfileEventStateByPubkey.clear();
     lastContactRelayListEventStateByPubkey.clear();
     lastPrivateContactListCreatedAt = 0;
     lastPrivateContactListEventId = '';
@@ -6620,6 +6915,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     void clearDeveloperTraceEntries().catch((error) => {
       console.error('Failed to clear developer trace entries.', error);
     });
+    stopContactProfileSubscription();
     stopContactRelayListSubscription();
     stopMyRelayListSubscription();
     stopPrivateContactListSubscription();
@@ -6630,6 +6926,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
     shouldRunChatChecksForAllChats = false;
     pendingChatCheckChatIds.clear();
+    contactProfileApplyQueue = Promise.resolve();
     contactRelayListApplyQueue = Promise.resolve();
     chatChecksQueue = Promise.resolve();
     postPrivateMessagesEoseChecksQueue = Promise.resolve();
@@ -6660,6 +6957,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restorePrivatePreferencesPromise = null;
     restoreContactCursorStatePromise = null;
     syncRecentChatContactsPromise = null;
+    contactProfileApplyQueue = Promise.resolve();
     contactRelayListApplyQueue = Promise.resolve();
     myRelayListApplyQueue = Promise.resolve();
     privateContactListApplyQueue = Promise.resolve();
