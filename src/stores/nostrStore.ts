@@ -373,8 +373,9 @@ const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
 const PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
-const PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS = 24 * 60 * 60;
+const PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS = 7 * 24 * 60 * 60;
 const PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
+const PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS = 3000;
 const PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS = 1000;
 const PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS = 10 * 1000;
 const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
@@ -930,7 +931,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       floorSince: Math.floor(floorSince),
       delayMs: Math.min(
         PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
-        Math.max(PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS, Math.floor(delayMs))
+        Math.max(PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS, Math.floor(delayMs))
       ),
       completed
     };
@@ -1011,7 +1012,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       nextSince,
       nextUntil,
       floorSince: normalizedFloorSince,
-      delayMs: PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS,
+      delayMs: PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS,
       completed: false
     };
   }

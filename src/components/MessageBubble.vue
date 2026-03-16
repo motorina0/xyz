@@ -346,7 +346,14 @@ const shouldOpenEmojiPickerAfterActionMenu = ref(false);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
 
 interface StatusSegment {
-  key: 'published' | 'pending' | 'failed' | 'received' | 'missing';
+  key:
+    | 'published'
+    | 'published-recipient'
+    | 'published-self'
+    | 'pending'
+    | 'failed'
+    | 'received'
+    | 'missing';
   className: string;
   weight: number;
 }
@@ -432,8 +439,11 @@ function formatRelayStatusItem(relayStatus: Pick<MessageRelayStatus, 'relay_url'
 function getStatusSegmentClassName(status: StatusSegment['key']): string {
   switch (status) {
     case 'published':
+    case 'published-recipient':
     case 'received':
       return 'bubble__status-segment--green';
+    case 'published-self':
+      return 'bubble__status-segment--blue';
     case 'failed':
       return 'bubble__status-segment--red';
     case 'pending':
@@ -443,9 +453,15 @@ function getStatusSegmentClassName(status: StatusSegment['key']): string {
   }
 }
 
-function getStatusDotClassName(status: StatusListItem['status']): string {
+function getStatusDotClassName(
+  status: StatusListItem['status'],
+  scope: StatusListScope = 'derived'
+): string {
   switch (status) {
     case 'published':
+      return scope === 'self'
+        ? 'bubble__status-list-dot--blue'
+        : 'bubble__status-list-dot--green';
     case 'received':
       return 'bubble__status-list-dot--green';
     case 'failed':
@@ -727,19 +743,34 @@ const statusSegments = computed<StatusSegment[]>(() => {
   }
 
   const relayStatuses = outboundRelayStatuses.value;
-  function countByStatus(status: MessageRelayStatus['status']) {
-    return relayStatuses.filter((relayStatus) => relayStatus.status === status).length;
+  function countByStatus(
+    status: MessageRelayStatus['status'],
+    scope?: MessageRelayStatus['scope']
+  ) {
+    return relayStatuses.filter((relayStatus) => {
+      if (relayStatus.status !== status) {
+        return false;
+      }
+
+      return scope ? relayStatus.scope === scope : true;
+    }).length;
   }
 
-  const published = countByStatus('published');
+  const publishedRecipient = countByStatus('published', 'recipient');
+  const publishedSelf = countByStatus('published', 'self');
   const pending = countByStatus('pending');
   const failed = countByStatus('failed');
 
   return [
     {
-      key: 'published',
-      className: getStatusSegmentClassName('published'),
-      weight: published
+      key: 'published-recipient',
+      className: getStatusSegmentClassName('published-recipient'),
+      weight: publishedRecipient
+    },
+    {
+      key: 'published-self',
+      className: getStatusSegmentClassName('published-self'),
+      weight: publishedSelf
     },
     {
       key: 'pending',
@@ -789,7 +820,7 @@ function buildStatusListItems(
       key: `${relayStatus.status}-${relayStatus.scope}-${relayStatus.relay_url}`,
       relayUrl: formatRelayStatusItem(relayStatus),
       detail: relayStatus.detail,
-      dotClass: getStatusDotClassName(relayStatus.status),
+      dotClass: getStatusDotClassName(relayStatus.status, relayStatus.scope),
       scope: relayStatus.scope,
       status: relayStatus.status,
       retryable: relayStatus.status === 'failed'
@@ -1518,6 +1549,11 @@ onBeforeUnmount(() => {
   background: #16a34a;
 }
 
+.bubble__status-segment--blue {
+  flex: 2 1 0;
+  background: #2563eb;
+}
+
 .bubble__status-segment--gray {
   flex: 1 1 0;
   background: rgba(100, 116, 139, 0.5);
@@ -1595,6 +1631,10 @@ onBeforeUnmount(() => {
 
 .bubble__status-list-dot--green {
   background: #16a34a;
+}
+
+.bubble__status-list-dot--blue {
+  background: #2563eb;
 }
 
 .bubble__status-list-dot--red {
