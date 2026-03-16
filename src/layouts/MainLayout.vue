@@ -7,7 +7,10 @@
     <q-footer v-if="showMobileNav" bordered class="mobile-nav">
       <div class="mobile-nav__inner">
         <q-btn
-          flat
+          :flat="activeSection !== 'chats'"
+          :unelevated="activeSection === 'chats'"
+          :color="activeSection === 'chats' ? 'primary' : undefined"
+          :text-color="activeSection === 'chats' ? 'white' : undefined"
           no-caps
           icon="chat"
           label="Chats"
@@ -16,7 +19,10 @@
           @click="goToSection('chats')"
         />
         <q-btn
-          flat
+          :flat="activeSection !== 'contacts'"
+          :unelevated="activeSection === 'contacts'"
+          :color="activeSection === 'contacts' ? 'primary' : undefined"
+          :text-color="activeSection === 'contacts' ? 'white' : undefined"
           no-caps
           icon="contacts"
           label="Contacts"
@@ -25,7 +31,10 @@
           @click="goToSection('contacts')"
         />
         <q-btn
-          flat
+          :flat="activeSection !== 'settings'"
+          :unelevated="activeSection === 'settings'"
+          :color="activeSection === 'settings' ? 'primary' : undefined"
+          :text-color="activeSection === 'settings' ? 'white' : undefined"
           no-caps
           icon="settings"
           label="Settings"
@@ -203,14 +212,8 @@ function goToSection(section: NavigationSection): void {
 }
 
 .mobile-nav__btn--active {
-  color: #062d5c;
-  background:
-    linear-gradient(135deg, rgba(59, 136, 255, 0.46), rgba(32, 198, 140, 0.32)),
-    color-mix(in srgb, var(--tg-sidebar) 48%, #cfe3ff 52%);
   border-color: rgba(33, 110, 236, 0.68);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.5),
-    0 8px 18px rgba(30, 102, 214, 0.24);
+  box-shadow: 0 8px 18px rgba(30, 102, 214, 0.24);
 }
 
 body.body--dark .mobile-nav__btn {
@@ -220,13 +223,7 @@ body.body--dark .mobile-nav__btn {
 }
 
 body.body--dark .mobile-nav__btn--active {
-  color: #ecf7ff;
-  background:
-    linear-gradient(135deg, rgba(42, 122, 232, 0.78), rgba(19, 154, 114, 0.64)),
-    color-mix(in srgb, var(--tg-sidebar) 72%, #15365f 28%);
   border-color: rgba(128, 193, 255, 0.62);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 10px 20px rgba(0, 0, 0, 0.38);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.38);
 }
 </style>
