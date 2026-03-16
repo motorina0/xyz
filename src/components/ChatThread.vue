@@ -83,6 +83,7 @@
             <MessageBubble
               :message="item.message"
               :contact-name="chat.name"
+              :contact-relay-urls="contactRelayUrls"
               @reply="handleReplyToMessage"
               @react="handleReactToMessage"
               @delete-message="handleDeleteMessage"
@@ -161,10 +162,12 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
+import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
 import {
   countUnseenReactionsForAuthor,
   normalizeMessageReactions
@@ -207,6 +210,7 @@ const lastReadMessageId = ref<string | null>(null);
 const hasJumpedToLastReadMessage = ref(false);
 const pendingInitialPositionChatId = ref<string | null>(null);
 const openedUnreadBoundaryAt = ref<string | null>(null);
+const contactRelayUrls = ref<string[]>([]);
 let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
 let visibleReactionSyncFrameId: number | null = null;
@@ -448,6 +452,33 @@ const threadItems = computed<ThreadItem[]>(() => {
 
   return items;
 });
+
+let contactRelayRefreshToken = 0;
+
+async function refreshContactRelayUrls(chatPublicKey: string | null): Promise<void> {
+  const refreshToken = ++contactRelayRefreshToken;
+  if (!chatPublicKey) {
+    contactRelayUrls.value = [];
+    return;
+  }
+
+  try {
+    await contactsService.init();
+    const contact = await contactsService.getContactByPublicKey(chatPublicKey);
+    if (refreshToken !== contactRelayRefreshToken) {
+      return;
+    }
+
+    contactRelayUrls.value = resolvePreferredContactRelayUrls(contact?.relays);
+  } catch (error) {
+    if (refreshToken !== contactRelayRefreshToken) {
+      return;
+    }
+
+    contactRelayUrls.value = [];
+    console.error('Failed to load contact relay urls for chat thread', chatPublicKey, error);
+  }
+}
 
 async function scrollToBottom(): Promise<void> {
   await nextTick();
@@ -956,6 +987,14 @@ function handleRefreshChat(): void {
     reportUiError('Failed to refresh chat from thread header', error);
   }
 }
+
+watch(
+  () => [props.chat?.id ?? null, nostrStore.contactListVersion] as const,
+  ([chatId]) => {
+    void refreshContactRelayUrls(chatId);
+  },
+  { immediate: true }
+);
 
 watch(
   () => props.chat?.id ?? null,

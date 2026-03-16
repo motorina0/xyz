@@ -15,6 +15,7 @@ import type {
   MessageReplyPreview,
   NostrEventEntry
 } from 'src/types/chat';
+import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
 import {
   areMessageReactionsEqual,
   buildMetaWithReactions,
@@ -333,17 +334,6 @@ export const useMessageStore = defineStore('messageStore', () => {
         unseenReactionSyncPromises.delete(normalizedChatId);
       }
     }
-  }
-
-  function resolvePreferredContactRelayUrls(
-    relays: Array<{ url: string; write: boolean }> | undefined
-  ): string[] {
-    const contactRelays = Array.isArray(relays) ? relays : [];
-    const preferredRelays = contactRelays.filter((relay) => relay.write !== false).map((relay) => relay.url);
-    const fallbackRelays = contactRelays.map((relay) => relay.url);
-    return inputSanitizerService.normalizeStringArray(
-      preferredRelays.length > 0 ? preferredRelays : fallbackRelays
-    );
   }
 
   function resolveAppRelayUrls(): string[] {

@@ -156,7 +156,7 @@
         <div class="bubble__meta">
           <span class="bubble__time">{{ formattedTime }}</span>
           <div
-            v-if="isMine && hasRelayStatuses"
+            v-if="hasRelayStatuses"
             class="bubble__status-hitbox"
             tabindex="0"
             role="button"
@@ -207,23 +207,25 @@
   </div>
 
   <AppDialog
-    v-if="isMine"
+    v-if="hasRelayStatuses"
     v-model="isStatusDialogOpen"
-    title="Relay Status"
+    :title="statusDialogTitle"
     max-width="460px"
   >
-    <div
-      v-if="contactStatusListItems.length === 0 && myStatusListItems.length === 0"
-      class="bubble__status-empty"
-    >
+    <div v-if="statusSections.length === 0" class="bubble__status-empty">
       No relay status recorded yet.
     </div>
     <template v-else>
-      <div class="bubble__status-section">
-        <div class="bubble__status-section-title">{{ contactRelaysTitle }}</div>
+      <div
+        v-for="(section, sectionIndex) in statusSections"
+        :key="section.key"
+        class="bubble__status-section"
+      >
+        <div v-if="sectionIndex > 0" class="bubble__status-section-separator" />
+        <div class="bubble__status-section-title">{{ section.title }}</div>
         <ul class="bubble__status-list bubble__status-list--dialog">
           <li
-            v-for="item in contactStatusListItems"
+            v-for="item in section.items"
             :key="item.key"
             class="bubble__status-list-item bubble__status-list-item--dialog"
           >
@@ -244,55 +246,15 @@
               label="Retry"
               class="bubble__status-retry"
               :loading="isRetrying(item)"
-              :disable="isRetrying(item)"
+              :disable="isRetrying(item) || !item.retryable"
               @click.stop="retryRelay(item)"
             />
           </li>
           <li
-            v-if="contactStatusListItems.length === 0"
+            v-if="section.items.length === 0"
             class="bubble__status-list-item bubble__status-list-item--empty"
           >
-            No relays
-          </li>
-        </ul>
-      </div>
-
-      <div class="bubble__status-section-separator" />
-
-      <div class="bubble__status-section">
-        <div class="bubble__status-section-title">{{ myRelaysTitle }}</div>
-        <ul class="bubble__status-list bubble__status-list--dialog">
-          <li
-            v-for="item in myStatusListItems"
-            :key="item.key"
-            class="bubble__status-list-item bubble__status-list-item--dialog"
-          >
-            <span class="bubble__status-list-item-main">
-              <span class="bubble__status-list-dot" :class="item.dotClass" aria-hidden="true" />
-              <span class="bubble__status-list-copy">
-                <span class="bubble__status-list-text">{{ item.relayUrl }}</span>
-                <span v-if="item.detail" class="bubble__status-list-detail">{{ item.detail }}</span>
-              </span>
-            </span>
-            <q-btn
-              v-if="item.retryable"
-              flat
-              dense
-              no-caps
-              size="sm"
-              color="primary"
-              label="Retry"
-              class="bubble__status-retry"
-              :loading="isRetrying(item)"
-              :disable="isRetrying(item)"
-              @click.stop="retryRelay(item)"
-            />
-          </li>
-          <li
-            v-if="myStatusListItems.length === 0"
-            class="bubble__status-list-item bubble__status-list-item--empty"
-          >
-            No relays
+            {{ section.emptyLabel }}
           </li>
         </ul>
       </div>
@@ -361,6 +323,7 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 const props = defineProps<{
   message: Message;
   contactName?: string;
+  contactRelayUrls?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -383,19 +346,29 @@ const shouldOpenEmojiPickerAfterActionMenu = ref(false);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
 
 interface StatusSegment {
-  key: 'published' | 'pending' | 'failed';
+  key: 'published' | 'pending' | 'failed' | 'received' | 'missing';
   className: string;
   weight: number;
 }
+
+type RetryableStatusScope = 'recipient' | 'self';
+type StatusListScope = MessageRelayStatus['scope'] | 'derived';
 
 interface StatusListItem {
   key: string;
   relayUrl: string;
   detail?: string;
   dotClass: string;
-  scope: 'recipient' | 'self';
-  status: 'published' | 'failed' | 'pending';
+  scope: StatusListScope;
+  status: StatusSegment['key'];
   retryable: boolean;
+}
+
+interface StatusSection {
+  key: string;
+  title: string;
+  items: StatusListItem[];
+  emptyLabel: string;
 }
 
 interface MessageReactionItem {
@@ -452,11 +425,43 @@ function isDeletedMessageMetadata(value: unknown): value is DeletedMessageMetada
   );
 }
 
-function formatRelayStatusItem(relayStatus: MessageRelayStatus): string {
+function formatRelayStatusItem(relayStatus: Pick<MessageRelayStatus, 'relay_url'>): string {
   return relayStatus.relay_url;
 }
 
-const outboundRelayStatuses = computed(() => {
+function getStatusSegmentClassName(status: StatusSegment['key']): string {
+  switch (status) {
+    case 'published':
+    case 'received':
+      return 'bubble__status-segment--green';
+    case 'failed':
+      return 'bubble__status-segment--red';
+    case 'pending':
+    case 'missing':
+    default:
+      return 'bubble__status-segment--gray';
+  }
+}
+
+function getStatusDotClassName(status: StatusListItem['status']): string {
+  switch (status) {
+    case 'published':
+    case 'received':
+      return 'bubble__status-list-dot--green';
+    case 'failed':
+      return 'bubble__status-list-dot--red';
+    case 'pending':
+    case 'missing':
+    default:
+      return 'bubble__status-list-dot--gray';
+  }
+}
+
+function isRetryableStatusScope(scope: StatusListScope): scope is RetryableStatusScope {
+  return scope === 'recipient' || scope === 'self';
+}
+
+const relayStatuses = computed(() => {
   const relayStatuses = props.message.nostrEvent?.relay_statuses;
   if (!Array.isArray(relayStatuses)) {
     return [] as MessageRelayStatus[];
@@ -464,15 +469,75 @@ const outboundRelayStatuses = computed(() => {
 
   return relayStatuses
     .filter(isMessageRelayStatus)
-    .filter((relayStatus) => relayStatus.direction === 'outbound')
     .sort((first, second) => {
       const byRelayUrl = first.relay_url.localeCompare(second.relay_url);
       if (byRelayUrl !== 0) {
         return byRelayUrl;
       }
 
+      const byDirection = first.direction.localeCompare(second.direction);
+      if (byDirection !== 0) {
+        return byDirection;
+      }
+
       return first.scope.localeCompare(second.scope);
     });
+});
+
+const outboundRelayStatuses = computed(() => {
+  return relayStatuses.value.filter((relayStatus) => relayStatus.direction === 'outbound');
+});
+
+const inboundReceivedRelayStatuses = computed(() => {
+  return relayStatuses.value.filter(
+    (
+      relayStatus
+    ): relayStatus is MessageRelayStatus & {
+      direction: 'inbound';
+      status: 'received';
+    } => relayStatus.direction === 'inbound' && relayStatus.status === 'received'
+  );
+});
+
+const normalizedContactRelayUrls = computed(() => {
+  const uniqueRelayUrls = new Set<string>();
+  const relayUrls = Array.isArray(props.contactRelayUrls) ? props.contactRelayUrls : [];
+
+  for (const relayUrl of relayUrls) {
+    const normalizedRelayUrl = typeof relayUrl === 'string' ? relayUrl.trim() : '';
+    if (!normalizedRelayUrl) {
+      continue;
+    }
+
+    uniqueRelayUrls.add(normalizedRelayUrl);
+  }
+
+  return Array.from(uniqueRelayUrls);
+});
+
+const inboundReceivedRelayUrls = computed(() => {
+  const uniqueRelayUrls = new Set<string>();
+
+  for (const relayStatus of inboundReceivedRelayStatuses.value) {
+    const relayUrl = formatRelayStatusItem(relayStatus).trim();
+    if (!relayUrl) {
+      continue;
+    }
+
+    uniqueRelayUrls.add(relayUrl);
+  }
+
+  return Array.from(uniqueRelayUrls).sort((first, second) => first.localeCompare(second));
+});
+
+const inboundReceivedRelayUrlSet = computed(() => {
+  return new Set(inboundReceivedRelayUrls.value);
+});
+
+const inboundMissingRelayUrls = computed(() => {
+  return normalizedContactRelayUrls.value.filter(
+    (relayUrl) => !inboundReceivedRelayUrlSet.value.has(relayUrl)
+  );
 });
 
 const hasPendingRelayStatuses = computed(() => {
@@ -480,12 +545,18 @@ const hasPendingRelayStatuses = computed(() => {
 });
 
 const hasRelayStatuses = computed(() => {
-  return outboundRelayStatuses.value.length > 0;
+  return isMine.value
+    ? outboundRelayStatuses.value.length > 0
+    : inboundReceivedRelayUrls.value.length > 0;
 });
 
 const contactRelaysTitle = computed(() => {
   const label = props.contactName?.trim();
   return `${label || 'Contact'} Relays`;
+});
+
+const statusDialogTitle = computed(() => {
+  return isMine.value ? 'Relay Status' : 'Received Relay Status';
 });
 
 const isStatusDialogOpen = ref(false);
@@ -640,17 +711,22 @@ const bubbleMessageText = computed(() => {
 });
 
 const statusSegments = computed<StatusSegment[]>(() => {
-  const relayStatuses = outboundRelayStatuses.value;
-  if (relayStatuses.length === 0) {
+  if (!isMine.value) {
     return [
       {
-        key: 'pending',
-        className: 'bubble__status-segment--gray',
-        weight: 1
+        key: 'received',
+        className: getStatusSegmentClassName('received'),
+        weight: inboundReceivedRelayUrls.value.length
+      },
+      {
+        key: 'missing',
+        className: getStatusSegmentClassName('missing'),
+        weight: inboundMissingRelayUrls.value.length
       }
-    ];
+    ].filter((segment) => segment.weight > 0);
   }
 
+  const relayStatuses = outboundRelayStatuses.value;
   function countByStatus(status: MessageRelayStatus['status']) {
     return relayStatuses.filter((relayStatus) => relayStatus.status === status).length;
   }
@@ -662,17 +738,17 @@ const statusSegments = computed<StatusSegment[]>(() => {
   return [
     {
       key: 'published',
-      className: 'bubble__status-segment--green',
+      className: getStatusSegmentClassName('published'),
       weight: published
     },
     {
       key: 'pending',
-      className: 'bubble__status-segment--gray',
+      className: getStatusSegmentClassName('pending'),
       weight: pending
     },
     {
       key: 'failed',
-      className: 'bubble__status-segment--red',
+      className: getStatusSegmentClassName('failed'),
       weight: failed
     }
   ].filter((segment) => segment.weight > 0);
@@ -686,11 +762,6 @@ function buildStatusListItems(
     published: 0,
     failed: 1,
     pending: 2
-  };
-  const dotClassByStatus: Record<'published' | 'failed' | 'pending', string> = {
-    published: 'bubble__status-list-dot--green',
-    failed: 'bubble__status-list-dot--red',
-    pending: 'bubble__status-list-dot--gray'
   };
 
   return relayStatuses
@@ -718,7 +789,7 @@ function buildStatusListItems(
       key: `${relayStatus.status}-${relayStatus.scope}-${relayStatus.relay_url}`,
       relayUrl: formatRelayStatusItem(relayStatus),
       detail: relayStatus.detail,
-      dotClass: dotClassByStatus[relayStatus.status],
+      dotClass: getStatusDotClassName(relayStatus.status),
       scope: relayStatus.scope,
       status: relayStatus.status,
       retryable: relayStatus.status === 'failed'
@@ -741,8 +812,108 @@ const myStatusListItems = computed<StatusListItem[]>(() => {
   );
 });
 
+const inboundContactStatusListItems = computed<StatusListItem[]>(() => {
+  const receivedRelayUrlSet = inboundReceivedRelayUrlSet.value;
+
+  return normalizedContactRelayUrls.value.map((relayUrl) => {
+    const status: StatusListItem['status'] = receivedRelayUrlSet.has(relayUrl)
+      ? 'received'
+      : 'missing';
+
+    return {
+      key: `${status}-contact-${relayUrl}`,
+      relayUrl,
+      detail:
+        status === 'missing' ? 'This message was not received from this relay.' : undefined,
+      dotClass: getStatusDotClassName(status),
+      scope: 'derived',
+      status,
+      retryable: false
+    };
+  });
+});
+
+const inboundReceivedStatusListItems = computed<StatusListItem[]>(() => {
+  return inboundReceivedRelayUrls.value.map((relayUrl) => ({
+    key: `received-${relayUrl}`,
+    relayUrl,
+    dotClass: getStatusDotClassName('received'),
+    scope: 'subscription',
+    status: 'received',
+    retryable: false
+  }));
+});
+
+const inboundExtraReceivedStatusListItems = computed<StatusListItem[]>(() => {
+  const contactRelayUrlSet = new Set(normalizedContactRelayUrls.value);
+
+  return inboundReceivedRelayUrls.value
+    .filter((relayUrl) => !contactRelayUrlSet.has(relayUrl))
+    .map((relayUrl) => ({
+      key: `received-extra-${relayUrl}`,
+      relayUrl,
+      detail: 'Received from a relay outside the contact relay list.',
+      dotClass: getStatusDotClassName('received'),
+      scope: 'subscription',
+      status: 'received',
+      retryable: false
+    }));
+});
+
+const statusSections = computed<StatusSection[]>(() => {
+  if (isMine.value) {
+    return [
+      {
+        key: 'recipient',
+        title: contactRelaysTitle.value,
+        items: contactStatusListItems.value,
+        emptyLabel: 'No relays'
+      },
+      {
+        key: 'self',
+        title: myRelaysTitle,
+        items: myStatusListItems.value,
+        emptyLabel: 'No relays'
+      }
+    ];
+  }
+
+  if (normalizedContactRelayUrls.value.length > 0) {
+    const sections: StatusSection[] = [
+      {
+        key: 'contact',
+        title: contactRelaysTitle.value,
+        items: inboundContactStatusListItems.value,
+        emptyLabel: 'No relays'
+      }
+    ];
+
+    if (inboundExtraReceivedStatusListItems.value.length > 0) {
+      sections.push({
+        key: 'extra-received',
+        title: 'Other Received Relays',
+        items: inboundExtraReceivedStatusListItems.value,
+        emptyLabel: 'No relays'
+      });
+    }
+
+    return sections;
+  }
+
+  return inboundReceivedStatusListItems.value.length > 0
+    ? [
+        {
+          key: 'received',
+          title: 'Received From',
+          items: inboundReceivedStatusListItems.value,
+          emptyLabel: 'No relays'
+        }
+      ]
+    : [];
+});
+
 function openStatusDialog(): void {
-  if (!isMine.value || !hasRelayStatuses.value) {
+  if (!hasRelayStatuses.value) {
     return;
   }
 
@@ -918,7 +1089,13 @@ function isRetrying(item: StatusListItem): boolean {
 
 async function retryRelay(item: StatusListItem): Promise<void> {
   const messageId = Number.parseInt(props.message.id, 10);
-  if (!Number.isInteger(messageId) || messageId <= 0 || !item.retryable || isRetrying(item)) {
+  if (
+    !Number.isInteger(messageId) ||
+    messageId <= 0 ||
+    !item.retryable ||
+    !isRetryableStatusScope(item.scope) ||
+    isRetrying(item)
+  ) {
     return;
   }
 
