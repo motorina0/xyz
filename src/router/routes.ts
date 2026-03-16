@@ -1,4 +1,9 @@
 import type { RouteRecordRaw } from 'vue-router';
+import {
+  loadChatsPage,
+  loadContactsPage,
+  loadSettingsPage
+} from './pageLoaders';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -23,17 +28,17 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'chats/:pubkey?',
         name: 'chats',
-        component: () => import('pages/IndexPage.vue')
+        component: loadChatsPage
       },
       {
         path: 'contacts/:pubkey?',
         name: 'contacts',
-        component: () => import('pages/ContactsPage.vue')
+        component: loadContactsPage
       },
       {
         path: 'settings',
         name: 'settings',
-        component: () => import('pages/SettingsPage.vue'),
+        component: loadSettingsPage,
         children: [
           {
             path: 'profile',
