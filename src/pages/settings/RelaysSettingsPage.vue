@@ -191,6 +191,20 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => nostrStore.contactListVersion,
+  () => {
+    const shouldReloadContactsRelays =
+      activeTab.value === 'contacts' || hasLoadedContactsRelays.value;
+    if (!shouldReloadContactsRelays) {
+      return;
+    }
+
+    hasLoadedContactsRelays.value = false;
+    void loadContactsRelays(true);
+  }
+);
+
 function uniqueRelays(relays: string[]): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
