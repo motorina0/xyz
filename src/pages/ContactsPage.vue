@@ -1,5 +1,5 @@
 <template>
-  <q-page class="contacts-page">
+  <q-page class="contacts-page" :style-fn="contactsPageStyleFn">
     <div class="contacts-shell" :class="{ 'contacts-shell--mobile': isMobile }">
       <aside v-if="!isMobile" class="rail-panel">
         <AppNavRail active="contacts" @select="handleRailSelect" />
@@ -302,6 +302,15 @@ watch(
     void loadContacts(contactQuery.value);
   }
 );
+
+function contactsPageStyleFn(offset: number, height: number): Record<string, string> {
+  const pageHeight = Math.max(height - offset, 0);
+
+  return {
+    height: `${pageHeight}px`,
+    minHeight: `${pageHeight}px`
+  };
+}
 
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   try {
@@ -914,6 +923,9 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contacts-page {
   height: calc(100vh - env(safe-area-inset-top));
   padding: 12px;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
 }
 
 .contacts-shell {
@@ -921,6 +933,9 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   grid-template-columns: 76px 340px minmax(0, 1fr);
   gap: 12px;
   height: 100%;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .contacts-shell--mobile {
@@ -944,10 +959,12 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contacts-sidebar {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .contacts-detail-panel {
   background: var(--tg-panel-thread-bg);
+  min-height: 0;
 }
 
 .contacts-detail-panel__scroll {
@@ -1024,6 +1041,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contacts-list {
   flex: 1;
+  min-height: 0;
   overflow-x: hidden;
 }
 

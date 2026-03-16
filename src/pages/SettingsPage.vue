@@ -1,5 +1,5 @@
 <template>
-  <q-page class="settings-page">
+  <q-page class="settings-page" :style-fn="settingsPageStyleFn">
     <div class="settings-shell" :class="{ 'settings-shell--mobile': isMobile }">
       <aside v-if="!isMobile" class="rail-panel">
         <AppNavRail active="settings" @select="handleRailSelect" />
@@ -142,6 +142,15 @@ watch(
   { immediate: true }
 );
 
+function settingsPageStyleFn(offset: number, height: number): Record<string, string> {
+  const pageHeight = Math.max(height - offset, 0);
+
+  return {
+    height: `${pageHeight}px`,
+    minHeight: `${pageHeight}px`
+  };
+}
+
 function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
   try {
     if (section === 'chats') {
@@ -198,6 +207,9 @@ async function handleConfirmLogout(): Promise<void> {
 .settings-page {
   height: calc(100vh - env(safe-area-inset-top));
   padding: 12px;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
 }
 
 .settings-shell {
@@ -205,6 +217,9 @@ async function handleConfirmLogout(): Promise<void> {
   grid-template-columns: 76px 320px minmax(0, 1fr);
   gap: 12px;
   height: 100%;
+  min-height: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .settings-shell--mobile {
@@ -228,6 +243,7 @@ async function handleConfirmLogout(): Promise<void> {
 .settings-sidebar {
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 .settings-sidebar__top {
@@ -292,6 +308,7 @@ async function handleConfirmLogout(): Promise<void> {
 
 .settings-content-panel {
   background: transparent;
+  min-height: 0;
 }
 
 body.body--dark .settings-menu__item--danger {

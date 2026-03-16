@@ -473,4 +473,73 @@ body.body--dark .app-status__status-icon--pending {
     grid-column: 2;
   }
 }
+
+@media (max-width: 1023px) {
+  .app-status {
+    --app-status-history-item-height: 52px;
+  }
+
+  .app-status__expansion :deep(.q-item) {
+    min-height: 50px;
+    padding: 7px 10px;
+  }
+
+  .app-status__expansion :deep(.q-item__section--side) {
+    padding-left: 8px;
+  }
+
+  .app-status__header-main {
+    gap: 10px;
+    min-height: 32px;
+  }
+
+  .app-status__summary {
+    font-size: 12px;
+  }
+
+  .app-status__badge {
+    min-height: 20px;
+    padding: 0 8px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+  }
+
+  .app-status__content {
+    padding: 0 10px 10px;
+    gap: 10px;
+  }
+
+  .app-status__details {
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .app-status__details-title {
+    font-size: 12px;
+    margin-bottom: 6px;
+  }
+
+  .app-status__details-copy,
+  .app-status__history-meta,
+  .app-status__history-duration {
+    font-size: 11px;
+  }
+
+  .app-status__history-label {
+    font-size: 12px;
+  }
+
+  .app-status__history-list {
+    gap: 8px;
+  }
+
+  .app-status__history-scroll {
+    max-height: calc(var(--app-status-history-item-height) * 4);
+    padding-right: 2px;
+  }
+
+  .app-status__history-item + .app-status__history-item {
+    padding-top: 8px;
+  }
+}
 </style>
