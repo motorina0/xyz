@@ -8,7 +8,6 @@
       <div class="mobile-nav__inner">
         <q-btn
           flat
-          stack
           no-caps
           icon="chat"
           label="Chats"
@@ -18,7 +17,6 @@
         />
         <q-btn
           flat
-          stack
           no-caps
           icon="contacts"
           label="Contacts"
@@ -28,7 +26,6 @@
         />
         <q-btn
           flat
-          stack
           no-caps
           icon="settings"
           label="Settings"
@@ -168,39 +165,68 @@ function goToSection(section: NavigationSection): void {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 6px 8px 5px;
 }
 
 .mobile-nav__btn {
-  color: #5d718d;
-  border-radius: 14px;
-  min-height: 56px;
-  border: 1px solid transparent;
-  transition: transform 0.2s ease, background-color 0.2s ease, border-color 0.2s ease;
+  color: #55697f;
+  border-radius: 12px;
+  min-height: 42px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 74%, transparent);
+  background: color-mix(in srgb, var(--tg-sidebar) 90%, #eef5ff 10%);
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.2s ease;
+}
+
+.mobile-nav__btn :deep(.q-btn__content) {
+  gap: 5px;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.mobile-nav__btn :deep(.q-icon) {
+  font-size: 18px;
 }
 
 .mobile-nav__btn:hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--tg-border) 84%, #8ca3bf 16%);
-  background: color-mix(in srgb, var(--tg-sidebar) 85%, #dbe9ff 15%);
+  border-color: color-mix(in srgb, var(--tg-border) 72%, #6d8db8 28%);
+  background: color-mix(in srgb, var(--tg-sidebar) 82%, #dce9ff 18%);
 }
 
 .mobile-nav__btn--active {
-  color: #0f5f43;
-  background: linear-gradient(135deg, rgba(28, 166, 121, 0.16), rgba(53, 132, 255, 0.16));
-  border-color: rgba(57, 141, 255, 0.32);
-  box-shadow: 0 8px 18px rgba(36, 110, 214, 0.16);
+  color: #062d5c;
+  background:
+    linear-gradient(135deg, rgba(59, 136, 255, 0.46), rgba(32, 198, 140, 0.32)),
+    color-mix(in srgb, var(--tg-sidebar) 48%, #cfe3ff 52%);
+  border-color: rgba(33, 110, 236, 0.68);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    0 8px 18px rgba(30, 102, 214, 0.24);
 }
 
 body.body--dark .mobile-nav__btn {
-  color: #9aacbf;
+  color: #a5b6c9;
+  border-color: color-mix(in srgb, var(--tg-border) 72%, transparent);
+  background: color-mix(in srgb, var(--tg-sidebar) 90%, #102035 10%);
 }
 
 body.body--dark .mobile-nav__btn--active {
-  color: #79e0b2;
-  background: linear-gradient(135deg, rgba(18, 122, 91, 0.42), rgba(32, 92, 177, 0.34));
-  border-color: rgba(90, 170, 255, 0.34);
-  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.35);
+  color: #ecf7ff;
+  background:
+    linear-gradient(135deg, rgba(42, 122, 232, 0.78), rgba(19, 154, 114, 0.64)),
+    color-mix(in srgb, var(--tg-sidebar) 72%, #15365f 28%);
+  border-color: rgba(128, 193, 255, 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 10px 20px rgba(0, 0, 0, 0.38);
 }
 </style>
