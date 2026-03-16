@@ -127,6 +127,7 @@
 
         <MessageComposer
           ref="composerRef"
+          :chat-id="chat.id"
           :reply-to="activeReply"
           @send="handleSend"
           @cancel-reply="handleCancelReply"

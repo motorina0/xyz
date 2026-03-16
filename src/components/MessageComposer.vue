@@ -102,13 +102,16 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS, filterEmojiEntries, type EmojiOption } from 'src/data/topEmojis';
+import { useChatStore } from 'src/stores/chatStore';
 import type { MessageReplyPreview } from 'src/types/chat';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = defineProps<{
+  chatId?: string | null;
   replyTo?: MessageReplyPreview | null;
 }>();
 
+const chatStore = useChatStore();
 const draft = ref('');
 const inputRef = ref<{ $el: HTMLElement } | null>(null);
 const selectionStart = ref<number | null>(null);
@@ -124,6 +127,27 @@ const emit = defineEmits<{
   (event: 'send', payload: { text: string }): void;
   (event: 'cancel-reply'): void;
 }>();
+
+function normalizeChatIdentifier(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  return normalizedValue || null;
+}
+
+const activeChatId = computed(() => normalizeChatIdentifier(props.chatId));
+
+function setDraftValue(nextDraft: string, options: { persist?: boolean } = {}): void {
+  draft.value = nextDraft;
+
+  if (options.persist === false || !activeChatId.value) {
+    return;
+  }
+
+  chatStore.setComposerDraft(activeChatId.value, nextDraft);
+}
 
 function getInputElement(): HTMLInputElement | HTMLTextAreaElement | null {
   return inputRef.value?.$el.querySelector('textarea, input') ?? null;
@@ -162,6 +186,10 @@ function rememberSelection(): void {
 }
 
 function handleDraftUpdate(): void {
+  if (activeChatId.value) {
+    chatStore.setComposerDraft(activeChatId.value, draft.value);
+  }
+
   void nextTick(() => {
     rememberSelection();
   });
@@ -257,7 +285,7 @@ watch(emojiAutocompleteMatch, () => {
 });
 
 function replaceDraftRange(start: number, end: number, replacement: string): void {
-  draft.value = `${draft.value.slice(0, start)}${replacement}${draft.value.slice(end)}`;
+  setDraftValue(`${draft.value.slice(0, start)}${replacement}${draft.value.slice(end)}`);
   const nextCursor = start + replacement.length;
   selectionStart.value = nextCursor;
   selectionEnd.value = nextCursor;
@@ -376,13 +404,28 @@ function handleSend(): void {
     }
 
     emit('send', { text: cleanText });
-    draft.value = '';
+    setDraftValue('');
     selectionStart.value = 0;
     selectionEnd.value = 0;
   } catch (error) {
     reportUiError('Failed to submit message input', error);
   }
 }
+
+watch(
+  activeChatId,
+  (nextChatId) => {
+    const nextDraft = nextChatId ? chatStore.getComposerDraft(nextChatId) : '';
+    setDraftValue(nextDraft, { persist: false });
+    selectionStart.value = nextDraft.length;
+    selectionEnd.value = nextDraft.length;
+    dismissedEmojiAutocompleteToken.value = '';
+    activeEmojiAutocompleteIndex.value = 0;
+    isEmojiMenuOpen.value = false;
+    shouldRefocusAfterEmojiMenuHide.value = false;
+  },
+  { immediate: true }
+);
 
 watch(
   () => props.replyTo?.messageId ?? null,

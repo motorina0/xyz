@@ -452,6 +452,7 @@ export const useChatStore = defineStore('chatStore', () => {
   const selectedChatId = ref<string | null>(null);
   const visibleChatId = ref<string | null>(null);
   const searchQuery = ref('');
+  const composerDraftsByChatId = ref<Record<string, string>>({});
   const isLoaded = ref(false);
   let initPromise: Promise<void> | null = null;
 
@@ -964,6 +965,9 @@ export const useChatStore = defineStore('chatStore', () => {
 
       const nextChats = chats.value.filter((chat) => chat.id !== normalizedChatId);
       chats.value = nextChats;
+      const nextComposerDraftsByChatId = { ...composerDraftsByChatId.value };
+      delete nextComposerDraftsByChatId[normalizedChatId];
+      composerDraftsByChatId.value = nextComposerDraftsByChatId;
 
       if (selectedChatId.value === normalizedChatId) {
         selectedChatId.value = resolveDefaultSelectedChatId(nextChats);
@@ -978,6 +982,57 @@ export const useChatStore = defineStore('chatStore', () => {
 
   function setSearchQuery(query: string): void {
     searchQuery.value = query;
+  }
+
+  function getComposerDraft(chatId: string | null | undefined): string {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return '';
+    }
+
+    const storedDraft = composerDraftsByChatId.value[normalizedChatId];
+    return typeof storedDraft === 'string' ? storedDraft : '';
+  }
+
+  function setComposerDraft(chatId: string | null | undefined, draft: string): void {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    if (!normalizedChatId) {
+      return;
+    }
+
+    const normalizedDraft = typeof draft === 'string' ? draft : '';
+    const currentDraft = composerDraftsByChatId.value[normalizedChatId] ?? '';
+    if (currentDraft === normalizedDraft) {
+      return;
+    }
+
+    if (!normalizedDraft) {
+      if (!(normalizedChatId in composerDraftsByChatId.value)) {
+        return;
+      }
+
+      const nextComposerDraftsByChatId = { ...composerDraftsByChatId.value };
+      delete nextComposerDraftsByChatId[normalizedChatId];
+      composerDraftsByChatId.value = nextComposerDraftsByChatId;
+      return;
+    }
+
+    composerDraftsByChatId.value = {
+      ...composerDraftsByChatId.value,
+      [normalizedChatId]: normalizedDraft
+    };
+  }
+
+  function clearComposerDraft(chatId: string | null | undefined): void {
+    setComposerDraft(chatId, '');
+  }
+
+  function clearAllComposerDrafts(): void {
+    if (Object.keys(composerDraftsByChatId.value).length === 0) {
+      return;
+    }
+
+    composerDraftsByChatId.value = {};
   }
 
   async function updateChatPreview(chatId: string, text: string, at: string): Promise<void> {
@@ -1276,6 +1331,7 @@ export const useChatStore = defineStore('chatStore', () => {
     requestCount,
     isLoaded,
     searchQuery,
+    composerDraftsByChatId,
     selectedChat,
     selectedChatId,
     visibleChatId,
@@ -1291,6 +1347,10 @@ export const useChatStore = defineStore('chatStore', () => {
     selectChat,
     setVisibleChatId,
     setSearchQuery,
+    getComposerDraft,
+    setComposerDraft,
+    clearComposerDraft,
+    clearAllComposerDrafts,
     updateChatPreview,
     setLastSeenReceivedActivityAt,
     setUnreadCount,

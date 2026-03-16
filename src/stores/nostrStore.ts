@@ -6308,6 +6308,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     postPrivateMessagesEoseChecksQueue = Promise.resolve();
     clearStoredPrivateMessagesLastReceivedCreatedAt();
     clearPrivateMessagesBackfillState();
+    chatStore.clearAllComposerDrafts();
     bumpDeveloperDiagnosticsVersion();
 
     if (!hasStorage()) {
