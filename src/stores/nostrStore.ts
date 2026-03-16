@@ -6671,6 +6671,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       console.log('Starting private messages live subscription', {
         signature,
         since: filterSince,
+        sinceIso: toOptionalIsoTimestampFromUnix(filterSince),
         relayCount: relayUrls.length
       });
 
@@ -7718,7 +7719,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     bumpDeveloperDiagnosticsVersion();
   }
 
-  async function restartPrivateMessagesDiagnosticsSubscription(
+  async function refreshPrivateMessages(
     options: {
       lookbackMinutes?: number;
     } = {}
@@ -7727,15 +7728,30 @@ export const useNostrStore = defineStore('nostrStore', () => {
       typeof options.lookbackMinutes === 'number' && Number.isFinite(options.lookbackMinutes)
         ? Math.max(1, Math.floor(options.lookbackMinutes))
         : 0;
+    const sinceOverride =
+      lookbackMinutes > 0
+        ? Math.max(0, Math.floor(Date.now() / 1000) - lookbackMinutes * 60)
+        : undefined;
+
+    console.log('Refreshing private messages', {
+      lookbackMinutes,
+      sinceOverride: sinceOverride ?? null,
+      sinceOverrideIso: toOptionalIsoTimestampFromUnix(sinceOverride ?? null)
+    });
 
     await subscribePrivateMessagesForLoggedInUser(true, {
       restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-      sinceOverride:
-        lookbackMinutes > 0
-          ? Math.max(0, Math.floor(Date.now() / 1000) - lookbackMinutes * 60)
-          : undefined
+      sinceOverride
     });
     bumpDeveloperDiagnosticsVersion();
+  }
+
+  async function restartPrivateMessagesDiagnosticsSubscription(
+    options: {
+      lookbackMinutes?: number;
+    } = {}
+  ): Promise<void> {
+    await refreshPrivateMessages(options);
   }
 
   return {
@@ -7755,6 +7771,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getLoggedInPublicKeyHex,
     getPrivateKeyHex,
     refreshDeveloperPendingQueues,
+    refreshPrivateMessages,
     getRelayConnectionState,
     isRestoringStartupState,
     listDeveloperTraceEntries,

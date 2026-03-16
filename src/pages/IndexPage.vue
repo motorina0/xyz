@@ -9,16 +9,36 @@
         <div class="sidebar-top">
           <div class="sidebar-top__row">
             <div class="sidebar-top__title">Chats</div>
-            <q-btn
+            <q-btn-dropdown
               flat
               dense
-              round
               icon="refresh"
+              dropdown-icon="arrow_drop_down"
               color="primary"
               class="sidebar-top__action"
               aria-label="Refresh Chats"
-              @click="handleRefreshChats"
-            />
+            >
+              <q-list separator>
+                <q-item
+                  v-for="option in chatRefreshRangeOptions"
+                  :key="option.id"
+                  clickable
+                  v-close-popup
+                  @click="handleRefreshChatsForRange(option)"
+                >
+                  <q-item-section>
+                    <q-item-label>{{ option.label }}</q-item-label>
+                  </q-item-section>
+                  <q-item-section side>
+                    <q-icon
+                      v-if="option.id === selectedChatRefreshRangeId"
+                      name="check"
+                      size="18px"
+                    />
+                  </q-item-section>
+                </q-item>
+              </q-list>
+            </q-btn-dropdown>
           </div>
 
           <q-input
@@ -114,6 +134,43 @@ relayStore.init();
 const isMobile = computed(() => $q.screen.lt.md);
 const isRequestsDialogOpen = ref(false);
 const visibleViewportHeight = ref<number | null>(null);
+type ChatRefreshRangeId = 'last-24-hours' | 'last-2-days' | 'last-week' | 'last-month' | 'custom';
+
+interface ChatRefreshRangeOption {
+  id: ChatRefreshRangeId;
+  label: string;
+  lookbackMinutes: number | null;
+}
+
+const chatRefreshRangeOptions: ChatRefreshRangeOption[] = [
+  {
+    id: 'last-24-hours',
+    label: 'Last 24 hours',
+    lookbackMinutes: 24 * 60
+  },
+  {
+    id: 'last-2-days',
+    label: 'Last 2 days',
+    lookbackMinutes: 2 * 24 * 60
+  },
+  {
+    id: 'last-week',
+    label: 'Last week',
+    lookbackMinutes: 7 * 24 * 60
+  },
+  {
+    id: 'last-month',
+    label: 'Last month',
+    lookbackMinutes: 30 * 24 * 60
+  },
+  {
+    id: 'custom',
+    label: 'Custom',
+    lookbackMinutes: null
+  }
+];
+
+const selectedChatRefreshRangeId = ref<ChatRefreshRangeId>('last-24-hours');
 const activeChatId = computed(() => {
   const rawChatId = route.params.pubkey;
   if (Array.isArray(rawChatId)) {
@@ -351,8 +408,19 @@ async function handleRefreshChatProfile(chatId: string): Promise<void> {
   }
 }
 
-async function refreshChats(chatId = ''): Promise<void> {
-  await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
+async function refreshChats(
+  chatId = '',
+  options: {
+    lookbackMinutes?: number;
+  } = {}
+): Promise<void> {
+  if (typeof options.lookbackMinutes === 'number' && Number.isFinite(options.lookbackMinutes)) {
+    await nostrStore.refreshPrivateMessages({
+      lookbackMinutes: options.lookbackMinutes
+    });
+  } else {
+    await nostrStore.subscribePrivateMessagesForLoggedInUser(true);
+  }
   await chatStore.reload();
 
   const targetChatId = chatId.trim() || activeChatId.value;
@@ -376,11 +444,28 @@ async function handleRefreshChat(chatId: string): Promise<void> {
   }
 }
 
-async function handleRefreshChats(): Promise<void> {
+async function handleRefreshChatsForRange(option: ChatRefreshRangeOption): Promise<void> {
+  if (option.id === 'custom' || option.lookbackMinutes === null) {
+    $q.notify({
+      type: 'info',
+      message: 'Custom chat refresh range is not implemented yet.',
+      position: 'top-right'
+    });
+    return;
+  }
+
   try {
-    await refreshChats();
+    selectedChatRefreshRangeId.value = option.id;
+    await refreshChats('', {
+      lookbackMinutes: option.lookbackMinutes
+    });
+    $q.notify({
+      type: 'positive',
+      message: `Chat refresh started for ${option.label.toLowerCase()}.`,
+      position: 'top-right'
+    });
   } catch (error) {
-    reportUiError('Failed to refresh chats', error, 'Failed to refresh chats.');
+    reportUiError('Failed to refresh chats for selected range', error, 'Failed to refresh chats.');
   }
 }
 
