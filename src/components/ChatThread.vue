@@ -479,10 +479,13 @@ async function scrollToBottom(): Promise<void> {
     const latestMessage = latestMessageId.value;
     const latestEntry = latestMessage ? findThreadMessageEntry(latestMessage) : null;
     if (latestEntry) {
-      latestEntry.scrollIntoView({
-        behavior: 'auto',
-        block: 'end'
-      });
+      const latestEntryTop = latestEntry.offsetTop;
+      const latestEntryHeight = latestEntry.offsetHeight;
+      const targetScrollTop = Math.max(
+        0,
+        latestEntryTop + latestEntryHeight - threadBody.clientHeight + 16
+      );
+      threadBody.scrollTop = targetScrollTop;
       return;
     }
 

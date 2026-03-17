@@ -97,8 +97,8 @@
         color="primary"
         icon="send"
         class="composer__send"
-        @pointerdown.prevent="handleSendPointerDown"
-        @click="handleSend"
+        @touchstart.prevent.stop="handleSendTouchStart"
+        @click="handleSendClick"
       />
     </div>
   </div>
@@ -128,6 +128,7 @@ const shouldRefocusAfterEmojiMenuHide = ref(false);
 const activeEmojiAutocompleteIndex = ref(0);
 const dismissedEmojiAutocompleteToken = ref('');
 const MAX_EMOJI_AUTOCOMPLETE_RESULTS = 8;
+let suppressNextSendClick = false;
 
 const emit = defineEmits<{
   (event: 'send', payload: { text: string }): void;
@@ -351,7 +352,7 @@ function handleEnterKey(event: KeyboardEvent): void {
   }
 
   event.preventDefault();
-  handleSend();
+  submitDraft();
 }
 
 function handleAutocompleteArrowDown(event: KeyboardEvent): void {
@@ -409,15 +410,27 @@ function shouldKeepKeyboardOpenAfterSend(): boolean {
   return window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
 }
 
-function handleSendPointerDown(): void {
+function handleSendTouchStart(event: TouchEvent): void {
   if (!shouldKeepKeyboardOpenAfterSend()) {
     return;
   }
 
-  rememberSelection();
+  event.preventDefault();
+  event.stopPropagation();
+  suppressNextSendClick = true;
+  submitDraft();
 }
 
-function handleSend(): void {
+function handleSendClick(): void {
+  if (suppressNextSendClick) {
+    suppressNextSendClick = false;
+    return;
+  }
+
+  submitDraft();
+}
+
+function submitDraft(): void {
   try {
     const cleanText = draft.value.trim();
 
@@ -429,10 +442,6 @@ function handleSend(): void {
     setDraftValue('');
     selectionStart.value = 0;
     selectionEnd.value = 0;
-
-    if (shouldKeepKeyboardOpenAfterSend()) {
-      focusInputAt(0);
-    }
   } catch (error) {
     reportUiError('Failed to submit message input', error);
   }
