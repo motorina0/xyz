@@ -67,7 +67,7 @@ function goBack(): void {
   padding: 12px 14px;
   border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .settings-detail-layout__title {

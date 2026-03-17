@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap');
-
 :root {
   --tg-bg: #7fd6ec;
   --tg-panel-opacity: 75;
@@ -29,6 +27,7 @@
     radial-gradient(circle at 50% 108%, rgba(215, 250, 255, 0.94) 0, rgba(143, 227, 246, 0.48) 25%, transparent 57%),
     radial-gradient(circle at 50% 44%, rgba(22, 122, 194, 0.28) 0, rgba(22, 122, 194, 0.1) 24%, transparent 46%),
     linear-gradient(180deg, #423f97 0%, #3251a1 24%, #166fa9 56%, #1f8fbc 78%, #7dd7ed 100%);
+  --tg-app-background-mobile: linear-gradient(180deg, #423f97 0%, #3251a1 28%, #166fa9 64%, #7dd7ed 100%);
   --tg-sidebar: #fdfefe;
   --tg-thread-bg: linear-gradient(155deg, #eef6ff 0%, #f9fcff 54%, #edf9f2 100%);
   --tg-sent: #dcf9d1;
@@ -87,6 +86,10 @@
   --tg-reaction-accent-icon-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.3),
     0 4px 10px rgba(240, 98, 138, 0.28);
+  --tg-glass-blur: 10px;
+  --tg-glass-blur-soft: 7px;
+  --tg-glass-blur-overlay: 8px;
+  --tg-glass-blur-strong: 14px;
 }
 
 body.body--dark {
@@ -116,6 +119,7 @@ body.body--dark {
     radial-gradient(circle at 50% 106%, rgba(149, 232, 248, 0.38) 0, rgba(82, 183, 217, 0.2) 26%, transparent 58%),
     radial-gradient(circle at 50% 42%, rgba(24, 110, 186, 0.22) 0, rgba(24, 110, 186, 0.08) 24%, transparent 44%),
     linear-gradient(180deg, #2d317a 0%, #244785 24%, #165f8e 56%, #18739b 78%, #449dbc 100%);
+  --tg-app-background-mobile: linear-gradient(180deg, #2d317a 0%, #244785 28%, #165f8e 64%, #449dbc 100%);
   --tg-sidebar: #151d2d;
   --tg-thread-bg: linear-gradient(165deg, #101a2d 0%, #0d1526 52%, #132230 100%);
   --tg-sent: #175e52;
@@ -180,6 +184,20 @@ body {
   letter-spacing: 0.01em;
   background: var(--tg-app-background);
   background-attachment: fixed;
+}
+
+@media (max-width: 1023px), (pointer: coarse) {
+  :root {
+    --tg-glass-blur: 0px;
+    --tg-glass-blur-soft: 0px;
+    --tg-glass-blur-overlay: 0px;
+    --tg-glass-blur-strong: 0px;
+  }
+
+  body {
+    background: var(--tg-app-background-mobile);
+    background-attachment: scroll;
+  }
 }
 
 body.body--dark {
@@ -301,7 +319,7 @@ body.body--dark {
       color-mix(in srgb, var(--tg-sidebar) 97%, #e8f1ff 3%)
     );
   box-shadow: 0 16px 34px rgba(22, 57, 102, 0.22);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .tg-pop-menu__list {

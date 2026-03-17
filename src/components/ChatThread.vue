@@ -1066,7 +1066,7 @@ onBeforeUnmount(() => {
   padding: 10px 14px;
   border-bottom: 1px solid var(--tg-border);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .thread-header__identity {
@@ -1243,7 +1243,7 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   font-weight: 700;
   letter-spacing: 0.02em;
   color: color-mix(in srgb, var(--q-primary) 40%, var(--tg-text) 60%);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .thread-day-separator {

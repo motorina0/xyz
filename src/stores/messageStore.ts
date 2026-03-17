@@ -6,8 +6,6 @@ import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useChatStore } from 'src/stores/chatStore';
-import { useNostrStore } from 'src/stores/nostrStore';
-import { useRelayStore } from 'src/stores/relayStore';
 import type {
   DeletedMessageMetadata,
   Message,
@@ -29,6 +27,11 @@ type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[numbe
 interface RelaySendOptions {
   relayUrls?: string[];
 }
+
+type NostrStoreModule = typeof import('src/stores/nostrStore');
+type NostrStore = ReturnType<NostrStoreModule['useNostrStore']>;
+type RelayStoreModule = typeof import('src/stores/relayStore');
+type RelayStore = ReturnType<RelayStoreModule['useRelayStore']>;
 
 export class MissingContactRelaysError extends Error {
   readonly code = 'missing-contact-relays';
@@ -132,11 +135,12 @@ function mapMessageRowToMessage(
 
 export const useMessageStore = defineStore('messageStore', () => {
   const chatStore = useChatStore();
-  const nostrStore = useNostrStore();
   const messagesByChat = ref<Record<string, Message[]>>({});
   const loadedChatIds = new Set<string>();
   const loadingChatPromises = new Map<string, Promise<void>>();
   const unseenReactionSyncPromises = new Map<string, Promise<number>>();
+  let nostrStorePromise: Promise<NostrStore> | null = null;
+  let relayStorePromise: Promise<RelayStore> | null = null;
 
   function compareMessages(first: Message, second: Message): number {
     const firstTimestamp = new Date(first.sentAt).getTime();
@@ -170,6 +174,26 @@ export const useMessageStore = defineStore('messageStore', () => {
 
   async function init(): Promise<void> {
     await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
+  }
+
+  async function getNostrStore(): Promise<NostrStore> {
+    if (!nostrStorePromise) {
+      nostrStorePromise = import('src/stores/nostrStore').then(({ useNostrStore }) => useNostrStore());
+    }
+
+    return nostrStorePromise;
+  }
+
+  async function getRelayStore(): Promise<RelayStore> {
+    if (!relayStorePromise) {
+      relayStorePromise = import('src/stores/relayStore').then(({ useRelayStore }) => {
+        const relayStore = useRelayStore();
+        relayStore.init();
+        return relayStore;
+      });
+    }
+
+    return relayStorePromise;
   }
 
   async function hydrateMessageRows(rows: MessageRow[], chatId: string): Promise<Message[]> {
@@ -336,9 +360,8 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
   }
 
-  function resolveAppRelayUrls(): string[] {
-    const relayStore = useRelayStore();
-    relayStore.init();
+  async function resolveAppRelayUrls(): Promise<string[]> {
+    const relayStore = await getRelayStore();
     return inputSanitizerService.normalizeStringArray(relayStore.relays);
   }
 
@@ -346,7 +369,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     await contactsService.init();
     const contact = await contactsService.getContactByPublicKey(chatPublicKey);
     const contactRelayUrls = resolvePreferredContactRelayUrls(contact?.relays);
-    const appRelayUrls = contact?.sendMessagesToAppRelays ? resolveAppRelayUrls() : [];
+    const appRelayUrls = contact?.sendMessagesToAppRelays ? await resolveAppRelayUrls() : [];
     return inputSanitizerService.normalizeStringArray([...contactRelayUrls, ...appRelayUrls]);
   }
 
@@ -536,6 +559,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     let sendError: unknown = null;
 
     try {
+      const nostrStore = await getNostrStore();
       await nostrStore.sendDirectMessage(
         chat.public_key,
         newMessage.text,
@@ -561,6 +585,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     try {
+      const nostrStore = await getNostrStore();
       await nostrStore.ensureRespondedPubkeyIsContact(chat.public_key, chat.name);
     } catch (error) {
       console.warn('Failed to add responded pubkey to contacts', chat.public_key, error);
@@ -691,6 +716,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const createdAt = new Date().toISOString();
+    const nostrStore = await getNostrStore();
 
     const publishedReactionEvent = await nostrStore.sendDirectMessageReaction(
       reactionRecipientPublicKey,
@@ -789,6 +815,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return updatedMessage;
     }
 
+    const nostrStore = await getNostrStore();
     await nostrStore.sendDirectMessageDeletion(
       reactionDeletionRecipientPublicKey,
       reactionEventId,
@@ -862,6 +889,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return updatedMessage;
     }
 
+    const nostrStore = await getNostrStore();
     const deleteEvent = await nostrStore.sendDirectMessageDeletion(
       deletionRecipientPublicKey,
       existingRow.event_id,

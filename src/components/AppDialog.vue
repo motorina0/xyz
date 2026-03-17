@@ -107,7 +107,7 @@ function closeDialog(): void {
 
 .app-dialog-root :deep(.q-dialog__backdrop) {
   background: rgba(9, 17, 31, 0.48);
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(var(--tg-glass-blur-overlay));
 }
 
 .app-dialog {

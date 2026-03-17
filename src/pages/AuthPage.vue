@@ -255,7 +255,7 @@ async function goToRegister(): Promise<void> {
   overflow: hidden;
   background: var(--tg-panel-sidebar-bg);
   box-shadow: var(--tg-shadow-sm);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .auth-card__header {

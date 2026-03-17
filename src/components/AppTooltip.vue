@@ -48,7 +48,7 @@ withDefaults(defineProps<Props>(), {
   box-shadow:
     0 10px 26px rgba(7, 23, 48, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(7px);
+  backdrop-filter: blur(var(--tg-glass-blur-soft));
 }
 
 body.body--dark .app-tooltip {

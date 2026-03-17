@@ -250,7 +250,7 @@ async function handleConfirmLogout(): Promise<void> {
   padding: 13px;
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .settings-sidebar__title {

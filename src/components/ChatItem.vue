@@ -76,7 +76,6 @@
 import { computed } from 'vue';
 import type { Chat } from 'src/types/chat';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
-import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = defineProps<{
@@ -93,8 +92,6 @@ const emit = defineEmits<{
   (event: 'mark-as-read', chatId: string): void;
   (event: 'delete-chat', chatId: string): void;
 }>();
-
-const nostrStore = useNostrStore();
 
 function readMetaString(key: string): string {
   const value = props.chat.meta[key];
@@ -115,6 +112,14 @@ function chatPubkeySnippet(value: string): string {
   return value.trim().slice(0, 32);
 }
 
+function getLoggedInPubkey(): string {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  return window.localStorage.getItem('npub')?.trim().toLowerCase() ?? '';
+}
+
 const formattedTime = computed(() => {
   return new Intl.DateTimeFormat('en-US', {
     hour: 'numeric',
@@ -123,7 +128,7 @@ const formattedTime = computed(() => {
 });
 
 const chatTitle = computed(() => {
-  const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex();
+  const loggedInPubkey = getLoggedInPubkey();
   if (loggedInPubkey && props.chat.publicKey.trim().toLowerCase() === loggedInPubkey) {
     return 'My Self';
   }

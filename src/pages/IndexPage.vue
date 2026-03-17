@@ -116,34 +116,34 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
-import AppStatus from 'src/components/AppStatus.vue';
-import AppNavRail from 'src/components/AppNavRail.vue';
 import ChatList from 'src/components/ChatList.vue';
-import ChatRequestsDialog from 'src/components/ChatRequestsDialog.vue';
-import ChatThread from 'src/components/ChatThread.vue';
 import { useChatStore } from 'src/stores/chatStore';
 import {
   isMissingContactRelaysError,
   useMessageStore
 } from 'src/stores/messageStore';
-import { useNostrStore } from 'src/stores/nostrStore';
-import { useRelayStore } from 'src/stores/relayStore';
 import type { Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
 import { resolveContactAppRelayFallback } from 'src/utils/messageRelayFallback';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+
+const AppStatus = defineAsyncComponent(() => import('src/components/AppStatus.vue'));
+const AppNavRail = defineAsyncComponent(() => import('src/components/AppNavRail.vue'));
+const ChatRequestsDialog = defineAsyncComponent(() => import('src/components/ChatRequestsDialog.vue'));
+const ChatThread = defineAsyncComponent(() => import('src/components/ChatThread.vue'));
+
+type NostrStoreModule = typeof import('src/stores/nostrStore');
+type NostrStore = ReturnType<NostrStoreModule['useNostrStore']>;
+type RelayStoreModule = typeof import('src/stores/relayStore');
+type RelayStore = ReturnType<RelayStoreModule['useRelayStore']>;
 
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
-const nostrStore = useNostrStore();
-const relayStore = useRelayStore();
-
-relayStore.init();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const isRequestsDialogOpen = ref(false);
@@ -209,7 +209,7 @@ const selectedChatId = computed(() => {
 const isMobileThreadOpen = computed(() => isMobile.value && Boolean(activeChatId.value));
 const chatIdSignature = computed(() => chatStore.chats.map((chat) => chat.id).join('|'));
 const isThreadInitializing = computed(() => {
-  return !chatStore.isLoaded || nostrStore.isRestoringStartupState;
+  return !chatStore.isLoaded;
 });
 
 const currentMessages = computed(() => {
@@ -220,6 +220,8 @@ const searchQuery = computed({
   get: () => chatStore.searchQuery,
   set: (value: string | null) => chatStore.setSearchQuery(typeof value === 'string' ? value : '')
 });
+let nostrStorePromise: Promise<NostrStore> | null = null;
+let relayStorePromise: Promise<RelayStore> | null = null;
 
 function getVisibleViewportHeight(fallbackHeight: number): number {
   if (typeof window === 'undefined') {
@@ -231,6 +233,26 @@ function getVisibleViewportHeight(fallbackHeight: number): number {
 
 function updateVisibleViewportHeight(): void {
   visibleViewportHeight.value = getVisibleViewportHeight($q.screen.height);
+}
+
+async function getNostrStore(): Promise<NostrStore> {
+  if (!nostrStorePromise) {
+    nostrStorePromise = import('src/stores/nostrStore').then(({ useNostrStore }) => useNostrStore());
+  }
+
+  return nostrStorePromise;
+}
+
+async function getRelayStore(): Promise<RelayStore> {
+  if (!relayStorePromise) {
+    relayStorePromise = import('src/stores/relayStore').then(({ useRelayStore }) => {
+      const relayStore = useRelayStore();
+      relayStore.init();
+      return relayStore;
+    });
+  }
+
+  return relayStorePromise;
 }
 
 function homePageStyleFn(offset: number, height: number): Record<string, string> {
@@ -279,6 +301,8 @@ function handleOpenRequestChat(chatId: string): void {
 }
 
 async function resolveFallbackRelayUrls(chatPublicKey: string): Promise<string[] | null> {
+  const relayStore = await getRelayStore();
+
   return resolveContactAppRelayFallback($q, chatPublicKey, relayStore.relays, {
     fallbackName: activeChat.value?.name ?? ''
   });
@@ -416,6 +440,7 @@ async function handleRefreshChatProfile(chatId: string): Promise<void> {
       return;
     }
 
+    const nostrStore = await getNostrStore();
     await nostrStore.refreshContactByPublicKey(chat.publicKey, chat.name);
   } catch (error) {
     reportUiError('Failed to refresh chat contact profile', error, 'Failed to refresh profile.');
@@ -428,6 +453,8 @@ async function refreshChats(
     lookbackMinutes?: number;
   } = {}
 ): Promise<void> {
+  const nostrStore = await getNostrStore();
+
   if (typeof options.lookbackMinutes === 'number' && Number.isFinite(options.lookbackMinutes)) {
     await nostrStore.refreshPrivateMessages({
       lookbackMinutes: options.lookbackMinutes
@@ -492,6 +519,7 @@ async function handleAcceptRequest(chatId: string): Promise<void> {
     }
 
     try {
+      const nostrStore = await getNostrStore();
       await nostrStore.ensureRespondedPubkeyIsContact(chat.publicKey, chat.name);
     } catch (error) {
       console.warn('Failed to add accepted chat to contacts', chat.publicKey, error);
@@ -566,7 +594,7 @@ function handleBackToChatList(): void {
 
 async function syncChatRoute(): Promise<void> {
   try {
-    await Promise.all([chatStore.init(), messageStore.init()]);
+    await chatStore.init();
 
     const chatId = activeChatId.value;
     if (!chatId) {
@@ -600,6 +628,7 @@ async function syncChatRoute(): Promise<void> {
       chatStore.selectChat(chatId);
     }
 
+    await messageStore.init();
     await messageStore.loadMessages(chatId);
   } catch (error) {
     reportUiError('Failed to synchronize chat route', error);
@@ -683,7 +712,7 @@ onBeforeUnmount(() => {
   padding: 13px;
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .sidebar-top__row {

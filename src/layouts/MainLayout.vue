@@ -70,8 +70,6 @@ import {
   loadSettingsPage
 } from 'src/router/pageLoaders';
 import { useChatStore } from 'src/stores/chatStore';
-import { useRelayStore } from 'src/stores/relayStore';
-import { useNostrStore } from 'src/stores/nostrStore';
 import {
   applyPanelOpacityPreference,
   readPanelOpacityPreference,
@@ -83,8 +81,6 @@ const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
-const relayStore = useRelayStore();
-const nostrStore = useNostrStore();
 const savedDarkMode = readDarkModePreference();
 const savedPanelOpacity = readPanelOpacityPreference();
 const isMobile = computed(() => $q.screen.lt.md);
@@ -162,30 +158,56 @@ watch(
 const removeAfterEachHook = router.afterEach(() => {
   pendingMobileSection.value = null;
 });
+let mobilePreloadTimeoutId: number | null = null;
+let startupRestoreFrameId: number | null = null;
 
 if (savedDarkMode !== null) {
   $q.dark.set(savedDarkMode);
 }
 
 applyPanelOpacityPreference(savedPanelOpacity);
-relayStore.init();
-void nostrStore.restoreStartupState(relayStore.relays).catch((error) => {
-  console.error('Failed to restore app state on startup', error);
-});
 
 onMounted(() => {
+  startupRestoreFrameId = window.requestAnimationFrame(() => {
+    startupRestoreFrameId = null;
+    void restoreStartupState();
+  });
+
   if (!isMobile.value) {
     return;
   }
 
-  window.setTimeout(() => {
+  mobilePreloadTimeoutId = window.setTimeout(() => {
+    mobilePreloadTimeoutId = null;
     void preloadMobileSections();
-  }, 0);
+  }, 900);
 });
 
 onBeforeUnmount(() => {
   removeAfterEachHook();
+
+  if (mobilePreloadTimeoutId !== null) {
+    window.clearTimeout(mobilePreloadTimeoutId);
+  }
+
+  if (startupRestoreFrameId !== null) {
+    window.cancelAnimationFrame(startupRestoreFrameId);
+  }
 });
+
+async function restoreStartupState(): Promise<void> {
+  try {
+    const [{ useNostrStore }, { useRelayStore }] = await Promise.all([
+      import('src/stores/nostrStore'),
+      import('src/stores/relayStore')
+    ]);
+    const relayStore = useRelayStore();
+    relayStore.init();
+    await useNostrStore().restoreStartupState(relayStore.relays);
+  } catch (error) {
+    console.error('Failed to restore app state on startup', error);
+  }
+}
 
 async function preloadMobileSections(): Promise<void> {
   const sections = Object.entries(routeLoaders)
@@ -257,7 +279,7 @@ function goToSection(section: NavigationSection): void {
     linear-gradient(180deg, color-mix(in srgb, var(--tg-sidebar) 78%, transparent), var(--tg-sidebar));
   border-top: 1px solid color-mix(in srgb, var(--tg-border) 84%, #6b7d96 16%);
   padding-bottom: env(safe-area-inset-bottom);
-  backdrop-filter: blur(14px);
+  backdrop-filter: blur(var(--tg-glass-blur-strong));
 }
 
 .mobile-nav__inner {

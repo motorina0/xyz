@@ -982,7 +982,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   padding: 10px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .contacts-detail-mobile-header__title {
@@ -1006,7 +1006,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   padding: 13px;
   border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
   background: var(--tg-panel-header-bg);
-  backdrop-filter: blur(10px);
+  backdrop-filter: blur(var(--tg-glass-blur));
 }
 
 .contacts-sidebar__row {
