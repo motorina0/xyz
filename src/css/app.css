@@ -1,3 +1,19 @@
+@font-face {
+  font-family: 'Manrope';
+  src: url('/fonts/Manrope-latin-variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Space Grotesk';
+  src: url('/fonts/SpaceGrotesk-latin-variable.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+}
+
 :root {
   --tg-bg: #7fd6ec;
   --tg-panel-opacity: 75;

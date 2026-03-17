@@ -201,6 +201,7 @@ let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
 let visibleReactionSyncFrameId: number | null = null;
 let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
+let pendingSentMessageReveal = false;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 
 type ThreadItem =
@@ -469,9 +470,32 @@ async function refreshContactRelayUrls(chatPublicKey: string | null): Promise<vo
 async function scrollToBottom(): Promise<void> {
   await nextTick();
 
-  if (threadBodyRef.value) {
-    threadBodyRef.value.scrollTop = threadBodyRef.value.scrollHeight;
-  }
+  const revealLatestMessage = (): void => {
+    const threadBody = threadBodyRef.value;
+    if (!threadBody) {
+      return;
+    }
+
+    const latestMessage = latestMessageId.value;
+    const latestEntry = latestMessage ? findThreadMessageEntry(latestMessage) : null;
+    if (latestEntry) {
+      latestEntry.scrollIntoView({
+        behavior: 'auto',
+        block: 'end'
+      });
+      return;
+    }
+
+    threadBody.scrollTop = threadBody.scrollHeight;
+  };
+
+  revealLatestMessage();
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => {
+      revealLatestMessage();
+      resolve();
+    });
+  });
 
   isThreadScrolledUp.value = false;
   lastReadMessageId.value = latestMessageId.value;
@@ -558,6 +582,7 @@ function handleBack(): void {
 
 function handleSend(payload: { text: string }): void {
   try {
+    pendingSentMessageReveal = true;
     emit('send', {
       text: payload.text,
       replyTo: activeReply.value
@@ -975,6 +1000,7 @@ watch(
   (chatId) => {
     activeReply.value = null;
     clearReplyTargetHighlight();
+    pendingSentMessageReveal = false;
     pendingInitialPositionChatId.value = chatId;
     openedUnreadBoundaryAt.value =
       chatId && props.chat
@@ -1007,6 +1033,12 @@ watch(
     }
 
     if (nextLength === previousLength) {
+      return;
+    }
+
+    if (pendingSentMessageReveal) {
+      pendingSentMessageReveal = false;
+      void scrollToBottom();
       return;
     }
 
@@ -1309,7 +1341,8 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
 }
 
 .thread-message-entry {
-  scroll-margin-block: 88px;
+  scroll-margin-top: 88px;
+  scroll-margin-bottom: 16px;
 }
 
 .thread-message-entry--target :deep(.bubble) {

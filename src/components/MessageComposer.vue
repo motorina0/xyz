@@ -93,7 +93,13 @@
         </template>
       </q-input>
 
-      <q-btn color="primary" icon="send" class="composer__send" @click="handleSend" />
+      <q-btn
+        color="primary"
+        icon="send"
+        class="composer__send"
+        @pointerdown.prevent="handleSendPointerDown"
+        @click="handleSend"
+      />
     </div>
   </div>
 </template>
@@ -395,6 +401,22 @@ function handleAutocompleteEscape(event: KeyboardEvent): void {
   dismissedEmojiAutocompleteToken.value = `${match.start}:${match.query}`;
 }
 
+function shouldKeepKeyboardOpenAfterSend(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  return window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+}
+
+function handleSendPointerDown(): void {
+  if (!shouldKeepKeyboardOpenAfterSend()) {
+    return;
+  }
+
+  rememberSelection();
+}
+
 function handleSend(): void {
   try {
     const cleanText = draft.value.trim();
@@ -407,6 +429,10 @@ function handleSend(): void {
     setDraftValue('');
     selectionStart.value = 0;
     selectionEnd.value = 0;
+
+    if (shouldKeepKeyboardOpenAfterSend()) {
+      focusInputAt(0);
+    }
   } catch (error) {
     reportUiError('Failed to submit message input', error);
   }
