@@ -8,7 +8,7 @@ Tiny Groups
 
 This NIP defines a small, owner-managed private group messaging scheme built on top of NIP-17. A tiny group is represented by a stable group identity keypair and a rotating chat-session keypair shared by the current members.
 
-Tiny groups are designed for small conversations in which one party controls membership. They do not attempt to prevent members from leaking messages after receiving them.
+Tiny groups are designed for small conversations in which one party controls membership.
 
 ## Terms
 
@@ -41,7 +41,7 @@ Clients MUST ignore any message whose effective sender pubkey is equal to a know
 
 ## Kind `1014`: Group Session Invitation
 
-`kind:1014` is a regular event signed by the group identity key. It assigns the current chat-session private key to exactly one member.
+`kind:1014` is a regular event signed by the group identity key. Each invitation targets exactly one member and conveys the current chat-session private key.
 
 The event has the following form:
 
