@@ -1,14 +1,14 @@
 NIP-171
 =======
 
-Tiny Groups
+Owner-Managed Private Groups
 -----------
 
 `draft` `optional` `client`
 
-This NIP defines a small, owner-managed private group messaging scheme built on top of NIP-17. A tiny group is represented by a stable group identity keypair and a rotating epoch keypair shared by the current members.
+This NIP defines a private group messaging scheme with owner-managed membership, built on top of NIP-17. A managed group is represented by a stable group identity keypair and a rotating epoch keypair shared by the current members.
 
-Tiny groups are designed for small conversations in which one party controls membership.
+Managed groups are designed for conversations in which one party controls membership.
 
 ## Terms
 
@@ -23,7 +23,7 @@ Control of the group identity private key is the only authority required by this
 
 ## Group Identity
 
-Each tiny group has exactly one group identity and exactly one current group epoch.
+Each managed group has exactly one group identity and exactly one current group epoch.
 
 The group identity:
 
@@ -155,7 +155,7 @@ Relays that already protect access to `kind:1059` events SHOULD apply the same p
 
 ## Security and Limitations
 
-- Tiny groups are intentionally centralized around a single owner.
+- Managed groups are intentionally centralized around a single owner.
 - Any member can reveal messages they were able to decrypt while they were a member.
 - Membership changes only affect future epochs after rotation.
 - If the owner adds a member without rotating the epoch, that member may be able to read older messages still available on relays for that epoch.
