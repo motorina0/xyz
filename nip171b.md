@@ -8,7 +8,7 @@ Owner-Managed Private Groups
 
 This NIP defines a private group messaging scheme with owner-managed membership, built on top of NIP-17. A managed group is represented by a stable group identity keypair and a rotating epoch keypair shared by the current members.
 
-Managed groups are designed for conversations in which one party (the. group owner) controls membership.
+Managed groups are designed for conversations in which one party (the group owner) controls membership.
 
 ## Terms
 
@@ -160,6 +160,30 @@ When removing a member, the owner:
 
 Removing a member does not revoke messages already delivered to that member, nor does it prevent that member from revealing them later.
 
+## Membership Requests
+
+Users MAY send NIP-17 direct messages to the group identity public key to request membership changes.
+
+A join request:
+
+- MUST be sent to the group identity public key, not to the epoch public key.
+- MUST use NIP-17.
+- MUST use content exactly equal to `+`.
+
+A leave request:
+
+- MUST be sent to the group identity public key, not to the epoch public key.
+- MUST use NIP-17.
+- MUST use content exactly equal to `-`.
+
+These requests are advisory only:
+
+- a join request does not grant membership by itself.
+- a leave request does not remove the sender by itself.
+- only the group owner changes membership, by issuing or withholding a `kind:1014` epoch ticket and by rotating the epoch when removing a member.
+
+Clients MAY present these requests as explicit join or leave actions instead of ordinary chat messages.
+
 ## Relay Behavior
 
 This NIP does not require new relay-side semantics beyond NIP-17 and NIP-59.
@@ -172,4 +196,4 @@ Relays that already protect access to `kind:1059` events SHOULD apply the same p
 - Any member can reveal messages they were able to decrypt while they were a member.
 - Membership changes only affect future epochs after rotation.
 - If the owner adds a member without rotating the epoch, that member may be able to read older messages still available on relays for that epoch.
-- Join requests, voluntary leave, multi-owner groups, and delegation of membership control are out of scope for this NIP.
+- Multi-owner groups and delegation of membership control are out of scope for this NIP.
