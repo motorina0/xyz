@@ -180,6 +180,8 @@ When removing a member, the owner:
 
 Removing a member does not revoke messages already delivered to that member, nor does it prevent that member from revealing them later.
 
+If compromise of the current epoch key is suspected, the owner SHOULD immediately create a new epoch and redistribute epoch tickets to the intended members.
+
 ## Membership Requests
 
 Users MAY send NIP-17 direct messages to the group identity public key to request membership changes.
@@ -249,6 +251,7 @@ Relays that already protect access to `kind:1059` events SHOULD apply the same p
 ## Security and Limitations
 
 - Ticketed groups are intentionally centralized around a single owner.
+- Any current member can delegate live read access to outsiders by leaking their current epoch ticket. An outsider with that ticket can decrypt group messages until the epoch is rotated.
 - Any member can reveal messages they were able to decrypt while they were a member.
 - Membership changes only affect future epochs after rotation.
 - If the owner adds a member without rotating the epoch, that member may be able to read older messages still available on relays for that epoch.
