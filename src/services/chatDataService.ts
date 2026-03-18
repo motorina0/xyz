@@ -1,8 +1,10 @@
 import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
+import type { ChatType } from 'src/types/chat';
 
 export interface ChatRow {
   id: string;
   public_key: string;
+  type: ChatType;
   name: string;
   last_message: string;
   last_message_at: string | null;
@@ -22,6 +24,7 @@ export interface MessageRow {
 
 export interface CreateChatInput {
   public_key: string;
+  type?: ChatType;
   name: string;
   last_message?: string;
   last_message_at?: string | null;
@@ -30,6 +33,7 @@ export interface CreateChatInput {
 }
 
 export interface UpdateChatInput {
+  type?: ChatType;
   name?: string;
   meta?: Record<string, unknown>;
 }
@@ -45,6 +49,7 @@ export interface CreateMessageInput {
 
 interface ChatRecord {
   public_key: string;
+  type: ChatType;
   name: string;
   last_message: string;
   last_message_at: string | null;
@@ -106,6 +111,10 @@ function normalizeUnreadCount(value: unknown): number {
   }
 
   return Math.max(0, Math.floor(numeric));
+}
+
+function normalizeChatType(value: unknown): ChatType {
+  return value === 'group' ? 'group' : 'user';
 }
 
 function normalizeEventId(value: unknown): string | null {
@@ -175,6 +184,7 @@ function toChatRow(record: ChatRecord): ChatRow {
   return {
     id: record.public_key,
     public_key: record.public_key,
+    type: normalizeChatType(record.type),
     name: record.name,
     last_message: record.last_message,
     last_message_at: record.last_message_at,
@@ -290,6 +300,7 @@ class ChatDataService {
 
     const record: ChatRecord = {
       public_key: publicKey,
+      type: normalizeChatType(input.type),
       name,
       last_message: input.last_message?.trim() ?? '',
       last_message_at: toIsoTimestamp(input.last_message_at),
@@ -345,6 +356,7 @@ class ChatDataService {
 
     store.put({
       ...existingRecord,
+      type: normalizeChatType(existingRecord.type),
       last_message: lastMessage,
       last_message_at: toIsoTimestamp(lastMessageAt),
       unread_count: normalizeUnreadCount(unreadCount)
@@ -372,6 +384,7 @@ class ChatDataService {
 
     store.put({
       ...existingRecord,
+      type: normalizeChatType(existingRecord.type),
       unread_count: normalizeUnreadCount(unreadCount)
     });
     await waitForTransaction(transaction);
@@ -397,6 +410,7 @@ class ChatDataService {
 
     store.put({
       ...existingRecord,
+      type: normalizeChatType(existingRecord.type),
       unread_count: 0
     });
     await waitForTransaction(transaction);
@@ -422,6 +436,7 @@ class ChatDataService {
 
     store.put({
       ...existingRecord,
+      type: normalizeChatType(existingRecord.type),
       meta: normalizeMeta(meta)
     });
     await waitForTransaction(transaction);
@@ -446,8 +461,10 @@ class ChatDataService {
     }
 
     const nextName = input.name?.trim();
+    const nextType = input.type !== undefined ? normalizeChatType(input.type) : undefined;
     store.put({
       ...existingRecord,
+      ...(nextType ? { type: nextType } : {}),
       ...(nextName ? { name: nextName } : {}),
       ...(input.meta !== undefined ? { meta: normalizeMeta(input.meta) } : {})
     });

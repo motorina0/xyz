@@ -20,36 +20,59 @@
               clear-icon="close"
               placeholder="Search"
             />
-            <q-btn-dropdown
-              flat
-              dense
-              icon="refresh"
-              dropdown-icon="arrow_drop_down"
-              color="primary"
-              class="sidebar-top__action"
-              aria-label="Refresh Chats"
-            >
-              <q-list separator>
-                <q-item
-                  v-for="option in chatRefreshRangeOptions"
-                  :key="option.id"
-                  clickable
-                  v-close-popup
-                  @click="handleRefreshChatsForRange(option)"
-                >
-                  <q-item-section>
-                    <q-item-label>{{ option.label }}</q-item-label>
-                  </q-item-section>
-                  <q-item-section side>
-                    <q-icon
-                      v-if="option.id === selectedChatRefreshRangeId"
-                      name="check"
-                      size="18px"
-                    />
-                  </q-item-section>
-                </q-item>
-              </q-list>
-            </q-btn-dropdown>
+            <div class="sidebar-top__actions">
+              <q-btn-dropdown
+                flat
+                dense
+                icon="refresh"
+                dropdown-icon="arrow_drop_down"
+                color="primary"
+                class="sidebar-top__action"
+                aria-label="Refresh Chats"
+              >
+                <q-list separator>
+                  <q-item
+                    v-for="option in chatRefreshRangeOptions"
+                    :key="option.id"
+                    clickable
+                    v-close-popup
+                    @click="handleRefreshChatsForRange(option)"
+                  >
+                    <q-item-section>
+                      <q-item-label>{{ option.label }}</q-item-label>
+                    </q-item-section>
+                    <q-item-section side>
+                      <q-icon
+                        v-if="option.id === selectedChatRefreshRangeId"
+                        name="check"
+                        size="18px"
+                      />
+                    </q-item-section>
+                  </q-item>
+                </q-list>
+              </q-btn-dropdown>
+              <q-btn
+                flat
+                dense
+                round
+                icon="group_add"
+                color="primary"
+                class="sidebar-top__action"
+                aria-label="Start New Chat"
+                :loading="isCreatingGroup"
+              >
+                <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
+                  <q-list dense class="tg-pop-menu__list">
+                    <q-item clickable v-close-popup @click="handleNewChat">
+                      <q-item-section>New Chat</q-item-section>
+                    </q-item>
+                    <q-item clickable v-close-popup @click="handleNewGroup">
+                      <q-item-section>New Group</q-item-section>
+                    </q-item>
+                  </q-list>
+                </q-menu>
+              </q-btn>
+            </div>
           </div>
 
           <q-input
@@ -111,6 +134,53 @@
         @delete-chat="handleDeleteChat"
         @block="handleBlockChat"
       />
+
+      <q-dialog v-model="isCreateGroupDialogOpen" :persistent="isCreatingGroup">
+        <q-card class="create-group-dialog">
+          <q-card-section class="create-group-dialog__header">
+            <div class="create-group-dialog__title">New Group</div>
+          </q-card-section>
+
+          <q-card-section>
+            <q-input
+              v-model="newGroupName"
+              class="tg-input"
+              dense
+              outlined
+              rounded
+              autofocus
+              label="Name"
+              @keydown.enter.prevent="handleConfirmNewGroup"
+            />
+
+            <q-input
+              v-model="newGroupAbout"
+              class="q-mt-sm tg-input"
+              dense
+              outlined
+              rounded
+              label="About"
+            />
+          </q-card-section>
+
+          <q-card-actions align="right" class="create-group-dialog__actions">
+            <q-btn
+              flat
+              label="Cancel"
+              color="primary"
+              :disable="isCreatingGroup"
+              @click="closeCreateGroupDialog"
+            />
+            <q-btn
+              unelevated
+              label="OK"
+              color="primary"
+              :loading="isCreatingGroup"
+              @click="handleConfirmNewGroup"
+            />
+          </q-card-actions>
+        </q-card>
+      </q-dialog>
     </div>
   </q-page>
 </template>
@@ -147,6 +217,10 @@ const messageStore = useMessageStore();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const isRequestsDialogOpen = ref(false);
+const isCreateGroupDialogOpen = ref(false);
+const isCreatingGroup = ref(false);
+const newGroupName = ref('');
+const newGroupAbout = ref('');
 const visibleViewportHeight = ref<number | null>(null);
 type ChatRefreshRangeId = 'last-24-hours' | 'last-2-days' | 'last-week' | 'last-month' | 'custom';
 
@@ -289,6 +363,117 @@ function handleSelectChat(chatId: string): void {
 
 function handleOpenRequests(): void {
   isRequestsDialogOpen.value = true;
+}
+
+function formatRelayList(relayUrls: string[]): string {
+  return relayUrls.join(', ');
+}
+
+function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGroupChat']>>): void {
+  const { relayUrls, publishedRelayUrls, failedRelayUrls, errorMessage } = result.groupSecretSave;
+
+  if (publishedRelayUrls.length > 0 && failedRelayUrls.length === 0) {
+    $q.notify({
+      type: 'positive',
+      message: 'Group created.',
+      caption: `Identity secret saved to ${formatRelayList(publishedRelayUrls)}.`,
+      position: 'top-right',
+      timeout: 5000
+    });
+    return;
+  }
+
+  if (publishedRelayUrls.length > 0) {
+    $q.notify({
+      type: 'warning',
+      message: 'Group created with partial relay backup.',
+      caption: `Saved to ${formatRelayList(publishedRelayUrls)}. Failed on ${formatRelayList(failedRelayUrls)}.`,
+      position: 'top-right',
+      timeout: 6500
+    });
+    return;
+  }
+
+  $q.notify({
+    type: 'warning',
+    message: 'Group created locally.',
+    caption:
+      errorMessage ??
+      (relayUrls.length > 0
+        ? `Failed to save the identity secret to ${formatRelayList(relayUrls)}.`
+        : 'Failed to save the identity secret to relays.'),
+    position: 'top-right',
+    timeout: 6500
+  });
+}
+
+function handleNewChat(): void {
+  try {
+    void router.push({ name: 'contacts' });
+  } catch (error) {
+    reportUiError('Failed to open new chat flow', error);
+  }
+}
+
+function openCreateGroupDialog(): void {
+  isCreateGroupDialogOpen.value = true;
+}
+
+function closeCreateGroupDialog(force = false): void {
+  if (isCreatingGroup.value && !force) {
+    return;
+  }
+
+  isCreateGroupDialogOpen.value = false;
+  newGroupName.value = '';
+  newGroupAbout.value = '';
+}
+
+function handleNewGroup(): void {
+  try {
+    openCreateGroupDialog();
+  } catch (error) {
+    reportUiError('Failed to open create group dialog', error);
+  }
+}
+
+async function handleConfirmNewGroup(): Promise<void> {
+  if (isCreatingGroup.value) {
+    return;
+  }
+
+  isCreatingGroup.value = true;
+
+  try {
+    const [nostrStore, relayStore] = await Promise.all([getNostrStore(), getRelayStore()]);
+    const createdGroup = await nostrStore.createGroupChat({
+      name: newGroupName.value,
+      about: newGroupAbout.value,
+      relayUrls: relayStore.relays
+    });
+
+    notifyGroupSecretSave(createdGroup);
+
+    if (createdGroup.contactListSyncError) {
+      $q.notify({
+        type: 'warning',
+        message: 'Group created, but contact list sync failed.',
+        caption: createdGroup.contactListSyncError,
+        position: 'top-right',
+        timeout: 6500
+      });
+    }
+
+    closeCreateGroupDialog(true);
+    void router.push({
+      name: 'contacts',
+      params: { pubkey: createdGroup.groupPublicKey }
+    });
+  } catch (error) {
+    reportUiError('Failed to create group from chats page', error, 'Failed to create group.');
+  } finally {
+    isCreatingGroup.value = false;
+  }
 }
 
 function getFallbackSidebarChatId(): string {
@@ -738,6 +923,14 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
+.sidebar-top__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
 .sidebar-top__action {
   color: var(--tg-primary);
   flex-shrink: 0;
@@ -745,6 +938,24 @@ onBeforeUnmount(() => {
 
 .sidebar-top__action:deep(.q-btn-dropdown__arrow) {
   margin-left: 0;
+}
+
+.create-group-dialog {
+  width: min(420px, calc(100vw - 32px));
+  border-radius: 18px;
+}
+
+.create-group-dialog__header {
+  padding-bottom: 8px;
+}
+
+.create-group-dialog__title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.create-group-dialog__actions {
+  padding: 0 16px 16px;
 }
 
 .thread-panel {

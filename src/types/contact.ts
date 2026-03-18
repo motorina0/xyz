@@ -4,6 +4,8 @@ export interface ContactBirthday {
   day?: number;
 }
 
+export type ContactType = 'user' | 'group';
+
 export interface ContactMetadata {
   name?: string;
   about?: string;
@@ -23,6 +25,8 @@ export interface ContactMetadata {
   avatar?: string;
   last_seen_incoming_activity_at?: string;
   last_seen_incoming_activity_event_id?: string;
+  group_private_key_encrypted?: string;
+  owner_public_key?: string;
 }
 
 export interface ContactRelay {
@@ -34,6 +38,7 @@ export interface ContactRelay {
 export interface ContactRecord {
   id: number;
   public_key: string;
+  type: ContactType;
   name: string;
   given_name: string | null;
   meta: ContactMetadata;
@@ -43,6 +48,7 @@ export interface ContactRecord {
 
 export interface CreateContactInput {
   public_key: string;
+  type?: ContactType;
   name: string;
   given_name?: string | null;
   meta?: ContactMetadata;
@@ -52,6 +58,7 @@ export interface CreateContactInput {
 
 export interface UpdateContactInput {
   public_key?: string;
+  type?: ContactType;
   name?: string;
   given_name?: string | null;
   meta?: ContactMetadata;

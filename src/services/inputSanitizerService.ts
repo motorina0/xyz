@@ -274,6 +274,10 @@ class InputSanitizerService {
     const lastSeenIncomingActivityEventId = this.readOptionalString(
       value.last_seen_incoming_activity_event_id
     );
+    const groupPrivateKeyEncrypted = this.readOptionalString(value.group_private_key_encrypted);
+    const ownerPublicKey = this.normalizeHexKey(
+      typeof value.owner_public_key === 'string' ? value.owner_public_key : ''
+    );
     const birthday = this.normalizeContactBirthday(value.birthday);
 
     if (name) {
@@ -342,6 +346,14 @@ class InputSanitizerService {
 
     if (lastSeenIncomingActivityEventId) {
       meta.last_seen_incoming_activity_event_id = lastSeenIncomingActivityEventId;
+    }
+
+    if (groupPrivateKeyEncrypted) {
+      meta.group_private_key_encrypted = groupPrivateKeyEncrypted;
+    }
+
+    if (ownerPublicKey) {
+      meta.owner_public_key = ownerPublicKey;
     }
 
     return meta;

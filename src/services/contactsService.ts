@@ -4,6 +4,7 @@ import type {
   ContactMetadata,
   ContactRecord,
   ContactRelay,
+  ContactType,
   CreateContactInput,
   UpdateContactInput
 } from 'src/types/contact';
@@ -11,6 +12,7 @@ import type {
 interface RawContactStoreRecord {
   id: number;
   public_key: string;
+  type?: unknown;
   name: string;
   given_name?: string | null;
   relays?: unknown;
@@ -21,6 +23,7 @@ interface RawContactStoreRecord {
 interface ContactStoreRecord {
   id: number;
   public_key: string;
+  type: ContactType;
   name: string;
   given_name: string | null;
   relays: ContactRelay[];
@@ -109,6 +112,10 @@ function normalizeBooleanFlag(value: unknown): boolean {
   }
 
   return false;
+}
+
+function normalizeContactType(value: unknown): ContactType {
+  return value === 'group' ? 'group' : 'user';
 }
 
 function parseStoredMeta(value: unknown): ContactMetadata {
@@ -224,6 +231,7 @@ function normalizeRecord(raw: RawContactStoreRecord): ContactStoreRecord | null 
   return {
     id,
     public_key: publicKey,
+    type: normalizeContactType(raw.type),
     name,
     given_name: givenName,
     relays: normalizeRelayList(raw.relays),
@@ -236,6 +244,7 @@ function toContactRecord(record: ContactStoreRecord): ContactRecord {
   return {
     id: record.id,
     public_key: record.public_key,
+    type: normalizeContactType(record.type),
     name: record.name,
     given_name: record.given_name,
     relays: normalizeRelayList(record.relays),
@@ -370,6 +379,7 @@ class ContactsService {
 
     const record: Omit<ContactStoreRecord, 'id'> = {
       public_key: publicKey,
+      type: normalizeContactType(input.type),
       name,
       given_name: givenName,
       relays,
@@ -432,6 +442,14 @@ class ContactsService {
 
       if (nextRecord.public_key !== publicKey) {
         nextRecord.public_key = publicKey;
+        didUpdateRecord = true;
+      }
+    }
+
+    if (input.type !== undefined) {
+      const nextType = normalizeContactType(input.type);
+      if (nextRecord.type !== nextType) {
+        nextRecord.type = nextType;
         didUpdateRecord = true;
       }
     }
@@ -560,6 +578,7 @@ class ContactsService {
         columns: [
           'id',
           'public_key',
+          'type',
           'name',
           'given_name',
           'meta',
@@ -569,6 +588,7 @@ class ContactsService {
         values: contacts.map((contact) => [
           contact.id,
           contact.public_key,
+          contact.type,
           contact.name,
           contact.given_name,
           contact.meta,

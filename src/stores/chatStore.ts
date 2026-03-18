@@ -438,6 +438,7 @@ function mapChatRowToChat(
   return {
     id: row.public_key,
     publicKey: row.public_key,
+    type: row.type,
     name: nextName,
     avatar,
     lastMessage: row.last_message || '',
@@ -1164,6 +1165,7 @@ export const useChatStore = defineStore('chatStore', () => {
     const nextChat: Chat = {
       id: nextChatId,
       publicKey: existingChat?.publicKey || nextPublicKey,
+      type: existingChat?.type ?? 'user',
       name: nextName,
       avatar: nextAvatar,
       lastMessage: input.messageText,
@@ -1242,6 +1244,7 @@ export const useChatStore = defineStore('chatStore', () => {
     const now = new Date().toISOString();
     const created = await chatDataService.createChat({
       public_key: cleanPublicKey,
+      type: 'user',
       name: cleanName,
       last_message: '',
       last_message_at: now,

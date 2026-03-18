@@ -140,6 +140,26 @@ interface RelayPublishStatusesResult {
   error: Error | null;
 }
 
+export interface RelaySaveStatus {
+  relayUrls: string[];
+  publishedRelayUrls: string[];
+  failedRelayUrls: string[];
+  errorMessage: string | null;
+}
+
+export interface CreateGroupChatResult {
+  groupPublicKey: string;
+  encryptedPrivateKey: string;
+  groupSecretSave: RelaySaveStatus;
+  contactListSyncError: string | null;
+}
+
+interface CreateGroupChatInput {
+  name?: string;
+  about?: string;
+  relayUrls?: string[];
+}
+
 interface GiftWrappedRumorPublishResult {
   giftWrapEvent: NostrEvent;
   rumorEvent: NostrEvent | null;
@@ -202,6 +222,14 @@ interface ContactCursorContent {
 interface ContactCursorState {
   at: string;
   eventId: string | null;
+}
+
+interface GroupIdentitySecretContent {
+  version: number;
+  group_pubkey: string;
+  group_privkey: string;
+  name?: string;
+  about?: string;
 }
 
 interface ContactRelayListFetchResult {
@@ -318,12 +346,13 @@ const STARTUP_STEP_DEFINITIONS = [
   { id: 'my-relay-list', order: 3, label: 'My NIP-65 relay list' },
   { id: 'private-preferences', order: 4, label: 'Encrypted private preferences' },
   { id: 'private-contact-list', order: 5, label: 'Encrypted private contact list' },
-  { id: 'private-contact-profiles', order: 6, label: 'Private contact profile metadata' },
-  { id: 'private-contact-relays', order: 7, label: 'Private contact relay lists' },
-  { id: 'contact-cursor-data', order: 8, label: 'Per-contact cursor data' },
-  { id: 'private-message-events', order: 9, label: 'Private message events' },
-  { id: 'recent-chat-profiles', order: 10, label: 'Recent chat contact profiles' },
-  { id: 'recent-chat-relays', order: 11, label: 'Recent chat contact relay lists' }
+  { id: 'group-identity-secrets', order: 6, label: 'Group identity secret storage' },
+  { id: 'private-contact-profiles', order: 7, label: 'Private contact profile metadata' },
+  { id: 'private-contact-relays', order: 8, label: 'Private contact relay lists' },
+  { id: 'contact-cursor-data', order: 9, label: 'Per-contact cursor data' },
+  { id: 'private-message-events', order: 10, label: 'Private message events' },
+  { id: 'recent-chat-profiles', order: 11, label: 'Recent chat contact profiles' },
+  { id: 'recent-chat-relays', order: 12, label: 'Recent chat contact relay lists' }
 ] as const;
 
 export type StartupStepId = (typeof STARTUP_STEP_DEFINITIONS)[number]['id'];
@@ -367,6 +396,10 @@ const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
 const PRIVATE_PREFERENCES_KIND = 30078;
 const PRIVATE_PREFERENCES_D_TAG = '1';
+const GROUP_IDENTITY_SECRET_TAG = 'group';
+const GROUP_IDENTITY_SECRET_VERSION = 1;
+const GROUP_PRIVATE_KEY_CONTACT_META_KEY = 'group_private_key_encrypted';
+const GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY = 'owner_public_key';
 const CONTACT_CURSOR_VERSION = '0.1';
 const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
 const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
@@ -444,6 +477,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let restorePrivateContactListPromise: Promise<void> | null = null;
   let restorePrivatePreferencesPromise: Promise<void> | null = null;
+  let restoreGroupIdentitySecretsPromise: Promise<void> | null = null;
   let restoreContactCursorStatePromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
   const pendingIncomingReactions = new Map<string, PendingIncomingReaction[]>();
@@ -1251,6 +1285,235 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
+  function normalizeGroupIdentitySecretContent(value: unknown): GroupIdentitySecretContent | null {
+    if (!isPlainRecord(value)) {
+      return null;
+    }
+
+    const version = Number(value.version);
+    const groupPubkey = inputSanitizerService.normalizeHexKey(
+      typeof value.group_pubkey === 'string' ? value.group_pubkey : ''
+    );
+    const groupPrivkey = inputSanitizerService.normalizeHexKey(
+      typeof value.group_privkey === 'string' ? value.group_privkey : ''
+    );
+    const name = typeof value.name === 'string' ? value.name.trim() : '';
+    const about = typeof value.about === 'string' ? value.about.trim() : '';
+
+    if (
+      !Number.isInteger(version) ||
+      version < 1 ||
+      !groupPubkey ||
+      !groupPrivkey
+    ) {
+      return null;
+    }
+
+    try {
+      const signer = new NDKPrivateKeySigner(groupPrivkey);
+      if (inputSanitizerService.normalizeHexKey(signer.pubkey) !== groupPubkey) {
+        return null;
+      }
+    } catch {
+      return null;
+    }
+
+    return {
+      version,
+      group_pubkey: groupPubkey,
+      group_privkey: groupPrivkey,
+      ...(name ? { name } : {}),
+      ...(about ? { about } : {})
+    };
+  }
+
+  async function encryptGroupIdentitySecretContent(
+    content: GroupIdentitySecretContent
+  ): Promise<string> {
+    const user = await getLoggedInSignerUser();
+    ndk.assertSigner();
+    return ndk.signer.encrypt(user, JSON.stringify(content), 'nip44');
+  }
+
+  async function decryptGroupIdentitySecretContent(
+    content: string
+  ): Promise<GroupIdentitySecretContent | null> {
+    const normalizedContent = content.trim();
+    if (!normalizedContent) {
+      return null;
+    }
+
+    const user = await getLoggedInSignerUser();
+    ndk.assertSigner();
+    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
+
+    try {
+      return normalizeGroupIdentitySecretContent(JSON.parse(decryptedContent));
+    } catch {
+      return null;
+    }
+  }
+
+  function buildRelaySaveStatus(relayStatuses: MessageRelayStatus[]): RelaySaveStatus {
+    const relayUrls = normalizeRelayStatusUrls(relayStatuses.map((entry) => entry.relay_url));
+    const publishedRelayUrls = normalizeRelayStatusUrls(
+      relayStatuses
+        .filter((entry) => entry.direction === 'outbound' && entry.status === 'published')
+        .map((entry) => entry.relay_url)
+    );
+    const failedRelayUrls = normalizeRelayStatusUrls(
+      relayStatuses
+        .filter((entry) => entry.direction === 'outbound' && entry.status === 'failed')
+        .map((entry) => entry.relay_url)
+    );
+    const firstFailure = relayStatuses.find(
+      (entry) => entry.direction === 'outbound' && entry.status === 'failed' && entry.detail?.trim()
+    );
+
+    return {
+      relayUrls,
+      publishedRelayUrls,
+      failedRelayUrls,
+      errorMessage: firstFailure?.detail?.trim() ?? null
+    };
+  }
+
+  function compareReplaceableEventState(
+    first: Pick<NDKEvent, 'created_at' | 'id'> | null | undefined,
+    second: Pick<NDKEvent, 'created_at' | 'id'> | null | undefined
+  ): number {
+    const firstCreatedAt = Number(first?.created_at ?? 0);
+    const secondCreatedAt = Number(second?.created_at ?? 0);
+    if (firstCreatedAt !== secondCreatedAt) {
+      return firstCreatedAt - secondCreatedAt;
+    }
+
+    const firstId = first?.id?.trim() ?? '';
+    const secondId = second?.id?.trim() ?? '';
+    return firstId.localeCompare(secondId);
+  }
+
+  function buildAvatarFallback(value: string): string {
+    const compactValue = value.replace(/\s+/g, ' ').trim();
+    if (!compactValue) {
+      return 'NA';
+    }
+
+    const parts = compactValue.split(' ');
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+
+    return compactValue.slice(0, 2).toUpperCase();
+  }
+
+  function resolveGroupDisplayName(groupPublicKey: string): string {
+    return `Group ${groupPublicKey.slice(0, 8)}`;
+  }
+
+  async function ensureGroupContactAndChat(
+    groupPublicKey: string,
+    encryptedPrivateKey: string,
+    profile: {
+      name?: string;
+      about?: string;
+    } = {}
+  ): Promise<boolean> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedEncryptedPrivateKey =
+      typeof encryptedPrivateKey === 'string' ? encryptedPrivateKey.trim() : '';
+    const normalizedOwnerPublicKey = getLoggedInPublicKeyHex();
+    const normalizedName = typeof profile.name === 'string' ? profile.name.trim() : '';
+    const normalizedAbout = typeof profile.about === 'string' ? profile.about.trim() : '';
+    if (!normalizedGroupPublicKey || !normalizedEncryptedPrivateKey || !normalizedOwnerPublicKey) {
+      return false;
+    }
+
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+
+    let didChange = false;
+    const fallbackName = normalizedName || resolveGroupDisplayName(normalizedGroupPublicKey);
+    const existingContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    const nextContactMeta: ContactMetadata = {
+      ...(existingContact?.meta ?? {})
+    };
+    nextContactMeta[GROUP_PRIVATE_KEY_CONTACT_META_KEY] = normalizedEncryptedPrivateKey;
+    nextContactMeta[GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY] = normalizedOwnerPublicKey;
+    if (normalizedName) {
+      nextContactMeta.name = normalizedName;
+    }
+    if (normalizedAbout) {
+      nextContactMeta.about = normalizedAbout;
+    }
+
+    if (!existingContact) {
+      await contactsService.createContact({
+        public_key: normalizedGroupPublicKey,
+        type: 'group',
+        name: fallbackName,
+        meta: nextContactMeta,
+        relays: []
+      });
+      didChange = true;
+    } else {
+      const shouldUpdateType = existingContact.type !== 'group';
+      const shouldUpdateName = Boolean(normalizedName) && existingContact.name !== fallbackName;
+      const shouldUpdateMeta =
+        JSON.stringify(existingContact.meta ?? {}) !== JSON.stringify(nextContactMeta);
+
+      if (shouldUpdateType || shouldUpdateName || shouldUpdateMeta) {
+        await contactsService.updateContact(existingContact.id, {
+          type: 'group',
+          ...(shouldUpdateName ? { name: fallbackName } : {}),
+          ...(shouldUpdateMeta ? { meta: nextContactMeta } : {})
+        });
+        didChange = true;
+      }
+    }
+
+    const nextContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    const groupName =
+      (normalizedName || nextContact?.name?.trim() || existingContact?.name?.trim() || fallbackName);
+    const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+    const existingChatMeta = existingChat?.meta ?? {};
+    const {
+      [GROUP_PRIVATE_KEY_CONTACT_META_KEY]: _groupPrivateKeyEncrypted,
+      [GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY]: _groupOwnerPublicKey,
+      ...nextChatMeta
+    } = existingChatMeta;
+
+    if (!existingChat) {
+      await chatDataService.createChat({
+        public_key: normalizedGroupPublicKey,
+        type: 'group',
+        name: groupName,
+        last_message: '',
+        last_message_at: new Date().toISOString(),
+        unread_count: 0,
+        meta: {
+          avatar: buildAvatarFallback(groupName),
+          inbox_state: 'accepted',
+          accepted_at: new Date().toISOString()
+        }
+      });
+      didChange = true;
+      return didChange;
+    }
+    const shouldUpdateType = existingChat.type !== 'group';
+    const shouldUpdateMeta = JSON.stringify(existingChat.meta) !== JSON.stringify(nextChatMeta);
+    const shouldUpdateName = existingChat.name !== groupName;
+    if (shouldUpdateType || shouldUpdateMeta || shouldUpdateName) {
+      await chatDataService.updateChat(normalizedGroupPublicKey, {
+        type: 'group',
+        ...(shouldUpdateName ? { name: groupName } : {}),
+        meta: nextChatMeta
+      });
+      didChange = true;
+    }
+
+    return didChange;
+  }
+
   async function ensurePrivatePreferences(
     options: { publishIfCreated?: boolean } = {}
   ): Promise<PrivatePreferences> {
@@ -1506,6 +1769,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
         );
         await runStartupTask('Failed to restore private contact list on startup', () =>
           restorePrivateContactList(seedRelayUrls)
+        );
+        await runStartupTask('Failed to restore group identity secrets on startup', () =>
+          restoreGroupIdentitySecrets(seedRelayUrls)
         );
         await runStartupTask('Failed to restore contact cursor state on startup', () =>
           restoreContactCursorState(seedRelayUrls)
@@ -2350,6 +2616,79 @@ export const useNostrStore = defineStore('nostrStore', () => {
           scope
         ),
         error: error instanceof Error ? error : new Error('Failed to publish event.')
+      };
+    }
+  }
+
+  async function publishReplaceableEventWithRelayStatuses(
+    event: NDKEvent,
+    relayUrls: string[],
+    scope: 'recipient' | 'self'
+  ): Promise<RelayPublishStatusesResult> {
+    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
+    if (normalizedRelayUrls.length === 0) {
+      return {
+        relayStatuses: [],
+        error: null
+      };
+    }
+
+    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk);
+
+    try {
+      const publishedToRelays = await event.publishReplaceable(relaySet);
+      const publishedRelayUrls = new Set(
+        Array.from(publishedToRelays, (relay) => normalizeRelayStatusUrl(relay.url)).filter(
+          (relayUrl): relayUrl is string => Boolean(relayUrl)
+        )
+      );
+
+      return {
+        relayStatuses: buildOutboundRelayStatuses(
+          normalizedRelayUrls,
+          publishedRelayUrls,
+          new Map<string, string>(),
+          scope
+        ),
+        error: null
+      };
+    } catch (error) {
+      const publishedRelayUrls = new Set<string>();
+      const errorsByRelayUrl = new Map<string, string>();
+
+      if (error instanceof NDKPublishError) {
+        for (const relay of error.publishedToRelays) {
+          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
+          if (normalizedRelayUrl) {
+            publishedRelayUrls.add(normalizedRelayUrl);
+          }
+        }
+
+        error.errors.forEach((relayError, relay) => {
+          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
+          if (!normalizedRelayUrl) {
+            return;
+          }
+
+          errorsByRelayUrl.set(
+            normalizedRelayUrl,
+            relayError instanceof Error ? relayError.message : String(relayError)
+          );
+        });
+      } else if (error instanceof Error) {
+        for (const relayUrl of normalizedRelayUrls) {
+          errorsByRelayUrl.set(relayUrl, error.message);
+        }
+      }
+
+      return {
+        relayStatuses: buildOutboundRelayStatuses(
+          normalizedRelayUrls,
+          publishedRelayUrls,
+          errorsByRelayUrl,
+          scope
+        ),
+        error: error instanceof Error ? error : new Error('Failed to publish replaceable event.')
       };
     }
   }
@@ -4086,6 +4425,226 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
 
     return restorePrivatePreferencesPromise;
+  }
+
+  async function publishGroupIdentitySecret(
+    groupPublicKey: string,
+    encryptedPrivateKey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<RelaySaveStatus> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedEncryptedPrivateKey = encryptedPrivateKey.trim();
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey || !normalizedEncryptedPrivateKey) {
+      throw new Error('A valid group identity is required.');
+    }
+
+    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish group identity secret without at least one relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+    const user = await getLoggedInSignerUser();
+
+    const groupSecretEvent = new NDKEvent(ndk, {
+      kind: PRIVATE_PREFERENCES_KIND,
+      created_at: Math.floor(Date.now() / 1000),
+      pubkey: user.pubkey,
+      content: normalizedEncryptedPrivateKey,
+      tags: [
+        ['d', normalizedGroupPublicKey],
+        ['t', GROUP_IDENTITY_SECRET_TAG]
+      ]
+    });
+
+    const publishResult = await publishReplaceableEventWithRelayStatuses(
+      groupSecretEvent,
+      relayUrls,
+      'self'
+    );
+    if (
+      publishResult.relayStatuses.some(
+        (entry) => entry.direction === 'outbound' && entry.status === 'published'
+      )
+    ) {
+      updateStoredEventSinceFromCreatedAt(groupSecretEvent.created_at);
+    }
+
+    const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
+    if (publishResult.error && !relaySaveStatus.errorMessage) {
+      relaySaveStatus.errorMessage = publishResult.error.message;
+    }
+
+    return relaySaveStatus;
+  }
+
+  async function fetchGroupIdentitySecretEvents(
+    seedRelayUrls: string[] = []
+  ): Promise<Map<string, NDKEvent>> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      return new Map<string, NDKEvent>();
+    }
+
+    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return new Map<string, NDKEvent>();
+    }
+
+    await ensureRelayConnections(relayUrls);
+    await getLoggedInSignerUser();
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const events = await ndk.fetchEvents(
+      {
+        kinds: [PRIVATE_PREFERENCES_KIND],
+        authors: [loggedInPubkeyHex],
+        '#t': [GROUP_IDENTITY_SECRET_TAG]
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
+      },
+      relaySet
+    );
+
+    const eventsByGroupPubkey = new Map<string, NDKEvent>();
+
+    for (const event of events) {
+      updateStoredEventSinceFromCreatedAt(event.created_at);
+      const dTag = inputSanitizerService.normalizeHexKey(
+        event.getMatchingTags('d')[0]?.[1]?.trim() ?? ''
+      );
+      if (!dTag) {
+        continue;
+      }
+
+      const existingEvent = eventsByGroupPubkey.get(dTag);
+      if (existingEvent && compareReplaceableEventState(existingEvent, event) >= 0) {
+        continue;
+      }
+
+      eventsByGroupPubkey.set(dTag, event);
+    }
+
+    return eventsByGroupPubkey;
+  }
+
+  async function restoreGroupIdentitySecrets(seedRelayUrls: string[] = []): Promise<void> {
+    if (restoreGroupIdentitySecretsPromise) {
+      return restoreGroupIdentitySecretsPromise;
+    }
+
+    beginStartupStep('group-identity-secrets');
+    restoreGroupIdentitySecretsPromise = (async () => {
+      try {
+        const eventsByGroupPubkey = await fetchGroupIdentitySecretEvents(seedRelayUrls);
+        if (eventsByGroupPubkey.size === 0) {
+          completeStartupStep('group-identity-secrets');
+          return;
+        }
+
+        let didChange = false;
+        for (const [groupPublicKey, event] of eventsByGroupPubkey.entries()) {
+          let decryptedSecret: GroupIdentitySecretContent | null = null;
+          try {
+            decryptedSecret = await decryptGroupIdentitySecretContent(event.content);
+          } catch (error) {
+            console.warn('Failed to decrypt group identity secret event', groupPublicKey, error);
+            continue;
+          }
+
+          if (!decryptedSecret || decryptedSecret.group_pubkey !== groupPublicKey) {
+            continue;
+          }
+
+          didChange =
+            (await ensureGroupContactAndChat(groupPublicKey, event.content, {
+              name: decryptedSecret.name,
+              about: decryptedSecret.about
+            })) || didChange;
+        }
+
+        if (didChange) {
+          bumpContactListVersion();
+          await chatStore.reload();
+        }
+
+        completeStartupStep('group-identity-secrets');
+      } catch (error) {
+        failStartupStep('group-identity-secrets', error);
+        throw error;
+      }
+    })().finally(() => {
+      restoreGroupIdentitySecretsPromise = null;
+    });
+
+    return restoreGroupIdentitySecretsPromise;
+  }
+
+  async function createGroupChat(options: CreateGroupChatInput = {}): Promise<CreateGroupChatResult> {
+    const relayUrls = Array.isArray(options.relayUrls) ? options.relayUrls : [];
+    const groupSigner = NDKPrivateKeySigner.generate();
+    const groupPublicKey = inputSanitizerService.normalizeHexKey(groupSigner.pubkey);
+    if (!groupPublicKey) {
+      throw new Error('Failed to generate a valid group identity.');
+    }
+
+    const encryptedPrivateKey = await encryptGroupIdentitySecretContent({
+      version: GROUP_IDENTITY_SECRET_VERSION,
+      group_pubkey: groupPublicKey,
+      group_privkey: groupSigner.privateKey,
+      ...(typeof options.name === 'string' && options.name.trim()
+        ? { name: options.name.trim() }
+        : {}),
+      ...(typeof options.about === 'string' && options.about.trim()
+        ? { about: options.about.trim() }
+        : {})
+    });
+
+    const didChange = await ensureGroupContactAndChat(groupPublicKey, encryptedPrivateKey, {
+      name: options.name,
+      about: options.about
+    });
+    if (didChange) {
+      bumpContactListVersion();
+      await chatStore.reload();
+    }
+
+    let groupSecretSave: RelaySaveStatus;
+    try {
+      groupSecretSave = await publishGroupIdentitySecret(
+        groupPublicKey,
+        encryptedPrivateKey,
+        relayUrls
+      );
+    } catch (error) {
+      groupSecretSave = {
+        relayUrls: [],
+        publishedRelayUrls: [],
+        failedRelayUrls: [],
+        errorMessage: error instanceof Error ? error.message : 'Failed to publish group identity secret.'
+      };
+    }
+
+    let contactListSyncError: string | null = null;
+    try {
+      await publishPrivateContactList(relayUrls);
+    } catch (error) {
+      contactListSyncError =
+        error instanceof Error ? error.message : 'Failed to publish private contact list.';
+    }
+
+    return {
+      groupPublicKey,
+      encryptedPrivateKey,
+      groupSecretSave,
+      contactListSyncError
+    };
   }
 
   async function fetchContactCursorEvents(
@@ -7049,6 +7608,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     syncLoggedInContactProfilePromise = null;
     restorePrivateContactListPromise = null;
     restorePrivatePreferencesPromise = null;
+    restoreGroupIdentitySecretsPromise = null;
     restoreContactCursorStatePromise = null;
     syncRecentChatContactsPromise = null;
     contactProfileApplyQueue = Promise.resolve();
@@ -7760,6 +8320,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   return {
     clearPrivateKey,
+    createGroupChat,
     clearDeveloperTraceEntries,
     contactListVersion,
     developerDiagnosticsEnabled,
@@ -7789,6 +8350,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensureRespondedPubkeyIsContact,
     refreshContactByPublicKey,
     restoreContactCursorState,
+    restoreGroupIdentitySecrets,
     restoreMyRelayList,
     restorePrivateContactList,
     restorePrivatePreferences,
