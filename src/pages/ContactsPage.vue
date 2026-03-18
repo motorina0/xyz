@@ -148,10 +148,13 @@
             <ContactProfile
               v-model="selectedContactProfile"
               v-model:pubkey="selectedContactPubkey"
-              :read-only="true"
+              :read-only="!canPublishSelectedGroupProfile"
               :show-header="true"
+              :show-publish-action="canPublishSelectedGroupProfile"
+              :is-publishing="isPublishingSelectedGroupProfile"
               @update:send-messages-to-app-relays="handleSendMessagesToAppRelaysUpdate"
               @open-chat="handleOpenChat"
+              @publish="handlePublishSelectedGroupProfile"
             />
           </div>
           <div v-else class="contacts-empty-state">Select a contact to view profile.</div>
@@ -229,11 +232,12 @@ import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
-import type { ContactRecord } from 'src/types/contact';
+import type { ContactMetadata, ContactRecord } from 'src/types/contact';
 import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
+import { buildContactProfilePublishPayload } from 'src/utils/contactProfilePublish';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -242,6 +246,8 @@ const router = useRouter();
 const chatStore = useChatStore();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
+
+relayStore.init();
 
 const isMobile = computed(() => $q.screen.lt.md);
 const isMobileProfileOpen = computed(() => isMobile.value && Boolean(selectedContactPubkey.value.trim()));
@@ -263,6 +269,28 @@ const selectedContactId = ref<number | null>(null);
 const selectedContactPubkey = ref('');
 const selectedContactProfile = ref(createEmptyContactProfileForm());
 const contacts = ref<ContactRecord[]>([]);
+const isPublishingSelectedGroupProfile = ref(false);
+const selectedContactRecord = computed<ContactRecord | null>(() => {
+  const normalizedPubkey = selectedContactPubkey.value.trim().toLowerCase();
+  if (!normalizedPubkey) {
+    return null;
+  }
+
+  return (
+    contacts.value.find(
+      (contact) => contact.public_key.trim().toLowerCase() === normalizedPubkey
+    ) ?? null
+  );
+});
+const canPublishSelectedGroupProfile = computed(() => {
+  const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex()?.trim().toLowerCase() ?? '';
+  const selectedContact = selectedContactRecord.value;
+  if (!loggedInPubkey || !selectedContact || selectedContact.type !== 'group') {
+    return false;
+  }
+
+  return (selectedContact.meta.owner_public_key?.trim().toLowerCase() ?? '') === loggedInPubkey;
+});
 const selectedContactHeaderTitle = computed(() => {
   const displayName = selectedContactProfile.value.display_name.trim();
   if (displayName) {
@@ -434,6 +462,70 @@ function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
     relays: (contact.relays ?? []).map((relay) => relay.url),
     sendMessagesToAppRelays: contact.sendMessagesToAppRelays === true
   };
+}
+
+function setOptionalContactMetaString(
+  meta: ContactMetadata,
+  key:
+    | 'name'
+    | 'about'
+    | 'picture'
+    | 'nip05'
+    | 'lud06'
+    | 'lud16'
+    | 'display_name'
+    | 'website'
+    | 'banner',
+  value: string
+): void {
+  const normalizedValue = value.trim();
+  if (normalizedValue) {
+    meta[key] = normalizedValue;
+    return;
+  }
+
+  delete meta[key];
+}
+
+function buildUpdatedContactMeta(contact: ContactRecord, profile: ContactProfileForm): ContactMetadata {
+  const nextMeta: ContactMetadata = {
+    ...(contact.meta ?? {})
+  };
+
+  setOptionalContactMetaString(nextMeta, 'name', profile.name);
+  setOptionalContactMetaString(nextMeta, 'about', profile.about);
+  setOptionalContactMetaString(nextMeta, 'picture', profile.picture);
+  setOptionalContactMetaString(nextMeta, 'nip05', profile.nip05);
+  setOptionalContactMetaString(nextMeta, 'lud06', profile.lud06);
+  setOptionalContactMetaString(nextMeta, 'lud16', profile.lud16);
+  setOptionalContactMetaString(nextMeta, 'display_name', profile.display_name);
+  setOptionalContactMetaString(nextMeta, 'website', profile.website);
+  setOptionalContactMetaString(nextMeta, 'banner', profile.banner);
+  nextMeta.bot = profile.bot;
+
+  const birthday = profile.birthday;
+  const normalizedBirthday: NonNullable<ContactMetadata['birthday']> = {};
+  if (Number.isInteger(birthday.year) && Number(birthday.year) > 0) {
+    normalizedBirthday.year = Number(birthday.year);
+  }
+  if (
+    Number.isInteger(birthday.month) &&
+    Number(birthday.month) >= 1 &&
+    Number(birthday.month) <= 12
+  ) {
+    normalizedBirthday.month = Number(birthday.month);
+  }
+  if (Number.isInteger(birthday.day) && Number(birthday.day) >= 1 && Number(birthday.day) <= 31) {
+    normalizedBirthday.day = Number(birthday.day);
+  }
+
+  if (Object.keys(normalizedBirthday).length > 0) {
+    nextMeta.birthday = normalizedBirthday;
+  } else {
+    delete nextMeta.birthday;
+  }
+
+  return nextMeta;
 }
 
 function updateContactInState(updatedContact: ContactRecord): void {
@@ -885,6 +977,49 @@ async function handleSendMessagesToAppRelaysUpdate(value: boolean): Promise<void
       error,
       'Failed to update relay preference.'
     );
+  }
+}
+
+async function handlePublishSelectedGroupProfile(): Promise<void> {
+  if (isPublishingSelectedGroupProfile.value || !canPublishSelectedGroupProfile.value) {
+    return;
+  }
+
+  const selectedContact = selectedContactRecord.value;
+  if (!selectedContact) {
+    return;
+  }
+
+  isPublishingSelectedGroupProfile.value = true;
+
+  try {
+    await nostrStore.publishGroupMetadata(
+      selectedContact.public_key,
+      buildContactProfilePublishPayload(selectedContactProfile.value),
+      relayStore.relays
+    );
+
+    const updatedContact = await contactsService.updateContact(selectedContact.id, {
+      ...(selectedContactProfile.value.name.trim()
+        ? { name: selectedContactProfile.value.name.trim() }
+        : {}),
+      meta: buildUpdatedContactMeta(selectedContact, selectedContactProfile.value)
+    });
+
+    if (updatedContact) {
+      updateContactInState(updatedContact);
+      await chatStore.syncContactProfile(updatedContact.public_key);
+    }
+
+    $q.notify({
+      type: 'positive',
+      message: 'Group profile published.',
+      position: 'top-right'
+    });
+  } catch (error) {
+    reportUiError('Failed to publish group profile metadata', error, 'Failed to publish group profile.');
+  } finally {
+    isPublishingSelectedGroupProfile.value = false;
   }
 }
 

@@ -2693,6 +2693,79 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
+  async function publishEventWithRelayStatuses(
+    event: NDKEvent,
+    relayUrls: string[],
+    scope: 'recipient' | 'self'
+  ): Promise<RelayPublishStatusesResult> {
+    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
+    if (normalizedRelayUrls.length === 0) {
+      return {
+        relayStatuses: [],
+        error: null
+      };
+    }
+
+    const relaySet = NDKRelaySet.fromRelayUrls(normalizedRelayUrls, ndk);
+
+    try {
+      const publishedToRelays = await event.publish(relaySet);
+      const publishedRelayUrls = new Set(
+        Array.from(publishedToRelays, (relay) => normalizeRelayStatusUrl(relay.url)).filter(
+          (relayUrl): relayUrl is string => Boolean(relayUrl)
+        )
+      );
+
+      return {
+        relayStatuses: buildOutboundRelayStatuses(
+          normalizedRelayUrls,
+          publishedRelayUrls,
+          new Map<string, string>(),
+          scope
+        ),
+        error: null
+      };
+    } catch (error) {
+      const publishedRelayUrls = new Set<string>();
+      const errorsByRelayUrl = new Map<string, string>();
+
+      if (error instanceof NDKPublishError) {
+        for (const relay of error.publishedToRelays) {
+          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
+          if (normalizedRelayUrl) {
+            publishedRelayUrls.add(normalizedRelayUrl);
+          }
+        }
+
+        error.errors.forEach((relayError, relay) => {
+          const normalizedRelayUrl = normalizeRelayStatusUrl(relay.url);
+          if (!normalizedRelayUrl) {
+            return;
+          }
+
+          errorsByRelayUrl.set(
+            normalizedRelayUrl,
+            relayError instanceof Error ? relayError.message : String(relayError)
+          );
+        });
+      } else if (error instanceof Error) {
+        for (const relayUrl of normalizedRelayUrls) {
+          errorsByRelayUrl.set(relayUrl, error.message);
+        }
+      }
+
+      return {
+        relayStatuses: buildOutboundRelayStatuses(
+          normalizedRelayUrls,
+          publishedRelayUrls,
+          errorsByRelayUrl,
+          scope
+        ),
+        error: error instanceof Error ? error : new Error('Failed to publish event.')
+      };
+    }
+  }
+
   async function sendGiftWrappedRumor(
     recipientPublicKey: string,
     relays: string[],
@@ -5698,6 +5771,80 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await user.publish();
   }
 
+  async function publishGroupMetadata(
+    groupPublicKey: string,
+    metadata: PublishUserMetadataInput,
+    seedRelayUrls: string[] = []
+  ): Promise<void> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await contactsService.init();
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can publish this group profile.');
+    }
+
+    const encryptedGroupPrivateKey = groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    if (!encryptedGroupPrivateKey) {
+      throw new Error('Encrypted group private key not found.');
+    }
+
+    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
+    if (
+      !decryptedSecret ||
+      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !== normalizedGroupPublicKey
+    ) {
+      throw new Error('Failed to decrypt the group private key.');
+    }
+
+    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish group profile without at least one relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const groupSigner = new NDKPrivateKeySigner(decryptedSecret.group_privkey, ndk);
+    const signerUser = await groupSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
+      throw new Error('Decrypted group private key does not match the group public key.');
+    }
+
+    const metadataEvent = new NDKEvent(ndk, {
+      kind: NDKKind.Metadata,
+      created_at: Math.floor(Date.now() / 1000),
+      content: JSON.stringify(metadata)
+    } as NostrEvent);
+    await metadataEvent.sign(groupSigner);
+
+    const publishResult = await publishEventWithRelayStatuses(metadataEvent, relayUrls, 'self');
+    if (
+      publishResult.relayStatuses.some(
+        (entry) => entry.direction === 'outbound' && entry.status === 'published'
+      )
+    ) {
+      updateStoredEventSinceFromCreatedAt(metadataEvent.created_at);
+      return;
+    }
+
+    throw publishResult.error ?? new Error('Failed to publish group profile metadata.');
+  }
+
   async function publishMyRelayList(
     relayEntries: RelayListMetadataEntry[],
     publishRelayUrls: string[] = []
@@ -8343,6 +8490,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     loginWithExtension,
     logout,
     publishPrivateContactList,
+    publishGroupMetadata,
     publishUserMetadata,
     publishMyRelayList,
     relayStatusVersion,

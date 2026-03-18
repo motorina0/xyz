@@ -42,6 +42,17 @@
       >
         <AppTooltip>Refresh Profile</AppTooltip>
       </q-btn>
+      <q-btn
+        v-if="props.showPublishAction"
+        no-caps
+        unelevated
+        color="primary"
+        label="Publish"
+        class="profile-header__publish"
+        :disable="!normalizedHeaderPubkey"
+        :loading="props.isPublishing"
+        @click="emit('publish')"
+      />
     </div>
 
     <div class="profile-content" :class="{ 'profile-content--with-header': showHeader }">
@@ -378,12 +389,16 @@ interface Props {
   readOnly?: boolean;
   showHeader?: boolean;
   showRelaysEditAction?: boolean;
+  showPublishAction?: boolean;
+  isPublishing?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   readOnly: false,
   showHeader: false,
-  showRelaysEditAction: false
+  showRelaysEditAction: false,
+  showPublishAction: false,
+  isPublishing: false
 });
 
 const emit = defineEmits<{
@@ -392,6 +407,7 @@ const emit = defineEmits<{
   (event: 'update:send-messages-to-app-relays', value: boolean): void;
   (event: 'open-chat'): void;
   (event: 'open-relays-settings'): void;
+  (event: 'publish'): void;
 }>();
 
 const $q = useQuasar();
@@ -934,6 +950,10 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
 .profile-header__action {
   color: #64748b;
+}
+
+.profile-header__publish {
+  flex-shrink: 0;
 }
 
 .profile-lookup {
