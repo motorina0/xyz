@@ -387,12 +387,107 @@
           </q-tab-panel>
 
           <q-tab-panel v-if="isGroupContact" name="members" class="profile-tab-panel">
-            <div class="profile-members-state">
-              <div class="profile-members-state__title">Members</div>
-              <div class="text-body2">Group member management is not available yet.</div>
-              <div class="text-caption text-grey-6">
-                This tab is reserved for the NIP-171 group member flow.
+            <div class="profile-members">
+              <div class="profile-members-toolbar">
+                <q-input
+                  v-model="newMemberIdentifier"
+                  class="tg-input profile-members-toolbar__input"
+                  outlined
+                  dense
+                  rounded
+                  label="Member"
+                  placeholder="hex pubkey, npub, or name@example.com"
+                  :error="Boolean(newMemberIdentifierError)"
+                  :error-message="newMemberIdentifierError"
+                  @update:model-value="clearMemberIdentifierError"
+                  @keydown.enter.prevent="handleAddMember"
+                >
+                  <template #append>
+                    <q-btn
+                      unelevated
+                      round
+                      dense
+                      color="primary"
+                      icon="add"
+                      size="sm"
+                      aria-label="Add member"
+                      :disable="!canAddMember"
+                      :loading="isAddingMember"
+                      @click="handleAddMember"
+                    />
+                  </template>
+                </q-input>
+
+                <q-btn
+                  no-caps
+                  outline
+                  color="primary"
+                  label="Publish"
+                  class="profile-members-toolbar__publish"
+                  @click="handleMembersPublish"
+                />
               </div>
+
+              <div
+                v-if="groupMembers.length === 0"
+                class="profile-members-state"
+                :class="{ 'q-mt-md': true }"
+              >
+                <div class="profile-members-state__title">Members</div>
+                <div class="text-body2">No members added yet.</div>
+              </div>
+
+              <q-list v-else bordered separator class="profile-members-list q-mt-md">
+                <q-item
+                  v-for="(member, index) in groupMembers"
+                  :key="member.public_key"
+                  class="profile-members-list__item"
+                >
+                  <q-item-section avatar>
+                    <CachedAvatar
+                      :src="memberPictureUrl(member)"
+                      :alt="memberListTitle(member)"
+                      :fallback="memberAvatar(member)"
+                    />
+                  </q-item-section>
+
+                  <q-item-section>
+                    <q-item-label class="profile-members-list__name" lines="1">
+                      {{ memberListTitle(member) }}
+                    </q-item-label>
+                    <q-item-label
+                      v-if="memberListCaption(member)"
+                      caption
+                      class="profile-members-list__caption"
+                      lines="1"
+                    >
+                      {{ memberListCaption(member) }}
+                    </q-item-label>
+                  </q-item-section>
+
+                  <q-item-section side top class="profile-members-list__actions">
+                    <q-btn
+                      flat
+                      round
+                      dense
+                      icon="refresh"
+                      color="primary"
+                      aria-label="Refresh member"
+                      :loading="isMemberRefreshing(member.public_key)"
+                      @click="handleRefreshMember(index)"
+                    />
+                    <q-btn
+                      flat
+                      round
+                      dense
+                      icon="delete"
+                      color="negative"
+                      aria-label="Remove member"
+                      @click="handleRemoveMember(index)"
+                    />
+                  </q-item-section>
+                </q-item>
+              </q-list>
             </div>
           </q-tab-panel>
         </q-tab-panels>
@@ -449,6 +544,8 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 
 type ProfileTab = 'profile' | 'members';
 
+type GroupMemberDraft = Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'>;
+
 interface Props {
   modelValue: ContactProfileForm;
   pubkey: string;
@@ -493,6 +590,11 @@ const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
 const relayInfoErrorByUrl = ref<Record<string, string>>({});
 const relayInfoLoadingByUrl = ref<Record<string, boolean>>({});
 const relayIconErrorByUrl = ref<Record<string, boolean>>({});
+const newMemberIdentifier = ref('');
+const newMemberIdentifierError = ref('');
+const isAddingMember = ref(false);
+const groupMembers = ref<GroupMemberDraft[]>([]);
+const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 let lookupRequestId = 0;
 
 const relayList = computed(() => uniqueRelays(localProfile.relays));
@@ -507,6 +609,7 @@ const displayNpub = computed(() => {
 const isMobileTabs = computed(() => $q.screen.lt.md);
 const isGroupContact = computed(() => currentContact.value?.type === 'group');
 const showTabSelection = computed(() => isGroupContact.value);
+const canAddMember = computed(() => newMemberIdentifier.value.trim().length > 0 && !isAddingMember.value);
 const mobileNavGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${isGroupContact.value ? 2 : 1}, minmax(0, 1fr))`
 }));
@@ -589,6 +692,17 @@ watch(isGroupContact, (value) => {
     activeTab.value = 'profile';
   }
 });
+
+watch(
+  () => currentContact.value?.public_key ?? '',
+  (value, previousValue) => {
+    if (value === previousValue) {
+      return;
+    }
+
+    resetMembersEditor();
+  }
+);
 
 function cloneProfile(value: ContactProfileForm): ContactProfileForm {
   return {
@@ -805,6 +919,194 @@ function relayWriteEnabled(): boolean {
 
 function handleSendMessagesToAppRelaysUpdate(value: boolean): void {
   emit('update:send-messages-to-app-relays', value === true);
+}
+
+function clearMemberIdentifierError(): void {
+  if (newMemberIdentifierError.value) {
+    newMemberIdentifierError.value = '';
+  }
+}
+
+function memberIdentifierErrorMessage(resolution: {
+  identifierType: string | null;
+  error: string | null;
+}): string {
+  if (resolution.identifierType === 'nip05') {
+    return resolution.error === 'nip05_unresolved'
+      ? 'NIP-05 could not be resolved. Please verify the identifier.'
+      : 'Enter a valid NIP-05 identifier (name@domain).';
+  }
+
+  return 'Enter a valid hex pubkey, npub, or NIP-05 email.';
+}
+
+async function handleAddMember(): Promise<void> {
+  if (isAddingMember.value) {
+    return;
+  }
+
+  const identifier = newMemberIdentifier.value.trim();
+  if (!identifier) {
+    newMemberIdentifierError.value = 'Enter a valid hex pubkey, npub, or NIP-05 email.';
+    return;
+  }
+
+  isAddingMember.value = true;
+
+  try {
+    const resolution = await nostrStore.resolveIdentifier(identifier);
+    if (!resolution.isValid || !resolution.normalizedPubkey) {
+      newMemberIdentifierError.value = memberIdentifierErrorMessage(resolution);
+      return;
+    }
+
+    const normalizedPublicKey = resolution.normalizedPubkey;
+    if (groupMembers.value.some((member) => member.public_key === normalizedPublicKey)) {
+      newMemberIdentifierError.value = 'This member is already in the list.';
+      return;
+    }
+
+    const fallbackName =
+      resolution.resolvedName?.trim() ||
+      identifier.slice(0, 32) ||
+      normalizedPublicKey.slice(0, 16);
+    const memberPreview =
+      (await nostrStore.fetchContactPreviewByPublicKey(normalizedPublicKey, fallbackName)) ?? {
+        public_key: normalizedPublicKey,
+        name: fallbackName,
+        given_name: null,
+        meta: {}
+      };
+
+    groupMembers.value = [
+      ...groupMembers.value,
+      memberPreview
+    ];
+    newMemberIdentifier.value = '';
+    newMemberIdentifierError.value = '';
+  } catch (error) {
+    reportUiError('Failed to validate group member', error, 'Failed to add member.');
+  } finally {
+    isAddingMember.value = false;
+  }
+}
+
+function handleRemoveMember(index: number): void {
+  groupMembers.value = groupMembers.value.filter((_, memberIndex) => memberIndex !== index);
+}
+
+async function handleRefreshMember(index: number): Promise<void> {
+  const member = groupMembers.value[index];
+  if (!member) {
+    return;
+  }
+
+  const memberPubkey = member.public_key;
+  if (refreshingMemberPubkeys.value[memberPubkey]) {
+    return;
+  }
+
+  refreshingMemberPubkeys.value = {
+    ...refreshingMemberPubkeys.value,
+    [memberPubkey]: true
+  };
+
+  try {
+    const refreshedMember =
+      (await nostrStore.fetchContactPreviewByPublicKey(memberPubkey, member.name)) ?? member;
+    groupMembers.value = groupMembers.value.map((entry, memberIndex) =>
+      memberIndex === index ? refreshedMember : entry
+    );
+  } catch (error) {
+    reportUiError('Failed to refresh group member profile', error, 'Failed to refresh member profile.');
+  } finally {
+    const nextRefreshingState = {
+      ...refreshingMemberPubkeys.value
+    };
+    delete nextRefreshingState[memberPubkey];
+    refreshingMemberPubkeys.value = nextRefreshingState;
+  }
+}
+
+function handleMembersPublish(): void {
+  // Placeholder for the future NIP-171 member ticket publish flow.
+}
+
+function resetMembersEditor(): void {
+  newMemberIdentifier.value = '';
+  newMemberIdentifierError.value = '';
+  groupMembers.value = [];
+  refreshingMemberPubkeys.value = {};
+}
+
+function isMemberRefreshing(pubkey: string): boolean {
+  return refreshingMemberPubkeys.value[pubkey] === true;
+}
+
+function memberDisplayName(member: GroupMemberDraft): string {
+  const displayName = member.meta.display_name?.trim();
+  if (displayName) {
+    return displayName;
+  }
+
+  const givenName = member.given_name?.trim();
+  if (givenName) {
+    return givenName;
+  }
+
+  return member.name || member.public_key;
+}
+
+function memberAvatar(member: GroupMemberDraft): string {
+  const avatar = member.meta.avatar?.trim();
+  if (avatar) {
+    return avatar.slice(0, 2).toUpperCase();
+  }
+
+  return buildAvatar(memberDisplayName(member) || member.public_key);
+}
+
+function memberPictureUrl(member: GroupMemberDraft): string {
+  const picture = member.meta.picture?.trim();
+  return picture || '';
+}
+
+function memberListCandidates(member: GroupMemberDraft): string[] {
+  const npub = member.meta.npub?.trim() || nostrStore.encodeNpub(member.public_key) || '';
+
+  return [member.meta.name?.trim() ?? '', member.meta.about?.trim() ?? '', member.meta.nip05?.trim() ?? '', npub].filter(
+    (value) => value.length > 0
+  );
+}
+
+function isLoggedInMember(member: GroupMemberDraft): boolean {
+  const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex();
+  if (!loggedInPubkey) {
+    return false;
+  }
+
+  return member.public_key.trim().toLowerCase() === loggedInPubkey;
+}
+
+function memberPubkeySnippet(member: GroupMemberDraft): string {
+  return member.public_key.trim().slice(0, 32);
+}
+
+function memberListTitle(member: GroupMemberDraft): string {
+  if (isLoggedInMember(member)) {
+    return 'My Self';
+  }
+
+  return memberListCandidates(member)[0] ?? memberPubkeySnippet(member);
+}
+
+function memberListCaption(member: GroupMemberDraft): string {
+  const candidates = memberListCandidates(member);
+  if (isLoggedInMember(member)) {
+    return candidates[0] ?? '';
+  }
+
+  return candidates[1] ?? '';
 }
 
 function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
@@ -1180,6 +1482,53 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   font-weight: 700;
 }
 
+.profile-members {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-members-toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.profile-members-toolbar__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.profile-members-toolbar__publish {
+  flex-shrink: 0;
+  min-height: 40px;
+}
+
+.profile-members-list {
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+}
+
+.profile-members-list__item {
+  min-height: 64px;
+}
+
+.profile-members-list__name {
+  font-weight: 600;
+}
+
+.profile-members-list__caption {
+  word-break: break-word;
+}
+
+.profile-members-list__actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding-left: 8px;
+}
+
 .mobile-nav {
   position: sticky;
   bottom: 0;
@@ -1250,6 +1599,15 @@ body.body--dark .mobile-nav__btn--active {
 @media (max-width: 640px) {
   .profile-card__birthday-grid {
     grid-template-columns: 1fr;
+  }
+
+  .profile-members-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .profile-members-toolbar__publish {
+    align-self: flex-end;
   }
 }
 </style>

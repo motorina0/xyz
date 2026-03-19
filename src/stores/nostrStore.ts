@@ -5339,6 +5339,71 @@ export const useNostrStore = defineStore('nostrStore', () => {
     bumpContactListVersion();
   }
 
+  async function fetchContactPreviewByPublicKey(
+    targetPubkeyHex: string,
+    fallbackName = ''
+  ): Promise<Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'> | null> {
+    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
+    if (!normalizedTargetPubkey) {
+      return null;
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
+    const identifiers = buildIdentifierFallbacks(normalizedTargetPubkey, existingContact?.meta);
+    const resolvedUser = await resolveUserByIdentifiers(identifiers, normalizedTargetPubkey);
+
+    let fetchedProfile: NDKUserProfile | null = null;
+    if (resolvedUser) {
+      try {
+        fetchedProfile = await resolvedUser.fetchProfile();
+      } catch (error) {
+        console.warn('Failed to fetch transient profile metadata for contact preview', normalizedTargetPubkey, error);
+      }
+    }
+
+    let resolvedNpub = existingContact?.meta.npub?.trim() ?? '';
+    if (!resolvedNpub && resolvedUser) {
+      try {
+        resolvedNpub = resolvedUser.npub;
+      } catch {
+        resolvedNpub = '';
+      }
+    }
+
+    let resolvedNprofile = existingContact?.meta.nprofile?.trim() ?? '';
+    if (!resolvedNprofile && resolvedUser) {
+      try {
+        resolvedNprofile = resolvedUser.nprofile;
+      } catch {
+        resolvedNprofile = '';
+      }
+    }
+
+    const nextMeta = buildUpdatedContactMeta(
+      existingContact?.meta,
+      fetchedProfile,
+      resolvedNpub,
+      resolvedNprofile
+    );
+    const fallbackContactName =
+      fallbackName.trim() ||
+      existingContact?.name?.trim() ||
+      normalizedTargetPubkey.slice(0, 16);
+    const nextName =
+      nextMeta.display_name?.trim() ||
+      nextMeta.name?.trim() ||
+      existingContact?.name?.trim() ||
+      fallbackContactName;
+
+    return {
+      public_key: normalizedTargetPubkey,
+      name: nextName,
+      given_name: existingContact?.given_name ?? null,
+      meta: nextMeta
+    };
+  }
+
   async function refreshAllStoredContacts(): Promise<{
     totalCount: number;
     refreshedCount: number;
@@ -8496,6 +8561,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStatusVersion,
     resolveIdentifier,
     ensureRespondedPubkeyIsContact,
+    fetchContactPreviewByPublicKey,
     refreshContactByPublicKey,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
