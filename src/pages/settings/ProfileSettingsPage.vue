@@ -1,23 +1,14 @@
 <template>
   <SettingsDetailLayout title="Profile" icon="face">
-    <template #actions>
-      <q-btn
-        no-caps
-        unelevated
-        color="primary"
-        label="Publish"
-        :loading="isPublishing"
-        @click="handlePublish"
-      />
-    </template>
-
     <ContactProfile
       v-model="profileMetadata"
       v-model:pubkey="profilePubkey"
       :read-only="false"
-      :show-pubkey-copy-actions="true"
       :show-relays-edit-action="true"
+      :show-publish-action="true"
+      :is-publishing="isPublishing"
       @open-relays-settings="handleOpenRelaysSettings"
+      @publish="handlePublish"
     />
   </SettingsDetailLayout>
 </template>

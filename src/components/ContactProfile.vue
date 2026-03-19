@@ -28,341 +28,405 @@
         :disable="!normalizedHeaderPubkey"
         @click="handleOpenChat"
       />
-      <q-btn
-        flat
-        dense
-        round
-        icon="refresh"
-        color="primary"
-        aria-label="Refresh Contact Profile"
-        class="profile-header__action"
-        :disable="!normalizedHeaderPubkey || isRefreshingContact"
-        :loading="isRefreshingContact"
-        @click="handleRefreshContactProfile"
-      >
-        <AppTooltip>Refresh Profile</AppTooltip>
-      </q-btn>
-      <q-btn
-        v-if="props.showPublishAction"
-        no-caps
-        unelevated
-        color="primary"
-        label="Publish"
-        class="profile-header__publish"
-        :disable="!normalizedHeaderPubkey"
-        :loading="props.isPublishing"
-        @click="emit('publish')"
-      />
     </div>
 
     <div class="profile-content" :class="{ 'profile-content--with-header': showHeader }">
-      <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
-        <q-input
-          :model-value="displayHexPubkey"
-          class="tg-input"
-          outlined
+      <div class="profile-tabs-shell" :class="{ 'profile-tabs-shell--mobile': isMobileTabs }">
+        <q-tabs
+          v-if="!isMobileTabs && showTabSelection"
+          v-model="activeTab"
           dense
-          rounded
-          readonly
-          label="Hex Public Key"
-          placeholder="hex pubkey or npub"
-          :loading="isLoadingContact"
-          :error="Boolean(pubkeyError)"
-          :error-message="pubkeyError"
+          align="justify"
+          active-color="primary"
+          indicator-color="primary"
+          class="profile-tabs"
         >
-          <template #append>
-            <q-btn
-              flat
-              dense
-              round
-              icon="content_copy"
-              color="primary"
-              aria-label="Copy hex public key"
-              :disable="!displayHexPubkey.trim()"
-              @click.stop="handleCopyProfileValue(displayHexPubkey, 'Hex public key')"
-            >
-              <AppTooltip>Copy hex public key</AppTooltip>
-            </q-btn>
-          </template>
-        </q-input>
-        <q-input
-          :model-value="displayNpub"
-          class="tg-input"
-          outlined
-          dense
-          rounded
-          readonly
-          label="npub"
-          placeholder="npub1..."
+          <q-tab name="profile" label="Profile" no-caps class="profile-tab" />
+          <q-tab v-if="isGroupContact" name="members" label="Members" no-caps class="profile-tab" />
+        </q-tabs>
+
+        <q-tab-panels
+          v-model="activeTab"
+          animated
+          class="profile-tab-panels"
+          :class="{ 'profile-tab-panels--mobile': isMobileTabs }"
         >
-          <template #append>
-            <q-btn
-              flat
-              dense
-              round
-              icon="content_copy"
-              color="primary"
-              aria-label="Copy npub"
-              :disable="!displayNpub.trim()"
-              @click.stop="handleCopyProfileValue(displayNpub, 'npub')"
-            >
-              <AppTooltip>Copy npub</AppTooltip>
-            </q-btn>
-          </template>
-        </q-input>
-        <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
-      </div>
-
-      <q-list bordered separator class="profile-sections q-mt-md">
-        <q-expansion-item
-          default-opened
-          expand-separator
-          switch-toggle-side
-          class="profile-section"
-        >
-          <template #header>
-            <q-item-section>
-              <q-item-label class="profile-card__title">User Metadata (NIP-01)</q-item-label>
-            </q-item-section>
-          </template>
-
-          <div class="profile-card__section profile-section__content">
-            <q-input
-              v-model="localProfile.name"
-              class="tg-input"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="Name"
-              placeholder="Your profile name"
-            />
-
-            <q-input
-              v-model="localProfile.about"
-              class="tg-input q-mt-sm"
-              outlined
-              dense
-              rounded
-              type="textarea"
-              autogrow
-              :readonly="readOnly"
-              label="About"
-              placeholder="Short bio"
-            />
-
-            <q-input
-              v-model="localProfile.picture"
-              class="tg-input q-mt-sm"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="Picture URL"
-              placeholder="https://example.com/avatar.png"
-            />
-
-            <q-input
-              v-model="localProfile.nip05"
-              class="tg-input q-mt-sm"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="NIP-05"
-              placeholder="name@example.com"
-            />
-
-            <q-input
-              v-model="localProfile.lud16"
-              class="tg-input q-mt-sm"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="Lightning Address"
-              placeholder="name@domain.com"
-            />
-
-            <q-input
-              v-model="localProfile.lud06"
-              class="tg-input q-mt-sm"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="LNURL"
-              placeholder="lnurl1..."
-            />
-          </div>
-        </q-expansion-item>
-
-        <q-expansion-item expand-separator switch-toggle-side class="profile-section">
-          <template #header>
-            <q-item-section>
-              <q-item-label class="profile-card__title">Extra Metadata Fields (NIP-24)</q-item-label>
-            </q-item-section>
-          </template>
-
-          <div class="profile-card__section profile-section__content">
-            <q-input
-              v-model="localProfile.display_name"
-              class="tg-input"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="Display Name"
-              placeholder="Alternative display name"
-            />
-
-            <q-input
-              v-model="localProfile.website"
-              class="tg-input q-mt-sm"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="Website"
-              placeholder="https://example.com"
-            />
-
-            <q-input
-              v-model="localProfile.banner"
-              class="tg-input q-mt-sm"
-              outlined
-              dense
-              rounded
-              :readonly="readOnly"
-              label="Banner URL"
-              placeholder="https://example.com/banner.png"
-            />
-
-            <div class="profile-card__bot-row q-mt-sm">
-              <div>
-                <div class="text-body2">Bot</div>
-                <div class="text-caption text-grey-6">
-                  Content is partially or fully automated.
-                </div>
-              </div>
-
-              <q-toggle
-                v-model="localProfile.bot"
+          <q-tab-panel name="profile" class="profile-tab-panel">
+            <div v-if="showProfileTabActions" class="profile-tab-actions">
+              <q-btn
+                v-if="props.showHeader"
+                no-caps
+                outline
                 color="primary"
-                checked-icon="smart_toy"
-                unchecked-icon="person"
-                :disable="readOnly"
+                label="Refresh"
+                class="profile-tab-actions__button"
+                :disable="!normalizedHeaderPubkey || isRefreshingContact"
+                :loading="isRefreshingContact"
+                @click="handleRefreshContactProfile"
               />
-            </div>
-
-            <div class="profile-card__subtitle q-mt-md">Birthday</div>
-            <div class="profile-card__birthday-grid q-mt-sm">
-              <q-input
-                v-model.number="localProfile.birthday.year"
-                class="tg-input"
-                outlined
-                dense
-                rounded
-                type="number"
-                :readonly="readOnly"
-                label="Year"
-                placeholder="1990"
-              />
-
-              <q-input
-                v-model.number="localProfile.birthday.month"
-                class="tg-input"
-                outlined
-                dense
-                rounded
-                type="number"
-                :readonly="readOnly"
-                label="Month"
-                placeholder="1-12"
-                min="1"
-                max="12"
-              />
-
-              <q-input
-                v-model.number="localProfile.birthday.day"
-                class="tg-input"
-                outlined
-                dense
-                rounded
-                type="number"
-                :readonly="readOnly"
-                label="Day"
-                placeholder="1-31"
-                min="1"
-                max="31"
-              />
-            </div>
-          </div>
-        </q-expansion-item>
-
-        <q-expansion-item expand-separator switch-toggle-side class="profile-section">
-          <template #header>
-            <q-item-section>
-              <div class="profile-card__title-row">
-                <div class="profile-card__title">Relays (NIP-65)</div>
-                <q-btn
-                  v-if="props.showRelaysEditAction"
-                  flat
-                  dense
-                  round
-                  icon="edit"
-                  color="primary"
-                  aria-label="Edit relays"
-                  @click.stop="emit('open-relays-settings')"
-                />
-              </div>
-            </q-item-section>
-          </template>
-
-          <div class="profile-card__section profile-section__content">
-            <div class="profile-card__bot-row">
-              <div>
-                <div class="text-body2">Send via App Relays</div>
-                <div class="text-caption text-grey-6">
-                  Use app relays for outbound messages and reactions. If this contact later adds
-                  relays, both relay lists are used.
-                </div>
-              </div>
-
-              <q-toggle
-                v-model="localProfile.sendMessagesToAppRelays"
+              <q-btn
+                v-if="props.showPublishAction"
+                no-caps
+                unelevated
                 color="primary"
-                checked-icon="cloud_upload"
-                unchecked-icon="cloud_off"
+                label="Publish"
+                class="profile-tab-actions__button"
                 :disable="!normalizedHeaderPubkey"
-                @update:model-value="handleSendMessagesToAppRelaysUpdate"
+                :loading="props.isPublishing"
+                @click="emit('publish')"
               />
             </div>
 
-            <RelayEditorPanel
-              :new-relay="''"
-              :relays="relayList"
-              relay-validation-error=""
-              :can-add-relay="false"
-              empty-message="No relays configured."
-              :show-toolbar="false"
-              :show-secondary-action="false"
-              :relay-toggles-disabled="true"
-              :show-remove-relay-action="false"
-              :relay-read-enabled="relayReadEnabled"
-              :relay-write-enabled="relayWriteEnabled"
-              :relay-icon-url="relayIconUrl"
-              :is-relay-connected="isRelayConnected"
-              :is-relay-info-loading="isRelayInfoLoading"
-              :relay-info-error="relayInfoError"
-              :relay-info="relayInfo"
-              @relay-expand="handleRelayExpand"
-              @retry-relay-info="retryRelayInfo"
-              @relay-icon-error="handleRelayIconError"
-            />
-          </div>
-        </q-expansion-item>
-      </q-list>
+            <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
+              <q-input
+                :model-value="displayHexPubkey"
+                class="tg-input"
+                outlined
+                dense
+                rounded
+                readonly
+                label="Hex Public Key"
+                placeholder="hex pubkey or npub"
+                :loading="isLoadingContact"
+                :error="Boolean(pubkeyError)"
+                :error-message="pubkeyError"
+              >
+                <template #append>
+                  <q-btn
+                    flat
+                    dense
+                    round
+                    icon="content_copy"
+                    color="primary"
+                    aria-label="Copy hex public key"
+                    :disable="!displayHexPubkey.trim()"
+                    @click.stop="handleCopyProfileValue(displayHexPubkey, 'Hex public key')"
+                  >
+                    <AppTooltip>Copy hex public key</AppTooltip>
+                  </q-btn>
+                </template>
+              </q-input>
+              <q-input
+                :model-value="displayNpub"
+                class="tg-input"
+                outlined
+                dense
+                rounded
+                readonly
+                label="npub"
+                placeholder="npub1..."
+              >
+                <template #append>
+                  <q-btn
+                    flat
+                    dense
+                    round
+                    icon="content_copy"
+                    color="primary"
+                    aria-label="Copy npub"
+                    :disable="!displayNpub.trim()"
+                    @click.stop="handleCopyProfileValue(displayNpub, 'npub')"
+                  >
+                    <AppTooltip>Copy npub</AppTooltip>
+                  </q-btn>
+                </template>
+              </q-input>
+              <div v-if="pubkeyInfo" class="text-caption text-grey-6">{{ pubkeyInfo }}</div>
+            </div>
+
+            <q-list bordered separator class="profile-sections q-mt-md">
+              <q-expansion-item
+                default-opened
+                expand-separator
+                switch-toggle-side
+                class="profile-section"
+              >
+                <template #header>
+                  <q-item-section>
+                    <q-item-label class="profile-card__title">User Metadata (NIP-01)</q-item-label>
+                  </q-item-section>
+                </template>
+
+                <div class="profile-card__section profile-section__content">
+                  <q-input
+                    v-model="localProfile.name"
+                    class="tg-input"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="Name"
+                    placeholder="Your profile name"
+                  />
+
+                  <q-input
+                    v-model="localProfile.about"
+                    class="tg-input q-mt-sm"
+                    outlined
+                    dense
+                    rounded
+                    type="textarea"
+                    autogrow
+                    :readonly="readOnly"
+                    label="About"
+                    placeholder="Short bio"
+                  />
+
+                  <q-input
+                    v-model="localProfile.picture"
+                    class="tg-input q-mt-sm"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="Picture URL"
+                    placeholder="https://example.com/avatar.png"
+                  />
+
+                  <q-input
+                    v-model="localProfile.nip05"
+                    class="tg-input q-mt-sm"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="NIP-05"
+                    placeholder="name@example.com"
+                  />
+
+                  <q-input
+                    v-model="localProfile.lud16"
+                    class="tg-input q-mt-sm"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="Lightning Address"
+                    placeholder="name@domain.com"
+                  />
+
+                  <q-input
+                    v-model="localProfile.lud06"
+                    class="tg-input q-mt-sm"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="LNURL"
+                    placeholder="lnurl1..."
+                  />
+                </div>
+              </q-expansion-item>
+
+              <q-expansion-item expand-separator switch-toggle-side class="profile-section">
+                <template #header>
+                  <q-item-section>
+                    <q-item-label class="profile-card__title">Extra Metadata Fields (NIP-24)</q-item-label>
+                  </q-item-section>
+                </template>
+
+                <div class="profile-card__section profile-section__content">
+                  <q-input
+                    v-model="localProfile.display_name"
+                    class="tg-input"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="Display Name"
+                    placeholder="Alternative display name"
+                  />
+
+                  <q-input
+                    v-model="localProfile.website"
+                    class="tg-input q-mt-sm"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="Website"
+                    placeholder="https://example.com"
+                  />
+
+                  <q-input
+                    v-model="localProfile.banner"
+                    class="tg-input q-mt-sm"
+                    outlined
+                    dense
+                    rounded
+                    :readonly="readOnly"
+                    label="Banner URL"
+                    placeholder="https://example.com/banner.png"
+                  />
+
+                  <div class="profile-card__bot-row q-mt-sm">
+                    <div>
+                      <div class="text-body2">Bot</div>
+                      <div class="text-caption text-grey-6">
+                        Content is partially or fully automated.
+                      </div>
+                    </div>
+
+                    <q-toggle
+                      v-model="localProfile.bot"
+                      color="primary"
+                      checked-icon="smart_toy"
+                      unchecked-icon="person"
+                      :disable="readOnly"
+                    />
+                  </div>
+
+                  <div class="profile-card__subtitle q-mt-md">Birthday</div>
+                  <div class="profile-card__birthday-grid q-mt-sm">
+                    <q-input
+                      v-model.number="localProfile.birthday.year"
+                      class="tg-input"
+                      outlined
+                      dense
+                      rounded
+                      type="number"
+                      :readonly="readOnly"
+                      label="Year"
+                      placeholder="1990"
+                    />
+
+                    <q-input
+                      v-model.number="localProfile.birthday.month"
+                      class="tg-input"
+                      outlined
+                      dense
+                      rounded
+                      type="number"
+                      :readonly="readOnly"
+                      label="Month"
+                      placeholder="1-12"
+                      min="1"
+                      max="12"
+                    />
+
+                    <q-input
+                      v-model.number="localProfile.birthday.day"
+                      class="tg-input"
+                      outlined
+                      dense
+                      rounded
+                      type="number"
+                      :readonly="readOnly"
+                      label="Day"
+                      placeholder="1-31"
+                      min="1"
+                      max="31"
+                    />
+                  </div>
+                </div>
+              </q-expansion-item>
+
+              <q-expansion-item expand-separator switch-toggle-side class="profile-section">
+                <template #header>
+                  <q-item-section>
+                    <div class="profile-card__title-row">
+                      <div class="profile-card__title">Relays (NIP-65)</div>
+                      <q-btn
+                        v-if="props.showRelaysEditAction"
+                        flat
+                        dense
+                        round
+                        icon="edit"
+                        color="primary"
+                        aria-label="Edit relays"
+                        @click.stop="emit('open-relays-settings')"
+                      />
+                    </div>
+                  </q-item-section>
+                </template>
+
+                <div class="profile-card__section profile-section__content">
+                  <div class="profile-card__bot-row">
+                    <div>
+                      <div class="text-body2">Send via App Relays</div>
+                      <div class="text-caption text-grey-6">
+                        Use app relays for outbound messages and reactions. If this contact later adds
+                        relays, both relay lists are used.
+                      </div>
+                    </div>
+
+                    <q-toggle
+                      v-model="localProfile.sendMessagesToAppRelays"
+                      color="primary"
+                      checked-icon="cloud_upload"
+                      unchecked-icon="cloud_off"
+                      :disable="!normalizedHeaderPubkey"
+                      @update:model-value="handleSendMessagesToAppRelaysUpdate"
+                    />
+                  </div>
+
+                  <RelayEditorPanel
+                    :new-relay="''"
+                    :relays="relayList"
+                    relay-validation-error=""
+                    :can-add-relay="false"
+                    empty-message="No relays configured."
+                    :show-toolbar="false"
+                    :show-secondary-action="false"
+                    :relay-toggles-disabled="true"
+                    :show-remove-relay-action="false"
+                    :relay-read-enabled="relayReadEnabled"
+                    :relay-write-enabled="relayWriteEnabled"
+                    :relay-icon-url="relayIconUrl"
+                    :is-relay-connected="isRelayConnected"
+                    :is-relay-info-loading="isRelayInfoLoading"
+                    :relay-info-error="relayInfoError"
+                    :relay-info="relayInfo"
+                    @relay-expand="handleRelayExpand"
+                    @retry-relay-info="retryRelayInfo"
+                    @relay-icon-error="handleRelayIconError"
+                  />
+                </div>
+              </q-expansion-item>
+            </q-list>
+          </q-tab-panel>
+
+          <q-tab-panel v-if="isGroupContact" name="members" class="profile-tab-panel">
+            <div class="profile-members-state">
+              <div class="profile-members-state__title">Members</div>
+              <div class="text-body2">Group member management is not available yet.</div>
+              <div class="text-caption text-grey-6">
+                This tab is reserved for the NIP-171 group member flow.
+              </div>
+            </div>
+          </q-tab-panel>
+        </q-tab-panels>
+      </div>
+    </div>
+
+    <div v-if="isMobileTabs && showTabSelection" class="mobile-nav">
+      <div class="mobile-nav__inner" :style="mobileNavGridStyle">
+        <q-btn
+          :flat="activeTab !== 'profile'"
+          :unelevated="activeTab === 'profile'"
+          :color="activeTab === 'profile' ? 'primary' : undefined"
+          :text-color="activeTab === 'profile' ? 'white' : undefined"
+          no-caps
+          icon="badge"
+          label="Profile"
+          class="mobile-nav__btn"
+          :class="{ 'mobile-nav__btn--active': activeTab === 'profile' }"
+          @click="activeTab = 'profile'"
+        />
+        <q-btn
+          v-if="isGroupContact"
+          :flat="activeTab !== 'members'"
+          :unelevated="activeTab === 'members'"
+          :color="activeTab === 'members' ? 'primary' : undefined"
+          :text-color="activeTab === 'members' ? 'white' : undefined"
+          no-caps
+          icon="groups"
+          label="Members"
+          class="mobile-nav__btn"
+          :class="{ 'mobile-nav__btn--active': activeTab === 'members' }"
+          @click="activeTab = 'members'"
+        />
+      </div>
     </div>
   </div>
 </template>
@@ -382,6 +446,8 @@ import {
   type ContactProfileForm
 } from 'src/types/contactProfile';
 import { reportUiError } from 'src/utils/uiErrorHandler';
+
+type ProfileTab = 'profile' | 'members';
 
 interface Props {
   modelValue: ContactProfileForm;
@@ -417,6 +483,8 @@ const localPubkey = computed({
   set: (value: string) => emit('update:pubkey', value)
 });
 const localProfile = reactive<ContactProfileForm>(cloneProfile(props.modelValue));
+const activeTab = ref<ProfileTab>('profile');
+const currentContact = ref<ContactRecord | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
 const pubkeyError = ref('');
@@ -436,6 +504,13 @@ const displayNpub = computed(() => {
   const pubkey = normalizedDisplayPubkey.value;
   return pubkey ? nostrStore.encodeNpub(pubkey) ?? '' : '';
 });
+const isMobileTabs = computed(() => $q.screen.lt.md);
+const isGroupContact = computed(() => currentContact.value?.type === 'group');
+const showTabSelection = computed(() => isGroupContact.value);
+const mobileNavGridStyle = computed(() => ({
+  gridTemplateColumns: `repeat(${isGroupContact.value ? 2 : 1}, minmax(0, 1fr))`
+}));
+const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
 
 const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
 
@@ -508,6 +583,12 @@ watch(
   },
   { immediate: true }
 );
+
+watch(isGroupContact, (value) => {
+  if (!value && activeTab.value === 'members') {
+    activeTab.value = 'profile';
+  }
+});
 
 function cloneProfile(value: ContactProfileForm): ContactProfileForm {
   return {
@@ -820,7 +901,7 @@ async function handleRefreshContactProfile(): Promise<void> {
     await nostrStore.refreshContactByPublicKey(normalizedPubkey, headerName.value);
     await loadContactFromPubkey(normalizedPubkey);
   } catch (error) {
-    reportUiError('Failed to refresh contact profile from header action', error, 'Failed to refresh profile.');
+    reportUiError('Failed to refresh profile', error, 'Failed to refresh profile.');
     pubkeyError.value =
       error instanceof Error ? error.message : 'Failed to refresh contact profile.';
     pubkeyInfo.value = '';
@@ -855,6 +936,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   const normalizedPubkey = normalizePubkeyInput(input);
 
   if (!input.trim()) {
+    currentContact.value = null;
     isLoadingContact.value = false;
     pubkeyError.value = '';
     pubkeyInfo.value = '';
@@ -862,6 +944,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   }
 
   if (!normalizedPubkey) {
+    currentContact.value = null;
     isLoadingContact.value = false;
     pubkeyError.value = 'Enter a valid hex pubkey or npub.';
     pubkeyInfo.value = '';
@@ -880,16 +963,19 @@ async function loadContactFromPubkey(input: string): Promise<void> {
     }
 
     if (!contact) {
+      currentContact.value = null;
       pubkeyInfo.value = 'No contact found for this public key.';
       return;
     }
 
+    currentContact.value = contact;
     Object.assign(localProfile, mapContactToProfile(contact));
   } catch (error) {
     if (requestId !== lookupRequestId) {
       return;
     }
 
+    currentContact.value = null;
     pubkeyError.value = error instanceof Error ? error.message : 'Failed to load contact.';
     pubkeyInfo.value = '';
   } finally {
@@ -902,13 +988,36 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
 <style scoped>
 .contact-profile {
+  flex: 1 1 auto;
   width: 100%;
   min-height: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   background: transparent;
+}
+
+.profile-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .profile-content--with-header {
   padding: 12px;
+}
+
+.profile-tabs-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 12px;
+}
+
+.profile-tabs-shell--mobile {
+  justify-content: space-between;
 }
 
 .profile-header {
@@ -952,7 +1061,40 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   color: #64748b;
 }
 
-.profile-header__publish {
+.profile-tabs {
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  background: color-mix(in srgb, var(--tg-panel-header-bg) 92%, rgba(255, 255, 255, 0.08));
+}
+
+.profile-tab-panels {
+  background: transparent;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.profile-tab-panels--mobile {
+  padding-bottom: 4px;
+}
+
+.profile-tab-panel {
+  padding: 0;
+}
+
+.profile-tab-panels--mobile :deep(.q-panel) {
+  min-height: 100%;
+}
+
+.profile-tab-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.profile-tab-actions__button {
   flex-shrink: 0;
 }
 
@@ -1022,6 +1164,87 @@ async function loadContactFromPubkey(input: string): Promise<void> {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.profile-members-state {
+  padding: 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--tg-panel-sidebar-bg) 94%, rgba(255, 255, 255, 0.04));
+  display: grid;
+  gap: 8px;
+}
+
+.profile-members-state__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.mobile-nav {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--tg-sidebar) 78%, transparent), var(--tg-sidebar));
+  border-top: 1px solid color-mix(in srgb, var(--tg-border) 84%, #6b7d96 16%);
+  padding-bottom: env(safe-area-inset-bottom);
+  backdrop-filter: blur(var(--tg-glass-blur-strong));
+}
+
+.mobile-nav__inner {
+  display: grid;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px 5px;
+}
+
+.mobile-nav__btn {
+  color: #55697f;
+  border-radius: 12px;
+  min-height: 42px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 74%, transparent);
+  background: color-mix(in srgb, var(--tg-sidebar) 90%, #eef5ff 10%);
+  transition:
+    transform 0.2s ease,
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    color 0.2s ease;
+}
+
+.mobile-nav__btn :deep(.q-btn__content) {
+  gap: 5px;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.mobile-nav__btn :deep(.q-icon) {
+  font-size: 18px;
+}
+
+.mobile-nav__btn:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--tg-border) 72%, #6d8db8 28%);
+  background: color-mix(in srgb, var(--tg-sidebar) 82%, #dce9ff 18%);
+}
+
+.mobile-nav__btn--active {
+  border-color: rgba(33, 110, 236, 0.68);
+  box-shadow: 0 8px 18px rgba(30, 102, 214, 0.24);
+}
+
+body.body--dark .mobile-nav__btn {
+  color: #a5b6c9;
+  border-color: color-mix(in srgb, var(--tg-border) 72%, transparent);
+  background: color-mix(in srgb, var(--tg-sidebar) 90%, #102035 10%);
+}
+
+body.body--dark .mobile-nav__btn--active {
+  border-color: rgba(128, 193, 255, 0.62);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.38);
 }
 
 @media (max-width: 640px) {

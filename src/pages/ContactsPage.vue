@@ -1108,6 +1108,16 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contacts-detail-panel__content {
   padding: 0;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+}
+
+.contacts-detail-panel__scroll :deep(.q-scrollarea__content) {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 .contacts-detail-mobile-header {
