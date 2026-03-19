@@ -1,5 +1,10 @@
 import { isValidPubkey, nip19, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
-import type { ContactBirthday, ContactMetadata, ContactRelay } from 'src/types/contact';
+import type {
+  ContactBirthday,
+  ContactGroupMember,
+  ContactMetadata,
+  ContactRelay
+} from 'src/types/contact';
 
 export interface NpubValidationResult {
   isValid: boolean;
@@ -251,6 +256,46 @@ class InputSanitizerService {
     return Object.keys(birthday).length > 0 ? birthday : undefined;
   }
 
+  normalizeContactGroupMembers(value: unknown): ContactGroupMember[] {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+
+    const uniqueMembers = new Map<string, ContactGroupMember>();
+    for (const entry of value) {
+      if (!entry || typeof entry !== 'object') {
+        continue;
+      }
+
+      const rawMember = entry as Partial<ContactGroupMember>;
+      const publicKey = this.normalizeHexKey(
+        typeof rawMember.public_key === 'string' ? rawMember.public_key : ''
+      );
+      if (!publicKey) {
+        continue;
+      }
+
+      const name =
+        (typeof rawMember.name === 'string' ? rawMember.name.trim() : '') || publicKey;
+      const givenName =
+        typeof rawMember.given_name === 'string' ? rawMember.given_name.trim() || null : null;
+      const about = this.readOptionalString(rawMember.about);
+      const nip05 = this.readOptionalString(rawMember.nip05);
+      const nprofile = this.readOptionalString(rawMember.nprofile);
+
+      uniqueMembers.set(publicKey, {
+        public_key: publicKey,
+        name,
+        given_name: givenName,
+        ...(about ? { about } : {}),
+        ...(nip05 ? { nip05 } : {}),
+        ...(nprofile ? { nprofile } : {})
+      });
+    }
+
+    return Array.from(uniqueMembers.values());
+  }
+
   normalizeContactMetadata(value: unknown): ContactMetadata {
     if (!isPlainObject(value)) {
       return {};
@@ -279,6 +324,7 @@ class InputSanitizerService {
       typeof value.owner_public_key === 'string' ? value.owner_public_key : ''
     );
     const birthday = this.normalizeContactBirthday(value.birthday);
+    const groupMembers = this.normalizeContactGroupMembers(value.group_members);
 
     if (name) {
       meta.name = name;
@@ -354,6 +400,10 @@ class InputSanitizerService {
 
     if (ownerPublicKey) {
       meta.owner_public_key = ownerPublicKey;
+    }
+
+    if (groupMembers.length > 0) {
+      meta.group_members = groupMembers;
     }
 
     return meta;

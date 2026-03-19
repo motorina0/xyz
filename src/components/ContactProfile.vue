@@ -535,7 +535,7 @@ import CachedAvatar from 'src/components/CachedAvatar.vue';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import { contactsService } from 'src/services/contactsService';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { ContactRecord } from 'src/types/contact';
+import type { ContactGroupMember, ContactMetadata, ContactRecord } from 'src/types/contact';
 import {
   createEmptyContactProfileForm,
   type ContactProfileForm
@@ -544,7 +544,7 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 
 type ProfileTab = 'profile' | 'members';
 
-type GroupMemberDraft = Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'>;
+type GroupMemberDraft = ContactGroupMember;
 
 interface Props {
   modelValue: ContactProfileForm;
@@ -694,14 +694,11 @@ watch(isGroupContact, (value) => {
 });
 
 watch(
-  () => currentContact.value?.public_key ?? '',
-  (value, previousValue) => {
-    if (value === previousValue) {
-      return;
-    }
-
-    resetMembersEditor();
-  }
+  currentContact,
+  (contact) => {
+    syncGroupMembersFromContact(contact);
+  },
+  { immediate: true }
 );
 
 function cloneProfile(value: ContactProfileForm): ContactProfileForm {
@@ -978,10 +975,16 @@ async function handleAddMember(): Promise<void> {
         meta: {}
       };
 
-    groupMembers.value = [
+    const trimmedIdentifier = identifier.trim();
+    await persistGroupMembers([
       ...groupMembers.value,
-      memberPreview
-    ];
+      buildStoredGroupMember(
+        memberPreview,
+        resolution.identifierType,
+        trimmedIdentifier.startsWith('nprofile1') ? trimmedIdentifier : null,
+        resolution.identifierType === 'nip05' ? trimmedIdentifier : null
+      )
+    ]);
     newMemberIdentifier.value = '';
     newMemberIdentifierError.value = '';
   } catch (error) {
@@ -991,8 +994,13 @@ async function handleAddMember(): Promise<void> {
   }
 }
 
-function handleRemoveMember(index: number): void {
-  groupMembers.value = groupMembers.value.filter((_, memberIndex) => memberIndex !== index);
+async function handleRemoveMember(index: number): Promise<void> {
+  try {
+    const nextMembers = groupMembers.value.filter((_, memberIndex) => memberIndex !== index);
+    await persistGroupMembers(nextMembers);
+  } catch (error) {
+    reportUiError('Failed to remove group member', error, 'Failed to remove member.');
+  }
 }
 
 async function handleRefreshMember(index: number): Promise<void> {
@@ -1014,9 +1022,11 @@ async function handleRefreshMember(index: number): Promise<void> {
   try {
     const refreshedMember =
       (await nostrStore.fetchContactPreviewByPublicKey(memberPubkey, member.name)) ?? member;
-    groupMembers.value = groupMembers.value.map((entry, memberIndex) =>
-      memberIndex === index ? refreshedMember : entry
-    );
+    await persistGroupMembers(groupMembers.value.map((entry, memberIndex) =>
+      memberIndex === index
+        ? buildStoredGroupMember(refreshedMember, null, entry.nprofile ?? null, entry.nip05 ?? null)
+        : entry
+    ));
   } catch (error) {
     reportUiError('Failed to refresh group member profile', error, 'Failed to refresh member profile.');
   } finally {
@@ -1043,12 +1053,86 @@ function isMemberRefreshing(pubkey: string): boolean {
   return refreshingMemberPubkeys.value[pubkey] === true;
 }
 
-function memberDisplayName(member: GroupMemberDraft): string {
-  const displayName = member.meta.display_name?.trim();
-  if (displayName) {
-    return displayName;
+function buildStoredGroupMember(
+  preview: Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'>,
+  identifierType: string | null,
+  nprofile: string | null,
+  nip05: string | null
+): GroupMemberDraft {
+  const name =
+    preview.meta?.name?.trim() ||
+    preview.meta?.display_name?.trim() ||
+    preview.name.trim() ||
+    preview.public_key;
+  const about = preview.meta?.about?.trim() || '';
+
+  return {
+    public_key: preview.public_key,
+    name,
+    given_name: preview.given_name?.trim() || null,
+    ...(about ? { about } : {}),
+    ...(identifierType === 'nip05' && nip05 ? { nip05 } : {}),
+    ...(nprofile ? { nprofile } : {}),
+    ...(identifierType === null && nip05 ? { nip05 } : {})
+  };
+}
+
+function cloneGroupMember(member: ContactGroupMember): GroupMemberDraft {
+  return {
+    public_key: member.public_key,
+    name: member.name,
+    given_name: member.given_name ?? null,
+    about: member.about,
+    nip05: member.nip05,
+    nprofile: member.nprofile
+  };
+}
+
+function cloneGroupMembers(members: ContactGroupMember[] | undefined): GroupMemberDraft[] {
+  return Array.isArray(members) ? members.map((member) => cloneGroupMember(member)) : [];
+}
+
+function syncGroupMembersFromContact(contact: ContactRecord | null): void {
+  resetMembersEditor();
+  if (!contact || contact.type !== 'group') {
+    return;
   }
 
+  groupMembers.value = cloneGroupMembers(contact.meta.group_members);
+}
+
+async function persistGroupMembers(nextMembers: GroupMemberDraft[]): Promise<void> {
+  const contact = currentContact.value;
+  if (!contact || contact.type !== 'group') {
+    groupMembers.value = cloneGroupMembers(nextMembers);
+    return;
+  }
+
+  await contactsService.init();
+
+  const nextMeta: ContactMetadata = {
+    ...(contact.meta ?? {})
+  };
+  const storedMembers = cloneGroupMembers(nextMembers);
+
+  if (storedMembers.length > 0) {
+    nextMeta.group_members = storedMembers;
+  } else {
+    delete nextMeta.group_members;
+  }
+
+  const updatedContact = await contactsService.updateContact(contact.id, {
+    meta: nextMeta
+  });
+  if (!updatedContact) {
+    throw new Error('Failed to persist group members.');
+  }
+
+  currentContact.value = updatedContact;
+  groupMembers.value = cloneGroupMembers(updatedContact.meta.group_members);
+}
+
+function memberDisplayName(member: GroupMemberDraft): string {
   const givenName = member.given_name?.trim();
   if (givenName) {
     return givenName;
@@ -1058,25 +1142,19 @@ function memberDisplayName(member: GroupMemberDraft): string {
 }
 
 function memberAvatar(member: GroupMemberDraft): string {
-  const avatar = member.meta.avatar?.trim();
-  if (avatar) {
-    return avatar.slice(0, 2).toUpperCase();
-  }
-
   return buildAvatar(memberDisplayName(member) || member.public_key);
 }
 
 function memberPictureUrl(member: GroupMemberDraft): string {
-  const picture = member.meta.picture?.trim();
-  return picture || '';
+  void member;
+  return '';
 }
 
 function memberListCandidates(member: GroupMemberDraft): string[] {
-  const npub = member.meta.npub?.trim() || nostrStore.encodeNpub(member.public_key) || '';
+  const npub = nostrStore.encodeNpub(member.public_key) || '';
+  const storedIdentifier = member.nip05?.trim() || member.nprofile?.trim() || '';
 
-  return [member.meta.name?.trim() ?? '', member.meta.about?.trim() ?? '', member.meta.nip05?.trim() ?? '', npub].filter(
-    (value) => value.length > 0
-  );
+  return [member.name.trim(), member.about?.trim() ?? '', storedIdentifier, npub].filter((value) => value.length > 0);
 }
 
 function isLoggedInMember(member: GroupMemberDraft): boolean {

@@ -6,6 +6,15 @@ export interface ContactBirthday {
 
 export type ContactType = 'user' | 'group';
 
+export interface ContactGroupMember {
+  public_key: string;
+  name: string;
+  given_name?: string | null;
+  about?: string;
+  nip05?: string;
+  nprofile?: string;
+}
+
 export interface ContactMetadata {
   name?: string;
   about?: string;
@@ -27,6 +36,7 @@ export interface ContactMetadata {
   last_seen_incoming_activity_event_id?: string;
   group_private_key_encrypted?: string;
   owner_public_key?: string;
+  group_members?: ContactGroupMember[];
 }
 
 export interface ContactRelay {
