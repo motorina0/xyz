@@ -374,6 +374,10 @@ class InputSanitizerService {
       meta.bot = value.bot;
     }
 
+    if (typeof value.group === 'boolean') {
+      meta.group = value.group;
+    }
+
     if (birthday) {
       meta.birthday = birthday;
     }

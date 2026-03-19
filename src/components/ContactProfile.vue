@@ -276,6 +276,23 @@
                     />
                   </div>
 
+                  <div class="profile-card__bot-row q-mt-sm">
+                    <div>
+                      <div class="text-body2">Group</div>
+                      <div class="text-caption text-grey-6">
+                        Profile represents a group identity.
+                      </div>
+                    </div>
+
+                    <q-toggle
+                      v-model="localProfile.group"
+                      color="primary"
+                      checked-icon="groups"
+                      unchecked-icon="person"
+                      :disable="readOnly"
+                    />
+                  </div>
+
                   <div class="profile-card__subtitle q-mt-md">Birthday</div>
                   <div class="profile-card__birthday-grid q-mt-sm">
                     <q-input
@@ -1202,6 +1219,7 @@ function mapContactToProfile(contact: ContactRecord): ContactProfileForm {
     website: contact.meta.website ?? '',
     banner: contact.meta.banner ?? '',
     bot: contact.meta.bot === true,
+    group: contact.meta.group === true,
     birthday: {
       year: contact.meta.birthday?.year ?? null,
       month: contact.meta.birthday?.month ?? null,
@@ -1302,6 +1320,7 @@ function isSameProfile(a: ContactProfileForm, b: ContactProfileForm): boolean {
     a.website === b.website &&
     a.banner === b.banner &&
     a.bot === b.bot &&
+    a.group === b.group &&
     a.birthday.year === b.birthday.year &&
     a.birthday.month === b.birthday.month &&
     a.birthday.day === b.birthday.day &&

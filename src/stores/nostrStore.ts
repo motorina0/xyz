@@ -102,6 +102,7 @@ export interface PublishUserMetadataInput {
   website?: string;
   banner?: string;
   bot?: boolean;
+  group?: boolean;
   birthday?: {
     year?: number;
     month?: number;
@@ -3824,6 +3825,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     if (nextBanner) {
       meta.banner = nextBanner;
+    }
+
+    if (typeof profile?.bot === 'boolean') {
+      meta.bot = profile.bot;
+    }
+
+    if (typeof profile?.group === 'boolean') {
+      meta.group = profile.group;
     }
 
     if (resolvedNpub?.trim()) {

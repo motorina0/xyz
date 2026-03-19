@@ -454,6 +454,7 @@ function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
     website: contact.meta.website ?? '',
     banner: contact.meta.banner ?? '',
     bot: contact.meta.bot === true,
+    group: contact.meta.group === true,
     birthday: {
       year: contact.meta.birthday?.year ?? null,
       month: contact.meta.birthday?.month ?? null,
@@ -502,6 +503,7 @@ function buildUpdatedContactMeta(contact: ContactRecord, profile: ContactProfile
   setOptionalContactMetaString(nextMeta, 'website', profile.website);
   setOptionalContactMetaString(nextMeta, 'banner', profile.banner);
   nextMeta.bot = profile.bot;
+  nextMeta.group = profile.group;
 
   const birthday = profile.birthday;
   const normalizedBirthday: NonNullable<ContactMetadata['birthday']> = {};

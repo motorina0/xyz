@@ -34,11 +34,12 @@ export function buildContactProfilePublishPayload(
   profile: ContactProfileForm
 ): PublishUserMetadataInput {
   const payload: PublishUserMetadataInput = {
-    bot: profile.bot
+    bot: profile.bot,
+    group: profile.group
   };
 
   const fields: Array<
-    keyof Omit<ContactProfileForm, 'bot' | 'birthday' | 'relays' | 'sendMessagesToAppRelays'>
+    keyof Omit<ContactProfileForm, 'bot' | 'group' | 'birthday' | 'relays' | 'sendMessagesToAppRelays'>
   > = [
     'name',
     'about',

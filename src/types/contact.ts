@@ -28,6 +28,7 @@ export interface ContactMetadata {
   website?: string;
   banner?: string;
   bot?: boolean;
+  group?: boolean;
   birthday?: ContactBirthday;
   // App-local linkage used to map contacts to existing chat threads.
   chatId?: string;

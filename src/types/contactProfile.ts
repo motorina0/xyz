@@ -9,6 +9,7 @@ export interface ContactProfileForm {
   website: string;
   banner: string;
   bot: boolean;
+  group: boolean;
   birthday: {
     year: number | null;
     month: number | null;
@@ -30,6 +31,7 @@ export function createEmptyContactProfileForm(): ContactProfileForm {
     website: '',
     banner: '',
     bot: false,
+    group: false,
     birthday: {
       year: null,
       month: null,
