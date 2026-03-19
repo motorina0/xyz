@@ -403,6 +403,11 @@ const GROUP_IDENTITY_SECRET_TAG = 'group';
 const GROUP_IDENTITY_SECRET_VERSION = 1;
 const GROUP_PRIVATE_KEY_CONTACT_META_KEY = 'group_private_key_encrypted';
 const GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY = 'owner_public_key';
+const CHAT_REQUEST_TYPE_META_KEY = 'request_type';
+const CHAT_REQUEST_MESSAGE_META_KEY = 'request_message';
+const CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY = 'last_incoming_message_at';
+const GROUP_INVITE_REQUEST_TYPE = 'group_invite';
+const GROUP_INVITE_REQUEST_MESSAGE = 'This is an invitation to a group.';
 const CONTACT_CURSOR_VERSION = '0.1';
 const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
 const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
@@ -1715,9 +1720,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await epochTicketEvent.sign(groupSigner);
 
     const recipient = new NDKUser({ pubkey: normalizedMemberPublicKey });
-    const giftWrapEvent = await giftWrap(epochTicketEvent, recipient, groupSigner, {
-      rumorKind: 1014
-    });
+    const giftWrapEvent = await giftWrapSignedEvent(epochTicketEvent, recipient, groupSigner);
     const publishResult = await publishEventWithRelayStatuses(
       giftWrapEvent,
       relayUrls,
@@ -1739,6 +1742,151 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     void updatedGroupContact;
     return relaySaveStatus;
+  }
+
+  async function upsertIncomingGroupInviteRequestChat(
+    groupPublicKey: string,
+    createdAt: string,
+    preview: Pick<ContactRecord, 'name' | 'meta'> | null = null
+  ): Promise<void> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPublicKey) {
+      return;
+    }
+
+    await Promise.all([chatDataService.init(), chatStore.init()]);
+
+    const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+    const currentInboxState =
+      existingChat?.meta && typeof existingChat.meta.inbox_state === 'string'
+        ? existingChat.meta.inbox_state.trim()
+        : '';
+    if (currentInboxState === 'blocked' || currentInboxState === 'accepted') {
+      return;
+    }
+
+    const previewName =
+      preview?.meta?.display_name?.trim() ||
+      preview?.meta?.name?.trim() ||
+      preview?.name?.trim() ||
+      resolveGroupDisplayName(normalizedGroupPublicKey);
+    const previewPicture = preview?.meta?.picture?.trim() ?? '';
+    const nextMeta: Record<string, unknown> = {
+      ...(existingChat?.meta ?? {}),
+      avatar: buildAvatarFallback(previewName),
+      contact_name: previewName,
+      [CHAT_REQUEST_TYPE_META_KEY]: GROUP_INVITE_REQUEST_TYPE,
+      [CHAT_REQUEST_MESSAGE_META_KEY]: GROUP_INVITE_REQUEST_MESSAGE,
+      [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: createdAt
+    };
+    if (previewPicture) {
+      nextMeta.picture = previewPicture;
+    }
+
+    if (!existingChat) {
+      await chatDataService.createChat({
+        public_key: normalizedGroupPublicKey,
+        type: 'group',
+        name: previewName,
+        last_message: GROUP_INVITE_REQUEST_MESSAGE,
+        last_message_at: createdAt,
+        unread_count: 1,
+        meta: nextMeta
+      });
+      await chatStore.reload();
+      return;
+    }
+
+    await chatDataService.updateChat(normalizedGroupPublicKey, {
+      type: 'group',
+      ...(existingChat.name !== previewName ? { name: previewName } : {}),
+      meta: nextMeta
+    });
+    await chatDataService.updateChatPreview(
+      normalizedGroupPublicKey,
+      GROUP_INVITE_REQUEST_MESSAGE,
+      createdAt,
+      Number(existingChat.unread_count ?? 0) + 1
+    );
+    await chatStore.reload();
+  }
+
+  async function ensureGroupInvitePubkeyIsContact(
+    targetPubkeyHex: string,
+    fallbackName = ''
+  ): Promise<void> {
+    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (
+      !normalizedTargetPubkey ||
+      !loggedInPubkeyHex ||
+      normalizedTargetPubkey === loggedInPubkeyHex
+    ) {
+      return;
+    }
+
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+    const initialName = fallbackName.trim() || resolveGroupDisplayName(normalizedTargetPubkey);
+    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
+
+    if (existingContact) {
+      const nextMeta: ContactMetadata = {
+        ...(existingContact.meta ?? {}),
+        group: true
+      };
+      const shouldUpdateType = existingContact.type !== 'group';
+      const shouldUpdateName = Boolean(initialName) && existingContact.name !== initialName;
+      const shouldUpdateMeta =
+        JSON.stringify(inputSanitizerService.normalizeContactMetadata(existingContact.meta ?? {})) !==
+        JSON.stringify(inputSanitizerService.normalizeContactMetadata(nextMeta));
+
+      if (shouldUpdateType || shouldUpdateName || shouldUpdateMeta) {
+        await contactsService.updateContact(existingContact.id, {
+          type: 'group',
+          ...(shouldUpdateName ? { name: initialName } : {}),
+          ...(shouldUpdateMeta ? { meta: nextMeta } : {})
+        });
+      }
+    } else {
+      await contactsService.createContact({
+        public_key: normalizedTargetPubkey,
+        type: 'group',
+        name: initialName,
+        given_name: null,
+        meta: {
+          group: true
+        },
+        relays: []
+      });
+    }
+
+    const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
+    if (existingChat) {
+      await chatDataService.updateChat(normalizedTargetPubkey, {
+        type: 'group',
+        ...(existingChat.name !== initialName ? { name: initialName } : {}),
+        meta: {
+          ...(existingChat.meta ?? {}),
+          contact_name: initialName
+        }
+      });
+    }
+
+    try {
+      await refreshContactByPublicKey(normalizedTargetPubkey, initialName);
+    } catch (error) {
+      console.warn('Failed to refresh accepted group invite profile', normalizedTargetPubkey, error);
+      await useChatStore().syncContactProfile(normalizedTargetPubkey);
+    }
+
+    bumpContactListVersion();
+    await useChatStore().reload();
+
+    try {
+      await publishPrivateContactList(getAppRelayUrls());
+    } catch (error) {
+      console.warn('Failed to publish private contact list after accepting group invite', error);
+    }
   }
 
   async function ensurePrivatePreferences(
@@ -2452,6 +2600,80 @@ export const useNostrStore = defineStore('nostrStore', () => {
       tags,
       ...(event.id?.trim() ? { id: event.id.trim() } : {})
     });
+  }
+
+  function approximateGiftWrapNow(drift = 5): number {
+    return Math.round(Date.now() / 1000 - Math.random() * 10 ** drift);
+  }
+
+  async function giftWrapSignedEvent(
+    event: NDKEvent,
+    recipient: NDKUser,
+    signer: NDKSigner
+  ): Promise<NDKEvent> {
+    if (!event.sig) {
+      throw new Error('Signed event is required before gift wrapping.');
+    }
+
+    const invitationProof = event.sig.trim();
+    if (!invitationProof) {
+      throw new Error('Signed event is missing a valid signature.');
+    }
+
+    const rumorPayload: NostrEvent = {
+      created_at: event.created_at ?? Math.floor(Date.now() / 1000),
+      content: event.content,
+      tags: event.tags.map((tag) => [...tag]),
+      kind: event.kind,
+      pubkey: event.pubkey,
+      ...(event.id?.trim() ? { id: event.id.trim() } : {})
+    };
+
+    const sealEvent = new NDKEvent(ndk, {
+      kind: NDKKind.GiftWrapSeal,
+      created_at: approximateGiftWrapNow(),
+      pubkey: event.pubkey,
+      content: JSON.stringify(rumorPayload),
+      tags: [['invitation_proof', invitationProof]]
+    });
+    await sealEvent.encrypt(recipient, signer, 'nip44');
+    await sealEvent.sign(signer);
+
+    const wrapSigner = NDKPrivateKeySigner.generate();
+    const giftWrapEvent = new NDKEvent(ndk, {
+      kind: NDKKind.GiftWrap,
+      created_at: approximateGiftWrapNow(),
+      content: JSON.stringify(sealEvent.rawEvent()),
+      tags: [['p', recipient.pubkey]]
+    });
+    await giftWrapEvent.encrypt(recipient, wrapSigner, 'nip44');
+    await giftWrapEvent.sign(wrapSigner);
+
+    return giftWrapEvent;
+  }
+
+  async function unwrapGiftWrapSealEvent(wrappedEvent: NDKEvent): Promise<NostrEvent | null> {
+    const normalizedContent = wrappedEvent.content.trim();
+    const wrapAuthorPubkey = inputSanitizerService.normalizeHexKey(wrappedEvent.pubkey ?? '');
+    if (!normalizedContent || !wrapAuthorPubkey) {
+      return null;
+    }
+
+    ndk.assertSigner();
+    const wrapAuthor = new NDKUser({ pubkey: wrapAuthorPubkey });
+    const decryptedContent = await ndk.signer.decrypt(wrapAuthor, normalizedContent, 'nip44');
+
+    try {
+      const rawSeal = JSON.parse(decryptedContent) as Partial<NostrEvent>;
+      const sealEvent = new NDKEvent(ndk, rawSeal);
+      if (!sealEvent.verifySignature(false)) {
+        return null;
+      }
+
+      return await toStoredNostrEvent(sealEvent);
+    } catch {
+      return null;
+    }
   }
 
   function readDirectMessageRecipientPubkey(event: NostrEvent): string | null {
@@ -7300,10 +7522,26 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     if (rumorEvent.kind === 1014) {
-      console.log(
-        'Received kind:1014 event',
-        rumorNostrEvent ?? (await toStoredNostrEvent(rumorEvent)) ?? rumorEvent
-      );
+      const loggedEvent = rumorNostrEvent ?? (await toStoredNostrEvent(rumorEvent)) ?? rumorEvent;
+      const loggedSealEvent = await unwrapGiftWrapSealEvent(wrappedEvent);
+      console.log('Received kind:1014 event', loggedEvent);
+      if (loggedSealEvent) {
+        console.log('Received kind:1014 seal event', loggedSealEvent);
+      }
+
+      await contactsService.init();
+      const senderContact = await contactsService.getContactByPublicKey(senderPubkeyHex);
+      if (!senderContact) {
+        const groupPreview = await fetchContactPreviewByPublicKey(
+          senderPubkeyHex,
+          resolveGroupDisplayName(senderPubkeyHex)
+        );
+        await upsertIncomingGroupInviteRequestChat(
+          senderPubkeyHex,
+          toIsoTimestampFromUnix(rumorEvent.created_at),
+          groupPreview
+        );
+      }
       return;
     }
 
@@ -8784,6 +9022,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     developerDiagnosticsVersion,
     developerTraceVersion,
     encodeNpub,
+    ensureGroupInvitePubkeyIsContact,
     ensureRelayConnections,
     fetchRelayNip11Info,
     fetchMyRelayList,

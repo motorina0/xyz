@@ -8,6 +8,8 @@ export interface ChatMetadata {
   picture?: string;
   given_name?: string;
   contact_name?: string;
+  request_type?: string;
+  request_message?: string;
   muted?: boolean;
   unseen_reaction_count?: number;
   last_seen_received_activity_at?: string;

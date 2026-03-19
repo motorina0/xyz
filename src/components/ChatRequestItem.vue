@@ -6,10 +6,10 @@
       </q-item-section>
 
       <q-item-section class="request-item__main">
-        <q-item-label overline class="request-item__eyebrow">New contact</q-item-label>
+        <q-item-label overline class="request-item__eyebrow">{{ requestEyebrow }}</q-item-label>
         <q-item-label class="request-item__name" lines="1">{{ chatTitle }}</q-item-label>
         <q-item-label class="request-item__caption" caption lines="2">
-          {{ chat.lastMessage || 'Open to review this request.' }}
+          {{ requestCaption }}
         </q-item-label>
       </q-item-section>
 
@@ -74,6 +74,25 @@ function readMetaString(key: string): string {
   const value = props.chat.meta[key];
   return typeof value === 'string' ? value.trim() : '';
 }
+
+const isGroupInviteRequest = computed(() => readMetaString('request_type') === 'group_invite');
+
+const requestEyebrow = computed(() => {
+  return isGroupInviteRequest.value ? 'Group invitation' : 'New contact';
+});
+
+const requestCaption = computed(() => {
+  const explicitMessage = readMetaString('request_message');
+  if (explicitMessage) {
+    return explicitMessage;
+  }
+
+  if (isGroupInviteRequest.value) {
+    return 'This is an invitation to a group.';
+  }
+
+  return props.chat.lastMessage || 'Open to review this request.';
+});
 
 function chatPubkeySnippet(value: string): string {
   return value.trim().slice(0, 32);

@@ -705,7 +705,15 @@ async function handleAcceptRequest(chatId: string): Promise<void> {
 
     try {
       const nostrStore = await getNostrStore();
-      await nostrStore.ensureRespondedPubkeyIsContact(chat.publicKey, chat.name);
+      const requestType =
+        chat.meta && typeof chat.meta.request_type === 'string'
+          ? chat.meta.request_type.trim()
+          : '';
+      if (requestType === 'group_invite') {
+        await nostrStore.ensureGroupInvitePubkeyIsContact(chat.publicKey, chat.name);
+      } else {
+        await nostrStore.ensureRespondedPubkeyIsContact(chat.publicKey, chat.name);
+      }
     } catch (error) {
       console.warn('Failed to add accepted chat to contacts', chat.publicKey, error);
     }
