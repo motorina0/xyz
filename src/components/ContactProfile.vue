@@ -43,6 +43,7 @@
         >
           <q-tab name="profile" label="Profile" no-caps class="profile-tab" />
           <q-tab v-if="isGroupContact" name="members" label="Members" no-caps class="profile-tab" />
+          <q-tab v-if="isGroupContact" name="relays" label="Relays" no-caps class="profile-tab" />
         </q-tabs>
 
         <q-tab-panels
@@ -221,6 +222,7 @@
               </q-expansion-item>
 
               <q-expansion-item
+                v-if="!isGroupContact"
                 expand-separator
                 switch-toggle-side
                 expand-icon="keyboard_arrow_right"
@@ -537,6 +539,61 @@
               </q-list>
             </div>
           </q-tab-panel>
+
+          <q-tab-panel v-if="isGroupContact" name="relays" class="profile-tab-panel">
+            <div class="profile-group-relays">
+              <div v-if="showRelaysTabActions" class="profile-tab-actions">
+                <q-btn
+                  v-if="props.showHeader"
+                  no-caps
+                  outline
+                  color="primary"
+                  label="Refresh"
+                  class="profile-tab-actions__button"
+                  :disable="!normalizedHeaderPubkey || isRefreshingGroupRelays"
+                  :loading="isRefreshingGroupRelays"
+                  @click="handleRefreshGroupRelays"
+                />
+                <q-btn
+                  v-if="props.showPublishAction"
+                  no-caps
+                  unelevated
+                  color="primary"
+                  label="Publish"
+                  class="profile-tab-actions__button"
+                  :disable="!normalizedHeaderPubkey"
+                  :loading="isPublishingGroupRelays"
+                  @click="handlePublishGroupRelays"
+                />
+              </div>
+
+              <RelayEditorPanel
+                v-model:new-relay="newGroupRelay"
+                :relays="groupRelayUrls"
+                :relay-validation-error="groupRelayValidationError"
+                :can-add-relay="canAddGroupRelay"
+                empty-message="No NIP-65 relays configured."
+                :secondary-action-disabled="!canUseDefaultGroupRelays"
+                secondary-action-label="Use Default Relays"
+                secondary-action-icon="restart_alt"
+                :relay-read-enabled="groupRelayReadEnabled"
+                :relay-write-enabled="groupRelayWriteEnabled"
+                :relay-icon-url="relayIconUrl"
+                :is-relay-connected="isRelayConnected"
+                :is-relay-info-loading="isRelayInfoLoading"
+                :relay-info-error="relayInfoError"
+                :relay-info="relayInfo"
+                @add-relay="handleAddGroupRelay"
+                @remove-relay="handleRemoveGroupRelay"
+                @secondary-action="handleUseDefaultGroupRelays"
+                @relay-expand="handleRelayExpand"
+                @retry-relay-info="retryRelayInfo"
+                @relay-icon-error="handleRelayIconError"
+                @update-relay-read="handleUpdateGroupRelayRead"
+                @update-relay-write="handleUpdateGroupRelayWrite"
+              />
+            </div>
+          </q-tab-panel>
         </q-tab-panels>
       </div>
     </div>
@@ -568,6 +625,19 @@
           :class="{ 'mobile-nav__btn--active': activeTab === 'members' }"
           @click="activeTab = 'members'"
         />
+        <q-btn
+          v-if="isGroupContact"
+          :flat="activeTab !== 'relays'"
+          :unelevated="activeTab === 'relays'"
+          :color="activeTab === 'relays' ? 'primary' : undefined"
+          :text-color="activeTab === 'relays' ? 'white' : undefined"
+          no-caps
+          icon="satellite_alt"
+          label="Relays"
+          class="mobile-nav__btn"
+          :class="{ 'mobile-nav__btn--active': activeTab === 'relays' }"
+          @click="activeTab = 'relays'"
+        />
       </div>
     </div>
   </div>
@@ -580,16 +650,26 @@ import { useQuasar } from 'quasar';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
+import { DEFAULT_RELAYS } from 'src/constants/relays';
 import { contactsService } from 'src/services/contactsService';
 import { useNostrStore } from 'src/stores/nostrStore';
-import type { ContactGroupMember, ContactMetadata, ContactRecord } from 'src/types/contact';
+import type {
+  ContactGroupMember,
+  ContactMetadata,
+  ContactRecord,
+  ContactRelay
+} from 'src/types/contact';
 import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
-type ProfileTab = 'profile' | 'members';
+type ProfileTab = 'profile' | 'members' | 'relays';
+type RelayTogglePayload = {
+  index: number;
+  value: boolean;
+};
 
 type GroupMemberDraft = ContactGroupMember;
 
@@ -641,7 +721,11 @@ const newMemberIdentifier = ref('');
 const newMemberIdentifierError = ref('');
 const isAddingMember = ref(false);
 const isPublishingMembersEpoch = ref(false);
+const newGroupRelay = ref('');
+const isRefreshingGroupRelays = ref(false);
+const isPublishingGroupRelays = ref(false);
 const groupMembers = ref<GroupMemberDraft[]>([]);
+const groupRelayEntries = ref<ContactRelay[]>([]);
 const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 let lookupRequestId = 0;
 
@@ -658,11 +742,30 @@ const isMobileTabs = computed(() => $q.screen.lt.md);
 const isGroupContact = computed(() => currentContact.value?.type === 'group');
 const showTabSelection = computed(() => isGroupContact.value);
 const canAddMember = computed(() => newMemberIdentifier.value.trim().length > 0 && !isAddingMember.value);
+const groupRelayUrls = computed(() => groupRelayEntries.value.map((entry) => entry.url));
+const groupRelayValidationError = computed(() => validateGroupRelayUrl(newGroupRelay.value.trim()));
+const canAddGroupRelay = computed(() => {
+  const value = newGroupRelay.value.trim();
+  return value.length > 0 && groupRelayValidationError.value.length === 0;
+});
+const canUseDefaultGroupRelays = computed(() => {
+  if (groupRelayEntries.value.length !== DEFAULT_RELAYS.length) {
+    return true;
+  }
+
+  if (groupRelayEntries.value.some((relay, index) => relay.url !== DEFAULT_RELAYS[index])) {
+    return true;
+  }
+
+  return groupRelayEntries.value.some((relay) => relay.read !== true || relay.write !== true);
+});
 const mobileNavGridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${isGroupContact.value ? 2 : 1}, minmax(0, 1fr))`
+  gridTemplateColumns: `repeat(${isGroupContact.value ? 3 : 1}, minmax(0, 1fr))`
 }));
 const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
 const showMembersTabActions = computed(() => props.showHeader || props.showPublishAction);
+const showRelaysTabActions = computed(() => props.showHeader || props.showPublishAction);
+const allKnownRelays = computed(() => uniqueRelays([...relayList.value, ...groupRelayUrls.value]));
 
 const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
 
@@ -728,7 +831,7 @@ watch(
 );
 
 watch(
-  relayList,
+  allKnownRelays,
   (relays) => {
     pruneRelayInfoCache(relays);
     void prepareRelayDecorations(relays);
@@ -737,7 +840,7 @@ watch(
 );
 
 watch(isGroupContact, (value) => {
-  if (!value && activeTab.value === 'members') {
+  if (!value && activeTab.value !== 'profile') {
     activeTab.value = 'profile';
   }
 });
@@ -746,6 +849,7 @@ watch(
   currentContact,
   (contact) => {
     syncGroupMembersFromContact(contact);
+    syncGroupRelayEntriesFromContact(contact);
   },
   { immediate: true }
 );
@@ -973,6 +1077,23 @@ function clearMemberIdentifierError(): void {
   }
 }
 
+function validateGroupRelayUrl(value: string): string {
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const normalizedRelay = normalizeRelayUrl(value);
+    if (groupRelayEntries.value.some((entry) => relayKey(entry.url) === relayKey(normalizedRelay))) {
+      return 'Relay already added.';
+    }
+
+    return '';
+  } catch {
+    return 'Relay must be a valid ws:// or wss:// URL';
+  }
+}
+
 function memberIdentifierErrorMessage(resolution: {
   identifierType: string | null;
   error: string | null;
@@ -1149,6 +1270,177 @@ async function handleMembersPublish(): Promise<void> {
     );
   } finally {
     isPublishingMembersEpoch.value = false;
+  }
+}
+
+function cloneGroupRelayEntries(relays: ContactRelay[] | undefined): ContactRelay[] {
+  return relays ? relays.map((relay) => ({ ...relay })) : [];
+}
+
+function syncGroupRelayEntriesFromContact(contact: ContactRecord | null): void {
+  newGroupRelay.value = '';
+  groupRelayEntries.value =
+    contact && contact.type === 'group'
+      ? cloneGroupRelayEntries(contact.relays ?? [])
+      : [];
+}
+
+function handleAddGroupRelay(): void {
+  try {
+    const value = newGroupRelay.value.trim();
+    if (!value || groupRelayValidationError.value) {
+      return;
+    }
+
+    const normalizedRelay = normalizeRelayUrl(value);
+    groupRelayEntries.value = [
+      ...groupRelayEntries.value,
+      {
+        url: normalizedRelay,
+        read: true,
+        write: true
+      }
+    ];
+    newGroupRelay.value = '';
+  } catch (error) {
+    reportUiError('Failed to add group relay', error, 'Failed to add relay.');
+  }
+}
+
+function handleRemoveGroupRelay(index: number): void {
+  try {
+    groupRelayEntries.value = groupRelayEntries.value.filter((_, relayIndex) => relayIndex !== index);
+  } catch (error) {
+    reportUiError('Failed to remove group relay', error, 'Failed to remove relay.');
+  }
+}
+
+function handleUseDefaultGroupRelays(): void {
+  try {
+    newGroupRelay.value = '';
+    groupRelayEntries.value = DEFAULT_RELAYS.map((url) => ({
+      url,
+      read: true,
+      write: true
+    }));
+  } catch (error) {
+    reportUiError(
+      'Failed to reset group relays to defaults',
+      error,
+      'Failed to use default relays.'
+    );
+  }
+}
+
+function groupRelayReadEnabled(index: number): boolean {
+  return groupRelayEntries.value[index]?.read ?? true;
+}
+
+function groupRelayWriteEnabled(index: number): boolean {
+  return groupRelayEntries.value[index]?.write ?? true;
+}
+
+function handleUpdateGroupRelayRead({ index, value }: RelayTogglePayload): void {
+  try {
+    groupRelayEntries.value = groupRelayEntries.value.map((entry, relayIndex) =>
+      relayIndex === index
+        ? {
+            ...entry,
+            read: value
+          }
+        : entry
+    );
+  } catch (error) {
+    reportUiError('Failed to update group relay read flag', error, 'Failed to update relay.');
+  }
+}
+
+function handleUpdateGroupRelayWrite({ index, value }: RelayTogglePayload): void {
+  try {
+    groupRelayEntries.value = groupRelayEntries.value.map((entry, relayIndex) =>
+      relayIndex === index
+        ? {
+            ...entry,
+            write: value
+          }
+        : entry
+    );
+  } catch (error) {
+    reportUiError('Failed to update group relay write flag', error, 'Failed to update relay.');
+  }
+}
+
+async function handleRefreshGroupRelays(): Promise<void> {
+  const groupPublicKey = currentContact.value?.public_key?.trim() ?? '';
+  if (!groupPublicKey || isRefreshingGroupRelays.value) {
+    return;
+  }
+
+  isRefreshingGroupRelays.value = true;
+
+  try {
+    await nostrStore.refreshContactRelayList(groupPublicKey);
+    await loadContactFromPubkey(groupPublicKey);
+  } catch (error) {
+    reportUiError('Failed to refresh group relays', error, 'Failed to refresh group relays.');
+  } finally {
+    isRefreshingGroupRelays.value = false;
+  }
+}
+
+async function handlePublishGroupRelays(): Promise<void> {
+  const contact = currentContact.value;
+  if (!contact || contact.type !== 'group' || isPublishingGroupRelays.value) {
+    return;
+  }
+
+  isPublishingGroupRelays.value = true;
+
+  try {
+    const nextRelayEntries = groupRelayEntries.value.map((relay) => ({ ...relay }));
+    const updatedContact = await contactsService.updateContact(contact.id, {
+      relays: nextRelayEntries
+    });
+    if (!updatedContact) {
+      throw new Error('Failed to persist group relay list.');
+    }
+
+    currentContact.value = updatedContact;
+    groupRelayEntries.value = cloneGroupRelayEntries(updatedContact.relays ?? []);
+    localProfile.relays = (updatedContact.relays ?? []).map((relay) => relay.url);
+
+    const relaySaveStatus = await nostrStore.publishGroupRelayList(
+      updatedContact.public_key,
+      nextRelayEntries,
+      nextRelayEntries.map((relay) => relay.url)
+    );
+
+    if (relaySaveStatus.publishedRelayUrls.length > 0 && relaySaveStatus.failedRelayUrls.length === 0) {
+      $q.notify({
+        type: 'positive',
+        message: 'Group relays published.',
+        caption: `Published to ${relaySaveStatus.publishedRelayUrls.length} relay${relaySaveStatus.publishedRelayUrls.length === 1 ? '' : 's'}.`,
+        position: 'top-right'
+      });
+      return;
+    }
+
+    $q.notify({
+      type: relaySaveStatus.publishedRelayUrls.length > 0 ? 'warning' : 'negative',
+      message:
+        relaySaveStatus.publishedRelayUrls.length > 0
+          ? 'Group relays published with partial delivery.'
+          : 'Failed to publish group relays.',
+      caption:
+        `Published to ${relaySaveStatus.publishedRelayUrls.length} relay${relaySaveStatus.publishedRelayUrls.length === 1 ? '' : 's'}.` +
+        (relaySaveStatus.errorMessage ? ` ${relaySaveStatus.errorMessage}` : ''),
+      position: 'top-right',
+      timeout: 6000
+    });
+  } catch (error) {
+    reportUiError('Failed to publish group relays', error, 'Failed to publish group relays.');
+  } finally {
+    isPublishingGroupRelays.value = false;
   }
 }
 
@@ -1673,6 +1965,11 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 }
 
 .profile-members {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-group-relays {
   display: flex;
   flex-direction: column;
 }

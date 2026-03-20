@@ -4714,6 +4714,36 @@ export const useNostrStore = defineStore('nostrStore', () => {
     };
   }
 
+  async function refreshContactRelayList(pubkeyHex: string): Promise<ContactRelay[] | null> {
+    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
+    if (!normalizedPubkey) {
+      return null;
+    }
+
+    await contactsService.init();
+    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
+    if (!existingContact) {
+      return null;
+    }
+
+    const relayList = await fetchContactRelayList(normalizedPubkey);
+    const nextRelayEntries = relayList?.relayEntries ?? [];
+
+    if (contactRelayListsEqual(existingContact.relays, nextRelayEntries)) {
+      return nextRelayEntries;
+    }
+
+    const updatedContact = await contactsService.updateContact(existingContact.id, {
+      relays: nextRelayEntries
+    });
+    if (!updatedContact) {
+      throw new Error('Failed to persist refreshed contact relay list.');
+    }
+
+    bumpContactListVersion();
+    return updatedContact.relays ?? [];
+  }
+
   async function listTrackedContactPubkeys(): Promise<string[]> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     await contactsService.init();
@@ -6748,6 +6778,94 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
     await relayListEvent.publishReplaceable(relaySet);
     updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
+  }
+
+  async function publishGroupRelayList(
+    groupPublicKey: string,
+    relayEntries: RelayListMetadataEntry[],
+    publishRelayUrls: string[] = []
+  ): Promise<RelaySaveStatus> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await contactsService.init();
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can publish the group relay list.');
+    }
+
+    const encryptedGroupPrivateKey =
+      groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    if (!encryptedGroupPrivateKey) {
+      throw new Error('Encrypted group private key not found.');
+    }
+
+    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
+    if (
+      !decryptedSecret ||
+      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !== normalizedGroupPublicKey
+    ) {
+      throw new Error('Failed to decrypt the group private key.');
+    }
+
+    const normalizedRelayEntries = inputSanitizerService.normalizeRelayListMetadataEntries(relayEntries);
+    const relayUrls = await resolveLoggedInPublishRelayUrls([
+      ...publishRelayUrls,
+      ...normalizedRelayEntries.map((relay) => relay.url)
+    ]);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish group relay list without at least one publish relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const groupSigner = new NDKPrivateKeySigner(decryptedSecret.group_privkey, ndk);
+    const signerUser = await groupSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
+      throw new Error('Decrypted group private key does not match the group public key.');
+    }
+
+    const relayListEvent = new NDKRelayList(ndk);
+    relayListEvent.pubkey = normalizedGroupPublicKey;
+    relayListEvent.created_at = Math.floor(Date.now() / 1000);
+    relayListEvent.content = '';
+    relayListEvent.tags = [];
+    relayListEvent.bothRelayUrls = normalizedRelayEntries
+      .filter((relay) => relay.read && relay.write)
+      .map((relay) => relay.url);
+    relayListEvent.readRelayUrls = normalizedRelayEntries
+      .filter((relay) => relay.read && !relay.write)
+      .map((relay) => relay.url);
+    relayListEvent.writeRelayUrls = normalizedRelayEntries
+      .filter((relay) => !relay.read && relay.write)
+      .map((relay) => relay.url);
+    await relayListEvent.sign(groupSigner);
+
+    const publishResult = await publishEventWithRelayStatuses(relayListEvent, relayUrls, 'self');
+    const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
+    if (publishResult.error && !relaySaveStatus.errorMessage) {
+      relaySaveStatus.errorMessage = publishResult.error.message;
+    }
+
+    if (relaySaveStatus.publishedRelayUrls.length > 0) {
+      updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
+    }
+
+    return relaySaveStatus;
   }
 
   async function updateLoggedInUserRelayList(
@@ -9403,6 +9521,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensureRelayConnections,
     fetchRelayNip11Info,
     fetchMyRelayList,
+    refreshContactRelayList,
     getDeveloperDiagnosticsSnapshot,
     getNip05Data,
     hasNip07Extension,
@@ -9416,6 +9535,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     loginWithExtension,
     logout,
     publishPrivateContactList,
+    publishGroupRelayList,
     publishGroupMetadata,
     publishUserMetadata,
     publishMyRelayList,
