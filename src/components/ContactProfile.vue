@@ -43,7 +43,13 @@
         >
           <q-tab name="profile" label="Profile" no-caps class="profile-tab" />
           <q-tab v-if="isGroupContact" name="members" label="Members" no-caps class="profile-tab" />
-          <q-tab v-if="isGroupContact" name="relays" label="Relays" no-caps class="profile-tab" />
+          <q-tab
+            v-if="isOwnedGroupContact"
+            name="relays"
+            label="Relays"
+            no-caps
+            class="profile-tab"
+          />
         </q-tabs>
 
         <q-tab-panels
@@ -540,7 +546,7 @@
             </div>
           </q-tab-panel>
 
-          <q-tab-panel v-if="isGroupContact" name="relays" class="profile-tab-panel">
+          <q-tab-panel v-if="isOwnedGroupContact" name="relays" class="profile-tab-panel">
             <div class="profile-group-relays">
               <div v-if="showRelaysTabActions" class="profile-tab-actions">
                 <q-btn
@@ -626,7 +632,7 @@
           @click="activeTab = 'members'"
         />
         <q-btn
-          v-if="isGroupContact"
+          v-if="isOwnedGroupContact"
           :flat="activeTab !== 'relays'"
           :unelevated="activeTab === 'relays'"
           :color="activeTab === 'relays' ? 'primary' : undefined"
@@ -740,6 +746,14 @@ const displayNpub = computed(() => {
 });
 const isMobileTabs = computed(() => $q.screen.lt.md);
 const isGroupContact = computed(() => currentContact.value?.type === 'group');
+const isOwnedGroupContact = computed(() => {
+  const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex()?.trim().toLowerCase() ?? '';
+  if (!loggedInPubkey || currentContact.value?.type !== 'group') {
+    return false;
+  }
+
+  return (currentContact.value.meta.owner_public_key?.trim().toLowerCase() ?? '') === loggedInPubkey;
+});
 const showTabSelection = computed(() => isGroupContact.value);
 const canAddMember = computed(() => newMemberIdentifier.value.trim().length > 0 && !isAddingMember.value);
 const groupRelayUrls = computed(() => groupRelayEntries.value.map((entry) => entry.url));
@@ -760,7 +774,7 @@ const canUseDefaultGroupRelays = computed(() => {
   return groupRelayEntries.value.some((relay) => relay.read !== true || relay.write !== true);
 });
 const mobileNavGridStyle = computed(() => ({
-  gridTemplateColumns: `repeat(${isGroupContact.value ? 3 : 1}, minmax(0, 1fr))`
+  gridTemplateColumns: `repeat(${isGroupContact.value ? (isOwnedGroupContact.value ? 3 : 2) : 1}, minmax(0, 1fr))`
 }));
 const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
 const showMembersTabActions = computed(() => props.showHeader || props.showPublishAction);
@@ -841,6 +855,12 @@ watch(
 
 watch(isGroupContact, (value) => {
   if (!value && activeTab.value !== 'profile') {
+    activeTab.value = 'profile';
+  }
+});
+
+watch(isOwnedGroupContact, (value) => {
+  if (!value && activeTab.value === 'relays') {
     activeTab.value = 'profile';
   }
 });
