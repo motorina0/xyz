@@ -204,6 +204,16 @@ const openedUnreadBoundaryAt = ref<string | null>(null);
 const contactRelayUrls = ref<string[]>([]);
 const selfAvatarImageUrl = ref('');
 const selfAvatarFallback = ref('YO');
+const authorIdentityByPublicKey = ref<
+  Record<
+    string,
+    {
+      label: string;
+      avatarSrc: string;
+      avatarFallback: string;
+    }
+  >
+>({});
 let scrollFrameId: number | null = null;
 let highlightTimerId: number | null = null;
 let visibleReactionSyncFrameId: number | null = null;
@@ -211,6 +221,7 @@ let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
 let pendingSentMessageReveal = false;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 let selfAuthorIdentityRefreshToken = 0;
+let authorIdentityRefreshToken = 0;
 
 function buildAvatar(identifier: string): string {
   const parts = identifier
@@ -224,6 +235,15 @@ function buildAvatar(identifier: string): string {
 
   const compact = identifier.replace(/\s+/g, '').toUpperCase();
   return compact.slice(0, 2) || 'NA';
+}
+
+function shortPubkey(value: string): string {
+  const compact = value.trim();
+  if (compact.length <= 16) {
+    return compact;
+  }
+
+  return `${compact.slice(0, 8)}...${compact.slice(-8)}`;
 }
 
 function readMetaString(meta: Record<string, unknown> | null | undefined, key: string): string {
@@ -352,6 +372,13 @@ const reactionVisibilitySignature = computed(() => {
     .join('|');
 });
 
+const authorIdentitySignature = computed(() => {
+  return props.messages
+    .map((message) => message.authorPublicKey.trim().toLowerCase())
+    .filter(Boolean)
+    .join('|');
+});
+
 function toComparableTimestamp(value: string | null | undefined): number {
   if (typeof value !== 'string' || !value.trim()) {
     return 0;
@@ -468,16 +495,24 @@ const threadItems = computed<ThreadItem[]>(() => {
       });
     }
 
+    const authorIdentity = resolveMessageAuthorIdentity(message);
+    const currentAuthorKey = message.authorPublicKey.trim().toLowerCase();
+    const previousAuthorKey = previousMessage?.authorPublicKey?.trim().toLowerCase() ?? '';
+    const showSenderName =
+      previousMessage?.sender !== message.sender ||
+      (props.chat?.type === 'group' &&
+        message.sender === 'them' &&
+        currentAuthorKey !== previousAuthorKey);
+
     items.push({
       type: 'message',
       key: message.id,
       dayKey,
       dayLabel,
-      authorAvatarFallback:
-        message.sender === 'me' ? selfAvatarFallback.value : contactAvatarFallback.value,
-      authorAvatarSrc: message.sender === 'me' ? selfAvatarImageUrl.value : avatarImageUrl.value,
-      authorLabel: message.sender === 'me' ? 'You' : contactAuthorLabel.value,
-      showSenderName: previousMessage?.sender !== message.sender,
+      authorAvatarFallback: authorIdentity.avatarFallback,
+      authorAvatarSrc: authorIdentity.avatarSrc,
+      authorLabel: authorIdentity.label,
+      showSenderName,
       message
     });
   }
@@ -551,6 +586,103 @@ async function refreshSelfAuthorIdentity(loggedInPublicKeyValue: string | null):
       'Failed to load logged-in user avatar for chat thread',
       loggedInPublicKeyValue,
       error
+    );
+  }
+}
+
+function resolveMessageAuthorIdentity(message: Message): {
+  label: string;
+  avatarSrc: string;
+  avatarFallback: string;
+} {
+  if (message.sender === 'me') {
+    return {
+      label: 'You',
+      avatarSrc: selfAvatarImageUrl.value,
+      avatarFallback: selfAvatarFallback.value
+    };
+  }
+
+  const normalizedAuthorPublicKey = message.authorPublicKey.trim().toLowerCase();
+  const authorIdentity = authorIdentityByPublicKey.value[normalizedAuthorPublicKey];
+  if (authorIdentity) {
+    return authorIdentity;
+  }
+
+  return {
+    label: contactAuthorLabel.value,
+    avatarSrc: avatarImageUrl.value,
+    avatarFallback: contactAvatarFallback.value
+  };
+}
+
+async function refreshMessageAuthorIdentities(): Promise<void> {
+  const refreshToken = ++authorIdentityRefreshToken;
+  const loggedInPublicKeyValue = loggedInPublicKey.value;
+  const authorPubkeys = Array.from(
+    new Set(
+      props.messages
+        .map((message) => message.authorPublicKey.trim().toLowerCase())
+        .filter(Boolean)
+        .filter((pubkey) => pubkey !== loggedInPublicKeyValue)
+    )
+  );
+
+  if (authorPubkeys.length === 0) {
+    authorIdentityByPublicKey.value = {};
+    return;
+  }
+
+  try {
+    await contactsService.init();
+    const entries = await Promise.all(
+      authorPubkeys.map(async (authorPublicKey) => {
+        const existingContact = await contactsService.getContactByPublicKey(authorPublicKey);
+        const preview =
+          existingContact ??
+          (await nostrStore.fetchContactPreviewByPublicKey(authorPublicKey, shortPubkey(authorPublicKey)));
+        const meta =
+          preview?.meta && typeof preview.meta === 'object'
+            ? preview.meta
+            : null;
+        const label =
+          readMetaString(meta, 'display_name') ||
+          readMetaString(meta, 'name') ||
+          preview?.name?.trim() ||
+          preview?.given_name?.trim() ||
+          shortPubkey(authorPublicKey);
+
+        return [
+          authorPublicKey,
+          {
+            label,
+            avatarSrc: readMetaString(meta, 'picture'),
+            avatarFallback: readMetaString(meta, 'avatar') || buildAvatar(label)
+          }
+        ] as const;
+      })
+    );
+
+    if (refreshToken !== authorIdentityRefreshToken) {
+      return;
+    }
+
+    authorIdentityByPublicKey.value = Object.fromEntries(entries);
+  } catch (error) {
+    if (refreshToken !== authorIdentityRefreshToken) {
+      return;
+    }
+
+    console.error('Failed to load message author identities for chat thread', error);
+    authorIdentityByPublicKey.value = Object.fromEntries(
+      authorPubkeys.map((authorPublicKey) => [
+        authorPublicKey,
+        {
+          label: shortPubkey(authorPublicKey),
+          avatarSrc: '',
+          avatarFallback: buildAvatar(shortPubkey(authorPublicKey))
+        }
+      ])
     );
   }
 }
@@ -686,11 +818,12 @@ function handleSend(payload: { text: string }): void {
 
 function handleReplyToMessage(message: Message): void {
   try {
+    const authorIdentity = resolveMessageAuthorIdentity(message);
     activeReply.value = {
       messageId: message.id,
       text: message.text,
       sender: message.sender,
-      authorName: message.sender === 'me' ? 'You' : props.chat?.name?.trim() || 'Contact',
+      authorName: authorIdentity.label,
       authorPublicKey: message.authorPublicKey,
       sentAt: message.sentAt,
       eventId: message.eventId
@@ -1083,6 +1216,15 @@ watch(
   ([chatPublicKey, loggedInPublicKeyValue]) => {
     void refreshContactRelayUrls(chatPublicKey);
     void refreshSelfAuthorIdentity(loggedInPublicKeyValue);
+    void refreshMessageAuthorIdentities();
+  },
+  { immediate: true }
+);
+
+watch(
+  () => authorIdentitySignature.value,
+  () => {
+    void refreshMessageAuthorIdentities();
   },
   { immediate: true }
 );
