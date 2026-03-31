@@ -94,8 +94,8 @@ The inner rumor event:
 - MUST contain exactly one `p` tag naming the current epoch public key.
 - MUST contain exactly one `h` tag whose value is the group identity public key.
 - MUST contain exactly one `epoch` tag whose value is the sender's current epoch number.
-- MUST contain exactly one `invited_at` tag whose value is the `created_at` of the sender's current epoch ticket.
-- MUST contain exactly one `invitation_proof` tag whose value is the `sig` of the sender's current epoch ticket.
+- MUST contain exactly one `invited_at` tag whose value is the `created_at` of the authors's latest epoch ticket.
+- MUST contain exactly one `invitation_proof` tag whose value is the `sig` of the authors's latest epoch ticket.
 
 Example rumor tags:
 
