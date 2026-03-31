@@ -1,5 +1,11 @@
 <template>
-  <div class="bubble-row" :class="isMine ? 'bubble-row--mine' : 'bubble-row--their'">
+  <div
+    class="bubble-row"
+    :class="[
+      isMine ? 'bubble-row--mine' : 'bubble-row--their',
+      { 'bubble-row--show-author-mobile': showAuthorOnMobile }
+    ]"
+  >
     <div class="bubble-stack" :class="isMine ? 'bubble-stack--mine' : 'bubble-stack--their'">
       <div
         v-if="showAuthorName"
@@ -342,6 +348,7 @@ const props = defineProps<{
   contactName?: string;
   contactRelayUrls?: string[];
   showAuthorName?: boolean;
+  showAuthorOnMobile?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -355,6 +362,7 @@ const emit = defineEmits<{
 const $q = useQuasar();
 const nostrStore = useNostrStore();
 const isMine = computed(() => props.message.sender === 'me');
+const showAuthorOnMobile = computed(() => props.showAuthorOnMobile === true);
 const loggedInPublicKey = computed(() => nostrStore.getLoggedInPublicKeyHex()?.toLowerCase() ?? '');
 const isActionMenuOpen = ref(false);
 const isEmojiPickerMenuOpen = ref(false);
@@ -1651,6 +1659,24 @@ onBeforeUnmount(() => {
 
   .bubble__author {
     display: none;
+  }
+
+  .bubble-row--show-author-mobile .bubble__author {
+    display: inline-flex;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+
+  .bubble-row--show-author-mobile .bubble__author-avatar {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+    min-height: 28px;
+    font-size: 12px;
+  }
+
+  .bubble-row--show-author-mobile .bubble__author-name {
+    font-size: 12px;
   }
 
   .bubble__content {

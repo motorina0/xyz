@@ -77,6 +77,7 @@
               :author-avatar-src="item.authorAvatarSrc"
               :author-label="item.authorLabel"
               :show-author-name="item.showSenderName"
+              :show-author-on-mobile="chat?.type === 'group' && item.message.sender === 'them'"
               @reply="handleReplyToMessage"
               @react="handleReactToMessage"
               @delete-message="handleDeleteMessage"
