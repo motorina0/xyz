@@ -280,7 +280,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 }
 
 .app-status__expansion :deep(.q-expansion-item__content) {
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tg-surface-soft);
 }
 
 .app-status__header-main {
@@ -345,7 +345,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__details {
   padding: 12px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--tg-surface-soft-strong);
 }
 
 .app-status__details-title {

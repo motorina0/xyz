@@ -283,6 +283,7 @@ async function handleConfirmLogout(): Promise<void> {
 
 .settings-menu__item--active {
   background: var(--tg-active);
+  color: var(--tg-active-text);
 }
 
 .settings-menu__item--danger {

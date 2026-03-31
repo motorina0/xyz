@@ -1254,6 +1254,16 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contact-item--active {
   background: var(--tg-active);
+  color: var(--tg-active-text);
+}
+
+.contact-item--active .contact-item__caption,
+.contact-item--active .q-btn.contact-item__more {
+  color: var(--tg-active-subtext);
+}
+
+.contact-item--active .contact-item__caption {
+  opacity: 1;
 }
 
 .contacts-empty {

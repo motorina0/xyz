@@ -244,6 +244,7 @@ function emitDeleteChat(): void {
 
 .chat-item--active {
   background: var(--tg-active);
+  color: var(--tg-active-text);
 }
 
 .chat-item__name {
@@ -350,5 +351,21 @@ function emitDeleteChat(): void {
   width: 54px;
   height: 54px;
   font-size: 15px;
+}
+
+.chat-item--active .chat-item__meta,
+.chat-item--active :deep(.q-item__label--caption),
+.chat-item--active .q-btn.chat-item__more {
+  color: var(--tg-active-subtext);
+}
+
+.chat-item--active .chat-item__reaction-badge {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--tg-active-text);
+}
+
+.chat-item--active .chat-item__reaction-icon-shell {
+  background: rgba(255, 255, 255, 0.22);
 }
 </style>

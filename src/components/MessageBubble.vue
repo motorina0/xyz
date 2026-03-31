@@ -1434,7 +1434,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 6px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--tg-surface-soft-strong);
   border: 1px solid var(--tg-border);
 }
 
@@ -1516,7 +1516,7 @@ onBeforeUnmount(() => {
 
 .bubble__reaction-chip--removable:hover {
   transform: none;
-  background: rgba(100, 181, 246, 0.18);
+  background: var(--tg-chip-hover-bg);
 }
 
 .bubble__reaction-emoji {
@@ -1661,7 +1661,7 @@ onBeforeUnmount(() => {
   .bubble__reply-preview {
     padding: 6px 8px;
     border-radius: 12px;
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--tg-surface-soft-strong);
   }
 
   .bubble__reactions {

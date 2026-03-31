@@ -265,7 +265,7 @@ function goToSection(section: NavigationSection): void {
   position: absolute;
   inset: 0;
   z-index: 5;
-  background: rgba(14, 22, 33, 0.45);
+  background: var(--tg-overlay);
   pointer-events: auto;
 }
 
@@ -327,6 +327,7 @@ function goToSection(section: NavigationSection): void {
 
 .mobile-nav__btn--active {
   background: var(--tg-active);
+  color: var(--tg-active-text);
 }
 
 body.body--dark .mobile-nav__btn {
@@ -336,6 +337,6 @@ body.body--dark .mobile-nav__btn {
 
 body.body--dark .mobile-nav__btn--active {
   background: var(--tg-active);
-  color: #ffffff;
+  color: var(--tg-active-text);
 }
 </style>

@@ -95,7 +95,7 @@ function formatRequestCount(value: number): string {
   padding: 0 12px;
   border-radius: 0;
   border-bottom: 1px solid var(--tg-border);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--tg-surface-soft);
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
@@ -108,6 +108,7 @@ function formatRequestCount(value: number): string {
 .requests-row--active {
   border-color: var(--tg-border);
   background: var(--tg-active);
+  color: var(--tg-active-text);
 }
 
 .requests-row__icon-shell {
@@ -117,7 +118,7 @@ function formatRequestCount(value: number): string {
   display: grid;
   place-items: center;
   color: var(--tg-text);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--tg-surface-soft-strong);
   border: 0;
 }
 
@@ -137,22 +138,13 @@ function formatRequestCount(value: number): string {
   color: var(--tg-text-secondary);
 }
 
-body.body--dark .requests-row {
-  border-color: var(--tg-border);
-  background: rgba(255, 255, 255, 0.02);
+.requests-row--active .requests-row__count,
+.requests-row--active .requests-row__caption {
+  color: var(--tg-active-subtext);
 }
 
-body.body--dark .requests-row:hover {
-  background: var(--tg-hover);
-}
-
-body.body--dark .requests-row--active {
-  border-color: var(--tg-border);
-  background: var(--tg-active);
-}
-
-body.body--dark .requests-row__icon-shell {
-  color: var(--tg-text);
-  background: rgba(255, 255, 255, 0.08);
+.requests-row--active .requests-row__icon-shell {
+  color: var(--tg-active-text);
+  background: rgba(255, 255, 255, 0.18);
 }
 </style>

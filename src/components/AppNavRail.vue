@@ -97,7 +97,7 @@ const unreadChatBadgeLabel = computed(() =>
 
 .nav-rail__btn--active {
   background: var(--tg-active);
-  color: #ffffff;
+  color: var(--tg-active-text);
 }
 
 body.body--dark .nav-rail__btn {
@@ -106,7 +106,7 @@ body.body--dark .nav-rail__btn {
 }
 
 body.body--dark .nav-rail__btn--active {
-  color: #ffffff;
+  color: var(--tg-active-text);
   background: var(--tg-active);
 }
 </style>

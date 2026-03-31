@@ -1490,7 +1490,7 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   min-height: 28px;
   padding: 4px 12px;
   border-radius: 999px;
-  background: rgba(36, 47, 61, 0.92);
+  background: var(--tg-sticky-bg);
   border: 1px solid var(--tg-border);
   box-shadow: none;
   font-size: 12px;
@@ -1517,7 +1517,7 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   flex: 0 0 auto;
   padding: 4px 10px;
   border-radius: 999px;
-  background: rgba(36, 47, 61, 0.92);
+  background: var(--tg-sticky-bg);
   border: 1px solid var(--tg-border);
   font-size: 12px;
   font-weight: 600;
