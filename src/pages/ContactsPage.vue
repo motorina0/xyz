@@ -417,6 +417,28 @@ function contactListCaption(contact: ContactRecord): string {
   return candidates[1] ?? '';
 }
 
+function compareContactListValue(first: ContactRecord, second: ContactRecord): number {
+  const byTitle = contactListTitle(first).localeCompare(contactListTitle(second), undefined, {
+    sensitivity: 'base'
+  });
+  if (byTitle !== 0) {
+    return byTitle;
+  }
+
+  const byCaption = contactListCaption(first).localeCompare(contactListCaption(second), undefined, {
+    sensitivity: 'base'
+  });
+  if (byCaption !== 0) {
+    return byCaption;
+  }
+
+  return first.public_key.localeCompare(second.public_key);
+}
+
+function sortContactsForList(nextContacts: ContactRecord[]): ContactRecord[] {
+  return [...nextContacts].sort(compareContactListValue);
+}
+
 function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
   const picture = contact.meta.picture ?? '';
 
@@ -509,8 +531,8 @@ function buildUpdatedContactMeta(contact: ContactRecord, profile: ContactProfile
 }
 
 function updateContactInState(updatedContact: ContactRecord): void {
-  contacts.value = contacts.value.map((contact) =>
-    contact.id === updatedContact.id ? updatedContact : contact
+  contacts.value = sortContactsForList(
+    contacts.value.map((contact) => (contact.id === updatedContact.id ? updatedContact : contact))
   );
 
   if (selectedContactId.value === updatedContact.id) {
@@ -542,7 +564,7 @@ async function loadContacts(query = ''): Promise<void> {
       return;
     }
 
-    contacts.value = nextContacts;
+    contacts.value = sortContactsForList(nextContacts);
 
     if (
       selectedContactId.value !== null &&
