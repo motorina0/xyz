@@ -91,7 +91,7 @@
                 </q-item-label>
               </q-item-section>
 
-              <q-item-section side>
+              <q-item-section side class="contact-item__actions">
                 <q-btn
                   flat
                   dense
@@ -1261,6 +1261,14 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contact-item__main {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.contact-item__actions {
+  flex: 0 0 36px;
+  min-width: 36px;
+  padding-left: 0 !important;
+  align-items: flex-end;
+  justify-content: center;
 }
 
 .contact-item :deep(.q-item__section--avatar) {

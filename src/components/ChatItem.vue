@@ -42,7 +42,7 @@
       </div>
     </q-item-section>
 
-    <q-item-section side>
+    <q-item-section side class="chat-item__actions">
       <q-btn
         flat
         dense
@@ -287,6 +287,14 @@ function emitDeleteChat(): void {
   flex: 0 0 auto;
   justify-content: center;
   color: var(--tg-text-secondary);
+}
+
+.chat-item__actions {
+  flex: 0 0 36px;
+  min-width: 36px;
+  padding-left: 0 !important;
+  align-items: flex-end;
+  justify-content: center;
 }
 
 .chat-item__time {
