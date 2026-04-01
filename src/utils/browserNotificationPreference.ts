@@ -80,3 +80,20 @@ export async function requestBrowserNotificationPermission(): Promise<BrowserNot
 
   return window.Notification.permission;
 }
+
+export async function requestBrowserNotificationsAfterLogin(): Promise<BrowserNotificationPermissionState> {
+  if (!isBrowserNotificationSupported()) {
+    saveBrowserNotificationsPreference(false);
+    return 'unsupported';
+  }
+
+  const currentPermission = getBrowserNotificationPermission();
+  if (currentPermission === 'granted') {
+    saveBrowserNotificationsPreference(true);
+    return currentPermission;
+  }
+
+  const permission = await requestBrowserNotificationPermission();
+  saveBrowserNotificationsPreference(permission === 'granted');
+  return permission;
+}

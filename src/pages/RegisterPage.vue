@@ -60,6 +60,12 @@
         </q-card-section>
       </q-card>
     </div>
+
+    <BrowserNotificationsLoginDialog
+      v-model="isBrowserNotificationsLoginDialogOpen"
+      @enable="confirmBrowserNotificationsLoginDialog"
+      @skip="skipBrowserNotificationsLoginDialog"
+    />
   </div>
 </template>
 
@@ -67,6 +73,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
+import BrowserNotificationsLoginDialog from 'src/components/BrowserNotificationsLoginDialog.vue';
+import { useBrowserNotificationsLoginPrompt } from 'src/composables/useBrowserNotificationsLoginPrompt';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -79,6 +87,12 @@ interface GeneratedAccount {
 
 const router = useRouter();
 const nostrStore = useNostrStore();
+const {
+  isBrowserNotificationsLoginDialogOpen,
+  handleBrowserNotificationsAfterLogin,
+  confirmBrowserNotificationsLoginDialog,
+  skipBrowserNotificationsLoginDialog
+} = useBrowserNotificationsLoginPrompt();
 const generatedAccount = ref<GeneratedAccount | null>(null);
 const isCreatingAccount = ref(true);
 const creationProgress = ref(0);
@@ -197,6 +211,7 @@ async function handleLoginNow(): Promise<void> {
       throw new Error('Failed to persist the generated account key.');
     }
 
+    await handleBrowserNotificationsAfterLogin();
     await router.push({ name: 'chats' });
   } catch (error) {
     reportUiError('Failed to log in with generated account', error, 'Failed to log in.');

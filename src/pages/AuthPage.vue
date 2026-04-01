@@ -121,17 +121,31 @@
         </q-card-section>
       </q-card>
     </div>
+
+    <BrowserNotificationsLoginDialog
+      v-model="isBrowserNotificationsLoginDialogOpen"
+      @enable="confirmBrowserNotificationsLoginDialog"
+      @skip="skipBrowserNotificationsLoginDialog"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import BrowserNotificationsLoginDialog from 'src/components/BrowserNotificationsLoginDialog.vue';
+import { useBrowserNotificationsLoginPrompt } from 'src/composables/useBrowserNotificationsLoginPrompt';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const router = useRouter();
 const nostrStore = useNostrStore();
+const {
+  isBrowserNotificationsLoginDialogOpen,
+  handleBrowserNotificationsAfterLogin,
+  confirmBrowserNotificationsLoginDialog,
+  skipBrowserNotificationsLoginDialog
+} = useBrowserNotificationsLoginPrompt();
 type AuthStep = 'welcome' | 'methods' | 'key';
 
 const loginStep = ref<AuthStep>('welcome');
@@ -188,6 +202,7 @@ async function handleExtensionLogin(): Promise<void> {
   isExtensionLoginInProgress.value = true;
   try {
     await nostrStore.loginWithExtension();
+    await handleBrowserNotificationsAfterLogin();
     await goToHome();
   } catch (error) {
     reportUiError(
@@ -212,6 +227,7 @@ async function handleKeyLogin(): Promise<void> {
       return;
     }
 
+    await handleBrowserNotificationsAfterLogin();
     await goToHome();
   } catch (error) {
     reportUiError('Failed to log in', error, 'Failed to log in.');
