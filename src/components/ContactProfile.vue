@@ -87,43 +87,35 @@
 
             <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
               <q-input
-                :model-value="displayHexPubkey"
-                class="tg-input"
+                :model-value="displayedPubkeyValue"
+                class="tg-input profile-lookup__pubkey-input"
                 outlined
                 dense
                 rounded
                 readonly
-                label="Hex Public Key"
-                placeholder="hex pubkey or npub"
+                :label="displayedPubkeyLabel"
+                :placeholder="displayedPubkeyPlaceholder"
                 :loading="isLoadingContact"
                 :error="Boolean(pubkeyError)"
                 :error-message="pubkeyError"
               >
-                <template #append>
-                  <q-btn
-                    flat
-                    dense
-                    round
-                    icon="content_copy"
+                <template #prepend>
+                  <q-badge
+                    outline
                     color="primary"
-                    aria-label="Copy hex public key"
-                    :disable="!displayHexPubkey.trim()"
-                    @click.stop="handleCopyProfileValue(displayHexPubkey, 'Hex public key')"
+                    :label="displayedPubkeyToggleLabel"
+                    class="profile-lookup__format-toggle"
+                    role="button"
+                    tabindex="0"
+                    :aria-label="pubkeyFormatToggleAriaLabel"
+                    @click.stop="toggleDisplayedPubkeyFormat"
+                    @keydown.enter.prevent.stop="toggleDisplayedPubkeyFormat"
+                    @keydown.space.prevent.stop="toggleDisplayedPubkeyFormat"
                   >
-                    <AppTooltip>Copy hex public key</AppTooltip>
-                  </q-btn>
+                    <AppTooltip>{{ pubkeyFormatToggleTooltip }}</AppTooltip>
+                  </q-badge>
                 </template>
-              </q-input>
-              <q-input
-                :model-value="displayNpub"
-                class="tg-input"
-                outlined
-                dense
-                rounded
-                readonly
-                label="npub"
-                placeholder="npub1..."
-              >
+
                 <template #append>
                   <q-btn
                     flat
@@ -131,11 +123,11 @@
                     round
                     icon="content_copy"
                     color="primary"
-                    aria-label="Copy npub"
-                    :disable="!displayNpub.trim()"
-                    @click.stop="handleCopyProfileValue(displayNpub, 'npub')"
+                    :aria-label="`Copy ${displayedPubkeyCopyLabel}`"
+                    :disable="!displayedPubkeyValue.trim()"
+                    @click.stop="handleCopyProfileValue(displayedPubkeyValue, displayedPubkeyCopyLabel)"
                   >
-                    <AppTooltip>Copy npub</AppTooltip>
+                    <AppTooltip>Copy {{ displayedPubkeyCopyLabel }}</AppTooltip>
                   </q-btn>
                 </template>
               </q-input>
@@ -752,6 +744,7 @@ type RelayTogglePayload = {
 };
 
 type GroupMemberDraft = ContactGroupMember;
+type PubkeyDisplayFormat = 'hex' | 'npub';
 
 interface Props {
   modelValue: ContactProfileForm;
@@ -792,6 +785,7 @@ const currentContact = ref<ContactRecord | null>(null);
 const currentGroupChat = ref<ChatRow | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
+const displayedPubkeyFormat = ref<PubkeyDisplayFormat>('hex');
 const pubkeyError = ref('');
 const pubkeyInfo = ref('');
 const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
@@ -818,6 +812,29 @@ const displayHexPubkey = computed(() => {
 const displayNpub = computed(() => {
   const pubkey = normalizedDisplayPubkey.value;
   return pubkey ? nostrStore.encodeNpub(pubkey) ?? '' : '';
+});
+const displayedPubkeyValue = computed(() => {
+  return displayedPubkeyFormat.value === 'npub' ? displayNpub.value : displayHexPubkey.value;
+});
+const displayedPubkeyLabel = computed(() => {
+  return displayedPubkeyFormat.value === 'npub' ? 'Public Key (npub)' : 'Public Key (hex)';
+});
+const displayedPubkeyPlaceholder = computed(() => {
+  return displayedPubkeyFormat.value === 'npub' ? 'npub1...' : 'hex public key';
+});
+const displayedPubkeyCopyLabel = computed(() => {
+  return displayedPubkeyFormat.value === 'npub' ? 'npub' : 'Hex public key';
+});
+const displayedPubkeyToggleLabel = computed(() => {
+  return displayedPubkeyFormat.value === 'npub' ? 'hex' : 'npub';
+});
+const pubkeyFormatToggleAriaLabel = computed(() => {
+  return displayedPubkeyFormat.value === 'npub'
+    ? 'Show public key in hex format'
+    : 'Show public key in npub format';
+});
+const pubkeyFormatToggleTooltip = computed(() => {
+  return displayedPubkeyFormat.value === 'npub' ? 'Show hex' : 'Show npub';
 });
 const isMobileTabs = computed(() => $q.screen.lt.md);
 const isGroupContact = computed(() => currentContact.value?.type === 'group');
@@ -1041,6 +1058,10 @@ function buildAvatar(value: string): string {
   }
 
   return compactValue.slice(0, 2).toUpperCase();
+}
+
+function toggleDisplayedPubkeyFormat(): void {
+  displayedPubkeyFormat.value = displayedPubkeyFormat.value === 'npub' ? 'hex' : 'npub';
 }
 
 function relayKey(relay: string): string {
@@ -2034,6 +2055,27 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 .profile-lookup {
   display: grid;
   gap: 6px;
+}
+
+.profile-lookup__format-toggle {
+  cursor: pointer;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.profile-lookup__pubkey-input :deep(.q-field__prepend) {
+  align-items: center;
+  padding-right: 6px;
+}
+
+.profile-lookup__pubkey-input {
+  width: 100%;
 }
 
 .profile-lookup--with-header {
