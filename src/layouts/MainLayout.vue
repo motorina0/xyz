@@ -17,19 +17,23 @@
           :color="activeSection === 'chats' ? 'primary' : undefined"
           :text-color="activeSection === 'chats' ? 'white' : undefined"
           no-caps
-          icon="chat"
-          label="Chats"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeSection === 'chats' }"
           @click="goToSection('chats')"
         >
-          <q-badge
-            v-if="unreadChatCount > 0"
-            rounded
-            floating
-            class="mobile-nav__badge"
-            :label="unreadChatBadgeLabel"
-          />
+          <span class="mobile-nav__content">
+            <span class="mobile-nav__icon-shell">
+              <q-icon name="chat" class="mobile-nav__icon" />
+              <q-badge
+                v-if="unreadChatCount > 0"
+                rounded
+                color="primary"
+                class="mobile-nav__badge"
+                :label="unreadChatBadgeLabel"
+              />
+            </span>
+            <span class="mobile-nav__label">Chats</span>
+          </span>
         </q-btn>
         <q-btn
           :flat="activeSection !== 'contacts'"
@@ -37,24 +41,34 @@
           :color="activeSection === 'contacts' ? 'primary' : undefined"
           :text-color="activeSection === 'contacts' ? 'white' : undefined"
           no-caps
-          icon="contacts"
-          label="Contacts"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeSection === 'contacts' }"
           @click="goToSection('contacts')"
-        />
+        >
+          <span class="mobile-nav__content">
+            <span class="mobile-nav__icon-shell">
+              <q-icon name="contacts" class="mobile-nav__icon" />
+            </span>
+            <span class="mobile-nav__label">Contacts</span>
+          </span>
+        </q-btn>
         <q-btn
           :flat="activeSection !== 'settings'"
           :unelevated="activeSection === 'settings'"
           :color="activeSection === 'settings' ? 'primary' : undefined"
           :text-color="activeSection === 'settings' ? 'white' : undefined"
           no-caps
-          icon="settings"
-          label="Settings"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeSection === 'settings' }"
           @click="goToSection('settings')"
-        />
+        >
+          <span class="mobile-nav__content">
+            <span class="mobile-nav__icon-shell">
+              <q-icon name="settings" class="mobile-nav__icon" />
+            </span>
+            <span class="mobile-nav__label">Settings</span>
+          </span>
+        </q-btn>
       </div>
     </q-footer>
   </q-layout>
@@ -298,22 +312,44 @@ function goToSection(section: NavigationSection): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--q-negative);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
+  position: absolute;
+  top: -7px;
+  left: calc(100% - 2px);
+  z-index: 1;
+}
+
+.mobile-nav__content {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mobile-nav__icon-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+}
+
+.mobile-nav__icon {
+  font-size: 18px;
+}
+
+.mobile-nav__label {
+  min-width: 0;
 }
 
 .mobile-nav__btn :deep(.q-btn__content) {
-  gap: 5px;
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.01em;
-}
-
-.mobile-nav__btn :deep(.q-icon) {
-  font-size: 18px;
+  width: 100%;
 }
 
 .mobile-nav__btn:hover {

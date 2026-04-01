@@ -9,14 +9,16 @@
       :aria-label="item.label"
       @click="$emit('select', item.key)"
     >
-      <q-icon :name="item.icon" size="20px" />
-      <q-badge
-        v-if="item.key === 'chats' && unreadChatCount > 0"
-        rounded
-        floating
-        class="nav-rail__badge"
-        :label="unreadChatBadgeLabel"
-      />
+      <span class="nav-rail__icon-shell">
+        <q-icon :name="item.icon" size="20px" />
+        <q-badge
+          v-if="item.key === 'chats' && unreadChatCount > 0"
+          rounded
+          color="primary"
+          class="nav-rail__badge"
+          :label="unreadChatBadgeLabel"
+        />
+      </span>
 
       <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
         {{ item.label }}
@@ -76,6 +78,15 @@ const unreadChatBadgeLabel = computed(() =>
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
+.nav-rail__icon-shell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  min-width: 20px;
+}
+
 .nav-rail__badge {
   min-width: 18px;
   height: 18px;
@@ -84,10 +95,12 @@ const unreadChatBadgeLabel = computed(() =>
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--q-negative);
-  color: #fff;
   font-size: 10px;
   font-weight: 700;
+  position: absolute;
+  top: -7px;
+  left: calc(100% - 2px);
+  z-index: 1;
 }
 
 .nav-rail__btn:hover {
