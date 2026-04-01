@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
-import { chatDataService } from 'src/services/chatDataService';
+import { chatDataService, type ChatRow } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
@@ -392,6 +392,41 @@ export const useMessageStore = defineStore('messageStore', () => {
     return normalizedRelayUrls;
   }
 
+  function resolveChatRecipientPublicKey(chat: ChatRow): string {
+    return chat.type === 'group'
+      ? (typeof chat.meta.current_epoch_public_key === 'string'
+          ? chat.meta.current_epoch_public_key.trim().toLowerCase()
+          : '')
+      : chat.public_key;
+  }
+
+  async function resolveChatDeliveryTarget(
+    chatPublicKey: string,
+    relayUrls: string[] | undefined
+  ): Promise<{
+    chat: ChatRow;
+    recipientPublicKey: string;
+    relayUrls: string[];
+    publishSelfCopy: boolean;
+  } | null> {
+    const chat = await chatDataService.getChatByPublicKey(chatPublicKey);
+    if (!chat) {
+      return null;
+    }
+
+    const recipientPublicKey = resolveChatRecipientPublicKey(chat);
+    if (!recipientPublicKey) {
+      throw new Error('Group chat is missing the current epoch public key.');
+    }
+
+    return {
+      chat,
+      recipientPublicKey,
+      relayUrls: await resolveSendRelayUrls(chat.public_key, relayUrls),
+      publishSelfCopy: chat.type !== 'group'
+    };
+  }
+
   async function resolveReplyTargetEventId(
     replyTo: MessageReplyPreview | null
   ): Promise<string | null> {
@@ -527,12 +562,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const recipientPublicKey =
-      chat.type === 'group'
-        ? (typeof chat.meta.current_epoch_public_key === 'string'
-            ? chat.meta.current_epoch_public_key.trim().toLowerCase()
-            : '')
-        : chat.public_key;
+    const recipientPublicKey = resolveChatRecipientPublicKey(chat);
     if (!recipientPublicKey) {
       throw new Error('Group chat is missing the current epoch public key.');
     }
@@ -689,11 +719,16 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     let reactionRecipientPublicKey: string | null = null;
     let reactionRelayUrls: string[] = [];
+    let shouldPublishReactionSelfCopy = true;
     if (existingRow.event_id) {
-      const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
-      if (chat) {
-        reactionRecipientPublicKey = chat.public_key;
-        reactionRelayUrls = await resolveSendRelayUrls(chat.public_key, options.relayUrls);
+      const deliveryTarget = await resolveChatDeliveryTarget(
+        existingRow.chat_public_key,
+        options.relayUrls
+      );
+      if (deliveryTarget) {
+        reactionRecipientPublicKey = deliveryTarget.recipientPublicKey;
+        reactionRelayUrls = deliveryTarget.relayUrls;
+        shouldPublishReactionSelfCopy = deliveryTarget.publishSelfCopy;
       }
     }
 
@@ -738,7 +773,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       {
         createdAt,
         targetKind: updatedMessage.nostrEvent?.event.kind,
-        publishSelfCopy: chat?.type !== 'group'
+        publishSelfCopy: shouldPublishReactionSelfCopy
       }
     );
 
@@ -797,11 +832,13 @@ export const useMessageStore = defineStore('messageStore', () => {
     const reactionEventId = normalizeEventId(reactionToRemove.eventId);
     let reactionDeletionRecipientPublicKey: string | null = null;
     let reactionDeletionRelayUrls: string[] = [];
+    let shouldPublishReactionDeletionSelfCopy = true;
     if (reactionEventId) {
-      const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
-      if (chat) {
-        reactionDeletionRecipientPublicKey = chat.public_key;
-        reactionDeletionRelayUrls = await resolveSendRelayUrls(chat.public_key, undefined);
+      const deliveryTarget = await resolveChatDeliveryTarget(existingRow.chat_public_key, undefined);
+      if (deliveryTarget) {
+        reactionDeletionRecipientPublicKey = deliveryTarget.recipientPublicKey;
+        reactionDeletionRelayUrls = deliveryTarget.relayUrls;
+        shouldPublishReactionDeletionSelfCopy = deliveryTarget.publishSelfCopy;
       }
     }
 
@@ -835,7 +872,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       reactionDeletionRelayUrls,
       {
         createdAt: new Date().toISOString(),
-        publishSelfCopy: chat?.type !== 'group'
+        publishSelfCopy: shouldPublishReactionDeletionSelfCopy
       }
     );
     await nostrEventDataService.deleteEventsByIds([reactionEventId]);
@@ -874,10 +911,12 @@ export const useMessageStore = defineStore('messageStore', () => {
       : 14;
     let deletionRecipientPublicKey: string | null = null;
     let deletionRelayUrls: string[] = [];
-    const chat = await chatDataService.getChatByPublicKey(existingRow.chat_public_key);
-    if (chat) {
-      deletionRecipientPublicKey = chat.public_key;
-      deletionRelayUrls = await resolveSendRelayUrls(chat.public_key, undefined);
+    let shouldPublishDeletionSelfCopy = true;
+    const deliveryTarget = await resolveChatDeliveryTarget(existingRow.chat_public_key, undefined);
+    if (deliveryTarget) {
+      deletionRecipientPublicKey = deliveryTarget.recipientPublicKey;
+      deletionRelayUrls = deliveryTarget.relayUrls;
+      shouldPublishDeletionSelfCopy = deliveryTarget.publishSelfCopy;
     }
 
     const updatedRow = await chatDataService.updateMessageMeta(
@@ -910,7 +949,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       deletionRelayUrls,
       {
         createdAt: new Date().toISOString(),
-        publishSelfCopy: chat?.type !== 'group'
+        publishSelfCopy: shouldPublishDeletionSelfCopy
       }
     );
     const deleteEventId = normalizeEventId(deleteEvent?.id);
