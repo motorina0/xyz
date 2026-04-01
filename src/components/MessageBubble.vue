@@ -23,25 +23,16 @@
       <div
         class="bubble"
         :class="isMine ? 'bubble--mine' : 'bubble--their'"
-      >
-      <q-btn
-        flat
-        dense
-        round
-        size="sm"
-        icon="more_horiz"
-        aria-label="Open message actions"
-        class="bubble__menu-trigger"
         @click.stop="openActionMenu"
-      />
-
+      >
       <q-menu
+        ref="actionMenuRef"
         v-model="isActionMenuOpen"
-        anchor="bottom right"
-        self="top right"
+        no-parent-event
+        touch-position
         class="tg-pop-menu"
         :transition-duration="0"
-        @before-hide="handleActionMenuHide"
+        @hide="handleActionMenuHide"
       >
         <div class="bubble__menu-stack">
           <q-list dense class="tg-pop-menu__list bubble__actions-list">
@@ -120,9 +111,10 @@
       </q-menu>
 
       <q-menu
+        ref="emojiPickerMenuRef"
         v-model="isEmojiPickerMenuOpen"
-        anchor="bottom right"
-        self="top right"
+        no-parent-event
+        touch-position
         class="tg-pop-menu"
         :transition-duration="0"
         @show="handleEmojiPickerMenuShow"
@@ -138,7 +130,7 @@
         />
       </q-menu>
 
-      <div class="bubble__content" @click.stop="handleBubbleTap">
+      <div class="bubble__content">
         <button
           v-if="replyPreview"
           type="button"
@@ -365,11 +357,14 @@ const nostrStore = useNostrStore();
 const isMine = computed(() => props.message.sender === 'me');
 const showAuthorOnMobile = computed(() => props.showAuthorOnMobile === true);
 const loggedInPublicKey = computed(() => nostrStore.getLoggedInPublicKeyHex()?.toLowerCase() ?? '');
+const actionMenuRef = ref<{ show: (evt?: Event) => void } | null>(null);
+const emojiPickerMenuRef = ref<{ show: (evt?: Event) => void } | null>(null);
 const isActionMenuOpen = ref(false);
 const isEmojiPickerMenuOpen = ref(false);
 const isInfoDialogOpen = ref(false);
 const isDeletedMessageDialogOpen = ref(false);
 const shouldOpenEmojiPickerAfterActionMenu = ref(false);
+const lastActionMenuClickPosition = ref<{ left: number; top: number } | null>(null);
 const emojiPickerRef = ref<{ reset: () => void } | null>(null);
 
 interface StatusSegment {
@@ -1000,18 +995,18 @@ function openStatusDialog(): void {
   isStatusDialogOpen.value = true;
 }
 
-function canUseTapToOpenMenu(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return false;
+function openActionMenu(event: MouseEvent): void {
+  if (event.button !== 0) {
+    return;
   }
 
-  return window.matchMedia('(hover: none), (pointer: coarse)').matches;
-}
-
-function openActionMenu(): void {
+  lastActionMenuClickPosition.value = {
+    left: event.clientX,
+    top: event.clientY
+  };
   shouldOpenEmojiPickerAfterActionMenu.value = false;
   isEmojiPickerMenuOpen.value = false;
-  isActionMenuOpen.value = true;
+  actionMenuRef.value?.show(event);
 }
 
 function openEmojiPickerMenu(): void {
@@ -1025,6 +1020,12 @@ function handleActionMenuHide(): void {
   }
 
   shouldOpenEmojiPickerAfterActionMenu.value = false;
+  const positionEvent = createMenuPositionEvent();
+  if (positionEvent) {
+    emojiPickerMenuRef.value?.show(positionEvent);
+    return;
+  }
+
   isEmojiPickerMenuOpen.value = true;
 }
 
@@ -1034,12 +1035,23 @@ function handleEmojiPickerMenuShow(): void {
   });
 }
 
-function handleBubbleTap(): void {
-  if (!canUseTapToOpenMenu()) {
-    return;
+function createMenuPositionEvent(): MouseEvent | null {
+  if (typeof window === 'undefined') {
+    return null;
   }
 
-  openActionMenu();
+  const position = lastActionMenuClickPosition.value;
+  if (!position) {
+    return null;
+  }
+
+  return new MouseEvent('click', {
+    bubbles: true,
+    button: 0,
+    clientX: position.left,
+    clientY: position.top,
+    view: window
+  });
 }
 
 function notifyUnimplemented(label: string): void {
@@ -1276,15 +1288,18 @@ onBeforeUnmount(() => {
 .bubble {
   position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px;
   width: 100%;
   max-width: 100%;
-  padding: 2px 34px 2px 0;
+  padding: 2px 10px 2px 0;
   border-radius: 0;
   box-shadow: none;
   background: transparent;
   animation: bubble-in 180ms ease both;
+  transition: background-color 0.2s ease;
+  cursor: pointer;
 }
 
 .bubble__author {
@@ -1318,43 +1333,9 @@ onBeforeUnmount(() => {
   line-height: 1.2;
 }
 
-.q-btn.bubble__menu-trigger {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  color: var(--tg-text-secondary);
-  background: transparent !important;
-  box-shadow: none !important;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(-2px);
-  transition:
-    opacity 0.18s ease,
-    transform 0.18s ease,
-    color 0.18s ease;
-  border-radius: 999px;
-}
-
-.q-btn.bubble__menu-trigger::before {
-  border-color: transparent !important;
-}
-
-.q-btn.bubble__menu-trigger:hover {
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.bubble-row:hover .bubble__menu-trigger,
-.bubble-row:focus-within .bubble__menu-trigger {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-@media (hover: none), (pointer: coarse) {
-  .bubble__menu-trigger {
-    display: none;
-  }
+.bubble:hover,
+.bubble:focus-within {
+  background: var(--tg-hover);
 }
 
 .bubble--mine {
@@ -1410,6 +1391,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   margin-left: var(--bubble-author-indent);
   max-width: min(82%, 560px);
+  cursor: inherit;
 }
 
 .bubble__reply-preview {
@@ -1488,10 +1470,12 @@ onBeforeUnmount(() => {
 
 .bubble__reactions {
   display: flex;
+  flex: 0 0 100%;
   flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 6px;
-  margin-top: 4px;
-  margin-left: var(--bubble-author-indent);
+  margin-top: 0;
+  padding-left: var(--bubble-author-indent);
   position: relative;
   z-index: 1;
 }
@@ -1694,8 +1678,9 @@ onBeforeUnmount(() => {
   }
 
   .bubble__reactions {
+    flex: none;
     margin-top: -8px;
-    margin-left: 0;
+    padding-left: 0;
   }
 
   .bubble__meta {
