@@ -1300,6 +1300,18 @@ onBeforeUnmount(() => {
   animation: bubble-in 180ms ease both;
   transition: background-color 0.2s ease;
   cursor: pointer;
+  z-index: 0;
+}
+
+.bubble::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 0 calc(var(--bubble-author-indent) - 3px);
+  background: var(--tg-hover);
+  border-radius: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
 }
 
 .bubble__author {
@@ -1333,9 +1345,9 @@ onBeforeUnmount(() => {
   line-height: 1.2;
 }
 
-.bubble:hover,
-.bubble:focus-within {
-  background: var(--tg-hover);
+.bubble:hover::before,
+.bubble:focus-within::before {
+  opacity: 1;
 }
 
 .bubble--mine {
@@ -1392,6 +1404,8 @@ onBeforeUnmount(() => {
   margin-left: var(--bubble-author-indent);
   max-width: min(82%, 560px);
   cursor: inherit;
+  position: relative;
+  z-index: 1;
 }
 
 .bubble__reply-preview {
@@ -1588,6 +1602,8 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding-bottom: 2px;
   white-space: nowrap;
+  position: relative;
+  z-index: 1;
 }
 
 @media (max-width: 1023px) {
@@ -1630,6 +1646,10 @@ onBeforeUnmount(() => {
     border-radius: 16px;
     padding: 10px 36px 10px 12px;
     box-shadow: none;
+  }
+
+  .bubble::before {
+    display: none;
   }
 
   .bubble--mine {
