@@ -34,7 +34,15 @@
         />
       </div>
 
-      <div ref="threadBodyRef" class="thread-body" @scroll="handleThreadScroll">
+      <div
+        ref="threadBodyRef"
+        class="thread-body"
+        tabindex="-1"
+        :class="{ 'thread-body--scroll-locked': isThreadScrollLocked }"
+        @scroll="handleThreadScroll"
+        @wheel="handleThreadWheel"
+        @touchmove="handleThreadTouchMove"
+      >
         <div v-if="stickyDayLabel" class="thread-day-sticky" aria-hidden="true">
           <span class="thread-day-sticky__label">{{ stickyDayLabel }}</span>
         </div>
@@ -47,6 +55,18 @@
             <q-spinner-dots size="16px" class="thread-loading-indicator__spinner" />
             <span>Loading</span>
           </span>
+        </div>
+        <div v-else-if="hasOlderMessages" class="thread-more thread-more--top">
+          <q-btn
+            flat
+            dense
+            no-caps
+            icon="keyboard_arrow_up"
+            label="More"
+            class="thread-more__button"
+            @mousedown.prevent
+            @click="handleLoadOlderMessages"
+          />
         </div>
         <template v-for="item in threadItems" :key="item.key">
           <div v-if="item.type === 'separator'" class="thread-day-separator" aria-hidden="true">
@@ -104,6 +124,18 @@
             <q-spinner-dots size="16px" class="thread-loading-indicator__spinner" />
             <span>Loading</span>
           </span>
+        </div>
+        <div v-else-if="hasNewerMessages" class="thread-more thread-more--bottom">
+          <q-btn
+            flat
+            dense
+            no-caps
+            icon-right="keyboard_arrow_down"
+            label="More"
+            class="thread-more__button"
+            @mousedown.prevent
+            @click="handleLoadNewerMessages"
+          />
         </div>
       </div>
 
@@ -213,6 +245,8 @@ const composerRef = ref<{ focusInputAtEnd: () => void } | null>(null);
 const stickyDayLabel = ref('');
 const activeReply = ref<MessageReplyPreview | null>(null);
 const highlightedMessageId = ref<string | null>(null);
+const isThreadScrollLocked = ref(false);
+const isAutomaticBottomScrollEnabled = ref(true);
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
@@ -240,17 +274,34 @@ let visibleReactionSyncFrameId: number | null = null;
 let visibleReactionSyncPromise: Promise<void> = Promise.resolve();
 let pendingSentMessageReveal = false;
 let isScrollingToBottom = false;
+let scrollToBottomRequestId = 0;
 let pendingPaginationContext:
   | {
       direction: 'older' | 'newer';
       previousScrollHeight: number;
       previousScrollTop: number;
       previousMessageCount: number;
+      anchorMessageId: string | null;
+      anchorVisibleOffset: number | null;
     }
   | null = null;
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 let selfAuthorIdentityRefreshToken = 0;
 let authorIdentityRefreshToken = 0;
+
+function logThreadScrollTrace(label: string, extra: Record<string, unknown> = {}): void {
+  console.log(`[[[THREAD_SCROLL_TRACE:${label}]]]`, {
+    chatId: props.chat?.id ?? null,
+    messageCount: props.messages.length,
+    isAutomaticBottomScrollEnabled: isAutomaticBottomScrollEnabled.value,
+    isScrollingToBottom,
+    pendingInitialPositionChatId: pendingInitialPositionChatId.value,
+    pendingSentMessageReveal,
+    hasOlderMessages: hasOlderMessages.value,
+    hasNewerMessages: hasNewerMessages.value,
+    ...extra
+  });
+}
 
 function buildAvatar(identifier: string): string {
   const parts = identifier
@@ -729,17 +780,56 @@ async function refreshMessageAuthorIdentities(): Promise<void> {
   }
 }
 
-async function scrollToBottom(): Promise<void> {
-  if (isScrollingToBottom) {
+function cancelPendingScrollToBottom(): void {
+  scrollToBottomRequestId += 1;
+  isScrollingToBottom = false;
+}
+
+function cancelPendingAutomaticThreadPosition(): void {
+  pendingInitialPositionChatId.value = null;
+  cancelPendingScrollToBottom();
+}
+
+function setAutomaticBottomScrollEnabled(enabled: boolean): void {
+  isAutomaticBottomScrollEnabled.value = enabled;
+}
+
+async function scrollToBottom(mode: 'auto' | 'explicit' = 'auto'): Promise<void> {
+  logThreadScrollTrace('SCROLL_TO_BOTTOM_CALL', { mode });
+
+  if (mode === 'auto' && !isAutomaticBottomScrollEnabled.value) {
+    logThreadScrollTrace('SCROLL_TO_BOTTOM_SKIPPED_AUTO_DISABLED', { mode });
     return;
   }
 
+  if (isScrollingToBottom) {
+    logThreadScrollTrace('SCROLL_TO_BOTTOM_SKIPPED_ALREADY_RUNNING', { mode });
+    return;
+  }
+
+  if (mode === 'explicit') {
+    setAutomaticBottomScrollEnabled(true);
+  }
+
+  logThreadScrollTrace('SCROLL_TO_BOTTOM_BEGIN', { mode });
   isScrollingToBottom = true;
+  const requestId = ++scrollToBottomRequestId;
   try {
-    await loadAllNewerMessagesForCurrentChat();
+    await loadAllNewerMessagesForCurrentChat(requestId);
+    if (requestId !== scrollToBottomRequestId) {
+      return;
+    }
+
     await nextTick();
+    if (requestId !== scrollToBottomRequestId) {
+      return;
+    }
 
     const revealLatestMessage = (): void => {
+      if (requestId !== scrollToBottomRequestId) {
+        return;
+      }
+
       const threadBody = threadBodyRef.value;
       if (!threadBody) {
         return;
@@ -768,18 +858,31 @@ async function scrollToBottom(): Promise<void> {
         resolve();
       });
     });
+    if (requestId !== scrollToBottomRequestId) {
+      logThreadScrollTrace('SCROLL_TO_BOTTOM_ABORTED_REQUEST_CHANGED', { mode, requestId });
+      return;
+    }
 
+    logThreadScrollTrace('SCROLL_TO_BOTTOM_APPLIED', { mode, requestId });
     isThreadScrolledUp.value = false;
     lastReadMessageId.value = latestMessageId.value;
     hasJumpedToLastReadMessage.value = false;
     updateStickyDayLabel();
     scheduleVisibleReactionViewSync();
   } finally {
-    isScrollingToBottom = false;
+    if (requestId === scrollToBottomRequestId) {
+      isScrollingToBottom = false;
+    }
+
+    logThreadScrollTrace('SCROLL_TO_BOTTOM_FINALLY', {
+      mode,
+      requestId,
+      currentRequestId: scrollToBottomRequestId
+    });
   }
 }
 
-async function loadAllNewerMessagesForCurrentChat(): Promise<void> {
+async function loadAllNewerMessagesForCurrentChat(requestId?: number): Promise<void> {
   const currentChatId = props.chat?.id ?? null;
   if (!currentChatId) {
     return;
@@ -787,6 +890,10 @@ async function loadAllNewerMessagesForCurrentChat(): Promise<void> {
 
   let iterationCount = 0;
   while (messageStore.getPaginationState(currentChatId).hasNewer && iterationCount < 100) {
+    if (requestId && requestId !== scrollToBottomRequestId) {
+      return;
+    }
+
     iterationCount += 1;
     await messageStore.loadNewerMessages(currentChatId);
   }
@@ -811,6 +918,7 @@ function updateScrollJumpState(): void {
   }
 
   if (isThreadNearBottom()) {
+    setAutomaticBottomScrollEnabled(true);
     isThreadScrolledUp.value = false;
     lastReadMessageId.value = latestMessage;
     hasJumpedToLastReadMessage.value = false;
@@ -847,7 +955,84 @@ function updateStickyDayLabel(): void {
     messageEntries[messageEntries.length - 1]?.dataset.dayLabel?.trim() ?? '';
 }
 
+function getEntryVisibleOffsetWithinThread(entry: HTMLElement): number | null {
+  const threadBody = threadBodyRef.value;
+  if (!threadBody) {
+    return null;
+  }
+
+  return entry.offsetTop - threadBody.scrollTop;
+}
+
+function setThreadScrollLocked(locked: boolean): void {
+  isThreadScrollLocked.value = locked;
+}
+
+function blurThreadMoreTrigger(): void {
+  if (typeof document === 'undefined') {
+    return;
+  }
+
+  const activeElement = document.activeElement;
+  if (!(activeElement instanceof HTMLElement)) {
+    return;
+  }
+
+  if (activeElement.closest('.thread-more')) {
+    activeElement.blur();
+  }
+}
+
+function focusThreadBodyWithoutScroll(): void {
+  const threadBody = threadBodyRef.value;
+  if (!threadBody) {
+    return;
+  }
+
+  threadBody.focus({ preventScroll: true });
+}
+
+function handleThreadWheel(event: WheelEvent): void {
+  if (!isThreadScrollLocked.value) {
+    return;
+  }
+
+  event.preventDefault();
+}
+
+function handleThreadTouchMove(event: TouchEvent): void {
+  if (!isThreadScrollLocked.value) {
+    return;
+  }
+
+  event.preventDefault();
+}
+
 function handleThreadScroll(): void {
+  if (isThreadScrollLocked.value && pendingPaginationContext) {
+    const threadBody = threadBodyRef.value;
+    if (!threadBody) {
+      return;
+    }
+
+    if (pendingPaginationContext.direction === 'older') {
+      const anchorEntry = pendingPaginationContext.anchorMessageId
+        ? findThreadMessageEntry(pendingPaginationContext.anchorMessageId)
+        : null;
+      if (anchorEntry && pendingPaginationContext.anchorVisibleOffset !== null) {
+        const lockedScrollTop =
+          anchorEntry.offsetTop - pendingPaginationContext.anchorVisibleOffset;
+        if (threadBody.scrollTop !== lockedScrollTop) {
+          threadBody.scrollTop = lockedScrollTop;
+        }
+      }
+    } else if (threadBody.scrollTop !== pendingPaginationContext.previousScrollTop) {
+      threadBody.scrollTop = pendingPaginationContext.previousScrollTop;
+    }
+
+    return;
+  }
+
   if (scrollFrameId !== null) {
     cancelAnimationFrame(scrollFrameId);
   }
@@ -857,29 +1042,15 @@ function handleThreadScroll(): void {
     updateStickyDayLabel();
     updateScrollJumpState();
     scheduleVisibleReactionViewSync();
-    maybeLoadMoreMessagesForVisibleRange();
   });
 }
 
-function maybeLoadMoreMessagesForVisibleRange(): void {
-  const threadBody = threadBodyRef.value;
-  const currentChatId = props.chat?.id ?? null;
-  if (!threadBody || !currentChatId || pendingPaginationContext !== null) {
-    return;
-  }
+function handleLoadOlderMessages(): void {
+  void loadOlderMessagesForCurrentChat();
+}
 
-  if (threadBody.scrollTop <= 72 && hasOlderMessages.value && !isLoadingOlderMessages.value) {
-    void loadOlderMessagesForCurrentChat();
-    return;
-  }
-
-  if (
-    threadBody.scrollHeight - (threadBody.scrollTop + threadBody.clientHeight) <= 72 &&
-    hasNewerMessages.value &&
-    !isLoadingNewerMessages.value
-  ) {
-    void loadNewerMessagesForCurrentChat();
-  }
+function handleLoadNewerMessages(): void {
+  void loadNewerMessagesForCurrentChat();
 }
 
 async function loadOlderMessagesForCurrentChat(): Promise<void> {
@@ -895,27 +1066,66 @@ async function loadOlderMessagesForCurrentChat(): Promise<void> {
     return;
   }
 
+  blurThreadMoreTrigger();
+  focusThreadBodyWithoutScroll();
+  logThreadScrollTrace('MORE_OLDER_CLICK', {
+    oldestMessageId: props.messages[0]?.id ?? null
+  });
+  setAutomaticBottomScrollEnabled(false);
+  cancelPendingAutomaticThreadPosition();
+
+  const lastOldMessageId = props.messages[0]?.id ?? null;
+  const lastOldMessageEntry = lastOldMessageId
+    ? findThreadMessageEntry(lastOldMessageId)
+    : null;
   pendingPaginationContext = {
     direction: 'older',
     previousScrollHeight: threadBody.scrollHeight,
     previousScrollTop: threadBody.scrollTop,
-    previousMessageCount: props.messages.length
+    previousMessageCount: props.messages.length,
+    anchorMessageId: lastOldMessageId,
+    anchorVisibleOffset: lastOldMessageEntry
+      ? getEntryVisibleOffsetWithinThread(lastOldMessageEntry)
+      : null
   };
+  setThreadScrollLocked(true);
 
   try {
     await messageStore.loadOlderMessages(currentChatId);
   } catch (error) {
     pendingPaginationContext = null;
+    setThreadScrollLocked(false);
     reportUiError('Failed to load older chat messages', error);
     return;
   }
 
-  if (
-    pendingPaginationContext &&
-    pendingPaginationContext.direction === 'older' &&
-    props.messages.length === pendingPaginationContext.previousMessageCount
-  ) {
+  try {
+    await nextTick();
+
+    if (
+      pendingPaginationContext &&
+      pendingPaginationContext.direction === 'older' &&
+      props.messages.length !== pendingPaginationContext.previousMessageCount
+    ) {
+      const anchorEntry = pendingPaginationContext.anchorMessageId
+        ? findThreadMessageEntry(pendingPaginationContext.anchorMessageId)
+        : null;
+
+      if (anchorEntry && pendingPaginationContext.anchorVisibleOffset !== null) {
+        threadBody.scrollTop =
+          anchorEntry.offsetTop - pendingPaginationContext.anchorVisibleOffset;
+      } else {
+        const addedHeight = threadBody.scrollHeight - pendingPaginationContext.previousScrollHeight;
+        threadBody.scrollTop = pendingPaginationContext.previousScrollTop + Math.max(0, addedHeight);
+      }
+
+      updateStickyDayLabel();
+      updateScrollJumpState();
+      scheduleVisibleReactionViewSync();
+    }
+  } finally {
     pendingPaginationContext = null;
+    setThreadScrollLocked(false);
   }
 }
 
@@ -932,27 +1142,49 @@ async function loadNewerMessagesForCurrentChat(): Promise<void> {
     return;
   }
 
+  blurThreadMoreTrigger();
+  focusThreadBodyWithoutScroll();
+  logThreadScrollTrace('MORE_NEWER_CLICK', {
+    newestMessageId: props.messages[props.messages.length - 1]?.id ?? null
+  });
+  setAutomaticBottomScrollEnabled(false);
+  cancelPendingAutomaticThreadPosition();
+
   pendingPaginationContext = {
     direction: 'newer',
     previousScrollHeight: threadBody.scrollHeight,
     previousScrollTop: threadBody.scrollTop,
-    previousMessageCount: props.messages.length
+    previousMessageCount: props.messages.length,
+    anchorMessageId: null,
+    anchorVisibleOffset: null
   };
+  setThreadScrollLocked(true);
 
   try {
     await messageStore.loadNewerMessages(currentChatId);
   } catch (error) {
     pendingPaginationContext = null;
+    setThreadScrollLocked(false);
     reportUiError('Failed to load newer chat messages', error);
     return;
   }
 
-  if (
-    pendingPaginationContext &&
-    pendingPaginationContext.direction === 'newer' &&
-    props.messages.length === pendingPaginationContext.previousMessageCount
-  ) {
+  try {
+    await nextTick();
+
+    if (
+      pendingPaginationContext &&
+      pendingPaginationContext.direction === 'newer' &&
+      props.messages.length !== pendingPaginationContext.previousMessageCount
+    ) {
+      threadBody.scrollTop = pendingPaginationContext.previousScrollTop;
+      updateStickyDayLabel();
+      updateScrollJumpState();
+      scheduleVisibleReactionViewSync();
+    }
+  } finally {
     pendingPaginationContext = null;
+    setThreadScrollLocked(false);
   }
 }
 
@@ -1155,6 +1387,10 @@ async function initializeThreadPosition(): Promise<void> {
   }
 
   if (firstMessageAfterUnreadBoundaryId.value && (await scrollToUnreadSeparator('center', 'auto'))) {
+    if (pendingInitialPositionChatId.value !== currentChatId) {
+      return;
+    }
+
     isThreadScrolledUp.value = true;
     lastReadMessageId.value = firstMessageAfterUnreadBoundaryId.value;
     hasJumpedToLastReadMessage.value = true;
@@ -1164,8 +1400,13 @@ async function initializeThreadPosition(): Promise<void> {
     return;
   }
 
+  if (pendingInitialPositionChatId.value !== currentChatId) {
+    return;
+  }
+
   pendingInitialPositionChatId.value = null;
-  await scrollToBottom();
+  logThreadScrollTrace('INIT_POSITION_NO_UNREAD_AUTO');
+  await scrollToBottom('auto');
 }
 
 function isEntryVisibleWithinThread(entry: HTMLElement): boolean {
@@ -1313,7 +1554,8 @@ async function handleScrollJump(): Promise<void> {
     }
 
     hasJumpedToLastReadMessage.value = false;
-    await scrollToBottom();
+    logThreadScrollTrace('JUMP_TO_LATEST_BUTTON');
+    await scrollToBottom('explicit');
   } catch (error) {
     reportUiError('Failed to jump to the latest messages', error);
   }
@@ -1397,6 +1639,9 @@ watch(
     clearReplyTargetHighlight();
     pendingSentMessageReveal = false;
     pendingPaginationContext = null;
+    setThreadScrollLocked(false);
+    setAutomaticBottomScrollEnabled(true);
+    cancelPendingScrollToBottom();
     pendingInitialPositionChatId.value = chatId;
     openedUnreadBoundaryAt.value =
       chatId && props.chat
@@ -1411,7 +1656,8 @@ watch(
 
     if (!chatId) {
       pendingInitialPositionChatId.value = null;
-      void scrollToBottom();
+      logThreadScrollTrace('CHAT_WATCHER_NO_CHAT_AUTO');
+      void scrollToBottom('auto');
       return;
     }
 
@@ -1424,26 +1670,6 @@ watch(
   () => props.messages.length,
   (nextLength, previousLength) => {
     if (pendingPaginationContext) {
-      const paginationContext = pendingPaginationContext;
-      pendingPaginationContext = null;
-
-      void nextTick(() => {
-        const threadBody = threadBodyRef.value;
-        if (!threadBody) {
-          return;
-        }
-
-        if (paginationContext.direction === 'older') {
-          const addedHeight = threadBody.scrollHeight - paginationContext.previousScrollHeight;
-          threadBody.scrollTop = paginationContext.previousScrollTop + Math.max(0, addedHeight);
-        } else {
-          threadBody.scrollTop = paginationContext.previousScrollTop;
-        }
-
-        updateStickyDayLabel();
-        updateScrollJumpState();
-        scheduleVisibleReactionViewSync();
-      });
       return;
     }
 
@@ -1458,14 +1684,16 @@ watch(
 
     if (pendingSentMessageReveal) {
       pendingSentMessageReveal = false;
-      void scrollToBottom();
+      logThreadScrollTrace('MESSAGES_WATCHER_SENT_REVEAL');
+      void scrollToBottom('explicit');
       return;
     }
 
     const shouldStickToBottom = isThreadNearBottom();
 
     if (shouldStickToBottom) {
-      void scrollToBottom();
+      logThreadScrollTrace('MESSAGES_WATCHER_STICK_TO_BOTTOM_AUTO');
+      void scrollToBottom('auto');
       return;
     }
 
@@ -1494,6 +1722,8 @@ onBeforeUnmount(() => {
     cancelAnimationFrame(visibleReactionSyncFrameId);
   }
   pendingPaginationContext = null;
+  setThreadScrollLocked(false);
+  cancelPendingScrollToBottom();
 });
 </script>
 
@@ -1566,6 +1796,11 @@ body.body--dark .thread-header__action {
   overflow-anchor: none;
 }
 
+.thread-body--scroll-locked {
+  overscroll-behavior: contain;
+  touch-action: none;
+}
+
 .thread-loading-indicator {
   position: absolute;
   left: 16px;
@@ -1603,6 +1838,44 @@ body.body--dark .thread-header__action {
 
 .thread-loading-indicator__spinner {
   color: var(--q-primary);
+}
+
+.thread-more {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  z-index: 4;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.thread-more--top {
+  top: 44px;
+}
+
+.thread-more--bottom {
+  bottom: 12px;
+}
+
+.thread-more__button {
+  pointer-events: auto;
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: var(--tg-sticky-bg) !important;
+  border: 1px solid var(--tg-border);
+  box-shadow: none !important;
+  color: var(--tg-text-secondary) !important;
+}
+
+.thread-more__button::before {
+  border-color: transparent !important;
+}
+
+.thread-more__button:hover {
+  background: var(--tg-hover) !important;
+  box-shadow: none !important;
 }
 
 .thread-composer-anchor {

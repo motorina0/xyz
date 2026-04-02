@@ -192,6 +192,38 @@ function compareMessageCursors(
   return first.id - second.id;
 }
 
+function getNormalizedMessageAuthorKey(
+  row: Pick<MessageRow, 'author_public_key'> | null | undefined
+): string {
+  return normalizeChatIdentifier(row?.author_public_key) ?? '';
+}
+
+function takeLeadingRowsWithAuthor(rows: MessageRow[], authorKey: string): MessageRow[] {
+  const matchingRows: MessageRow[] = [];
+  for (const row of rows) {
+    if (getNormalizedMessageAuthorKey(row) !== authorKey) {
+      break;
+    }
+
+    matchingRows.push(row);
+  }
+
+  return matchingRows;
+}
+
+function takeTrailingRowsWithAuthor(rows: MessageRow[], authorKey: string): MessageRow[] {
+  let startIndex = rows.length;
+  while (startIndex > 0) {
+    if (getNormalizedMessageAuthorKey(rows[startIndex - 1]) !== authorKey) {
+      break;
+    }
+
+    startIndex -= 1;
+  }
+
+  return rows.slice(startIndex);
+}
+
 function buildDefaultChatMessagePaginationState(): ChatMessagePaginationState {
   return {
     oldestCursor: null,
@@ -660,6 +692,124 @@ export const useMessageStore = defineStore('messageStore', () => {
     await upsertPersistedMessage(row);
   }
 
+  async function extendOlderEdgeRows(
+    chatId: string,
+    initialRows: MessageRow[],
+    initialHasMore: boolean
+  ): Promise<{ rows: MessageRow[]; hasMore: boolean }> {
+    if (initialRows.length === 0 || !initialHasMore) {
+      return {
+        rows: initialRows,
+        hasMore: initialHasMore
+      };
+    }
+
+    const boundaryAuthorKey = getNormalizedMessageAuthorKey(initialRows[0]);
+    if (!boundaryAuthorKey) {
+      return {
+        rows: initialRows,
+        hasMore: initialHasMore
+      };
+    }
+
+    const rows = [...initialRows];
+    let hasMore = initialHasMore;
+
+    while (hasMore) {
+      const oldestCursor = buildMessageCursorFromRow(rows[0] ?? null);
+      if (!oldestCursor) {
+        break;
+      }
+
+      const nextBatch = await chatDataService.listMessagesBefore(
+        chatId,
+        oldestCursor,
+        MESSAGE_PAGE_SIZE
+      );
+      if (nextBatch.rows.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      const matchingRows = takeTrailingRowsWithAuthor(nextBatch.rows, boundaryAuthorKey);
+      if (matchingRows.length > 0) {
+        rows.unshift(...matchingRows);
+      }
+
+      if (matchingRows.length !== nextBatch.rows.length) {
+        hasMore = true;
+        break;
+      }
+
+      hasMore = nextBatch.has_more;
+    }
+
+    return {
+      rows,
+      hasMore
+    };
+  }
+
+  async function extendNewerEdgeRows(
+    chatId: string,
+    initialRows: MessageRow[],
+    initialHasMore: boolean
+  ): Promise<{ rows: MessageRow[]; hasMore: boolean }> {
+    if (initialRows.length === 0 || !initialHasMore) {
+      return {
+        rows: initialRows,
+        hasMore: initialHasMore
+      };
+    }
+
+    const boundaryAuthorKey = getNormalizedMessageAuthorKey(
+      initialRows[initialRows.length - 1] ?? null
+    );
+    if (!boundaryAuthorKey) {
+      return {
+        rows: initialRows,
+        hasMore: initialHasMore
+      };
+    }
+
+    const rows = [...initialRows];
+    let hasMore = initialHasMore;
+
+    while (hasMore) {
+      const newestCursor = buildMessageCursorFromRow(rows[rows.length - 1] ?? null);
+      if (!newestCursor) {
+        break;
+      }
+
+      const nextBatch = await chatDataService.listMessagesAfter(
+        chatId,
+        newestCursor,
+        MESSAGE_PAGE_SIZE
+      );
+      if (nextBatch.rows.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      const matchingRows = takeLeadingRowsWithAuthor(nextBatch.rows, boundaryAuthorKey);
+      if (matchingRows.length > 0) {
+        rows.push(...matchingRows);
+      }
+
+      if (matchingRows.length !== nextBatch.rows.length) {
+        hasMore = true;
+        break;
+      }
+
+      hasMore = nextBatch.has_more;
+    }
+
+    return {
+      rows,
+      hasMore
+    };
+  }
+
   async function loadInitialMessageWindow(chatId: string): Promise<{
     rows: MessageRow[];
     hasOlder: boolean;
@@ -691,7 +841,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       if (firstUnreadRow) {
         const firstUnreadCursor = buildMessageCursorFromRow(firstUnreadRow);
         if (firstUnreadCursor) {
-          const [olderBatch, unreadBatch] = await Promise.all([
+          const [initialOlderBatch, initialUnreadBatch] = await Promise.all([
             chatDataService.listMessagesBefore(chatId, firstUnreadCursor, MESSAGE_PAGE_SIZE),
             chatDataService.listMessagesAfter(
               chatId,
@@ -699,20 +849,33 @@ export const useMessageStore = defineStore('messageStore', () => {
               INITIAL_UNREAD_MESSAGE_LIMIT - 1
             )
           ]);
+          const [olderBatch, unreadBatch] = await Promise.all([
+            extendOlderEdgeRows(chatId, initialOlderBatch.rows, initialOlderBatch.has_more),
+            extendNewerEdgeRows(
+              chatId,
+              [firstUnreadRow, ...initialUnreadBatch.rows],
+              initialUnreadBatch.has_more
+            )
+          ]);
 
           return {
-            rows: [...olderBatch.rows, firstUnreadRow, ...unreadBatch.rows],
-            hasOlder: olderBatch.has_more,
-            hasNewer: unreadBatch.has_more
+            rows: [...olderBatch.rows, ...unreadBatch.rows],
+            hasOlder: olderBatch.hasMore,
+            hasNewer: unreadBatch.hasMore
           };
         }
       }
     }
 
     const latestBatch = await chatDataService.listLatestMessages(chatId, MESSAGE_PAGE_SIZE);
+    const extendedLatestBatch = await extendOlderEdgeRows(
+      chatId,
+      latestBatch.rows,
+      latestBatch.has_more
+    );
     return {
-      rows: latestBatch.rows,
-      hasOlder: latestBatch.has_more,
+      rows: extendedLatestBatch.rows,
+      hasOlder: extendedLatestBatch.hasMore,
       hasNewer: false
     };
   }
@@ -798,10 +961,15 @@ export const useMessageStore = defineStore('messageStore', () => {
     setPaginationState(normalizedChatId, { isLoadingOlder: true });
     const loadPromise = (async () => {
       try {
-        const batch = await chatDataService.listMessagesBefore(
+        const initialBatch = await chatDataService.listMessagesBefore(
           normalizedChatId,
           paginationState.oldestCursor as PersistedMessageCursor,
           MESSAGE_PAGE_SIZE
+        );
+        const batch = await extendOlderEdgeRows(
+          normalizedChatId,
+          initialBatch.rows,
+          initialBatch.has_more
         );
         if (batch.rows.length === 0) {
           setPaginationState(normalizedChatId, { hasOlder: false });
@@ -815,7 +983,7 @@ export const useMessageStore = defineStore('messageStore', () => {
         );
         setPaginationState(normalizedChatId, {
           oldestCursor: buildMessageCursorFromRow(batch.rows[0] ?? null),
-          hasOlder: batch.has_more
+          hasOlder: batch.hasMore
         });
       } finally {
         setPaginationState(normalizedChatId, { isLoadingOlder: false });
@@ -855,10 +1023,15 @@ export const useMessageStore = defineStore('messageStore', () => {
     setPaginationState(normalizedChatId, { isLoadingNewer: true });
     const loadPromise = (async () => {
       try {
-        const batch = await chatDataService.listMessagesAfter(
+        const initialBatch = await chatDataService.listMessagesAfter(
           normalizedChatId,
           paginationState.newestCursor as PersistedMessageCursor,
           MESSAGE_PAGE_SIZE
+        );
+        const batch = await extendNewerEdgeRows(
+          normalizedChatId,
+          initialBatch.rows,
+          initialBatch.has_more
         );
         if (batch.rows.length === 0) {
           setPaginationState(normalizedChatId, { hasNewer: false });
@@ -872,7 +1045,7 @@ export const useMessageStore = defineStore('messageStore', () => {
         );
         setPaginationState(normalizedChatId, {
           newestCursor: buildMessageCursorFromRow(batch.rows[batch.rows.length - 1] ?? null),
-          hasNewer: batch.has_more
+          hasNewer: batch.hasMore
         });
       } finally {
         setPaginationState(normalizedChatId, { isLoadingNewer: false });
