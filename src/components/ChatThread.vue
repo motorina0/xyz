@@ -66,6 +66,15 @@
             <span class="thread-day-separator__line" />
           </div>
           <div
+            v-else-if="item.type === 'epoch-separator'"
+            class="thread-day-separator"
+            aria-hidden="true"
+          >
+            <span class="thread-day-separator__line" />
+            <span class="thread-day-separator__label">{{ item.label }}</span>
+            <span class="thread-day-separator__line" />
+          </div>
+          <div
             v-else-if="item.type === 'unread-separator'"
             class="thread-unread-separator"
             tabindex="-1"
@@ -320,6 +329,11 @@ type ThreadItem =
       label: string;
     }
   | {
+      type: 'epoch-separator';
+      key: string;
+      label: string;
+    }
+  | {
       type: 'unread-separator';
       key: string;
       label: string;
@@ -544,6 +558,20 @@ function formatDayLabel(value: string): string {
   }).format(date);
 }
 
+function readGroupEpochNoticeNumber(message: Message): number | null {
+  const rawValue = message.meta.group_epoch_notice;
+  if (!rawValue || typeof rawValue !== 'object' || Array.isArray(rawValue)) {
+    return null;
+  }
+
+  const epochNumber = 'epochNumber' in rawValue ? Number(rawValue.epochNumber) : Number.NaN;
+  if (!Number.isInteger(epochNumber) || epochNumber < 0) {
+    return null;
+  }
+
+  return Math.floor(epochNumber);
+}
+
 const threadItems = computed<ThreadItem[]>(() => {
   const items: ThreadItem[] = [];
   let lastDayKey = '';
@@ -568,6 +596,16 @@ const threadItems = computed<ThreadItem[]>(() => {
         key: `unread-separator-${message.id}`,
         label: 'Unread Messages'
       });
+    }
+
+    const epochNoticeNumber = readGroupEpochNoticeNumber(message);
+    if (epochNoticeNumber !== null) {
+      items.push({
+        type: 'epoch-separator',
+        key: `epoch-separator-${message.id}`,
+        label: `Epoch ${epochNoticeNumber}`
+      });
+      continue;
     }
 
     const authorIdentity = resolveMessageAuthorIdentity(message);

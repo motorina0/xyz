@@ -7,6 +7,7 @@ export interface ChatGroupEpochKey {
   epoch_number: number;
   epoch_public_key: string;
   epoch_private_key_encrypted: string;
+  invitation_created_at?: string;
 }
 
 export interface ChatMetadata {
@@ -70,10 +71,15 @@ export interface DeletedMessageMetadata {
   deletedEventKind: number;
 }
 
+export interface GroupEpochNoticeMetadata {
+  epochNumber: number;
+}
+
 export interface MessageMetadata {
   reply?: MessageReplyPreview;
   reactions?: MessageReaction[];
   deleted?: DeletedMessageMetadata;
+  group_epoch_notice?: GroupEpochNoticeMetadata;
   [key: string]: unknown;
 }
 

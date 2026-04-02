@@ -1521,7 +1521,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
       entriesByEpoch.set(Math.floor(epochNumber), {
         epoch_number: Math.floor(epochNumber),
         epoch_public_key: epochPublicKey,
-        epoch_private_key_encrypted: epochPrivateKeyEncrypted
+        epoch_private_key_encrypted: epochPrivateKeyEncrypted,
+        ...('invitation_created_at' in entry &&
+        typeof entry.invitation_created_at === 'string' &&
+        entry.invitation_created_at.trim()
+          ? { invitation_created_at: entry.invitation_created_at.trim() }
+          : {})
       });
     }
 
@@ -2004,6 +2009,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     options: {
       fallbackName?: string;
       accepted?: boolean;
+      invitationCreatedAt?: string;
     } = {}
   ): Promise<void> {
     const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
@@ -2026,6 +2032,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       existingChat?.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]
     );
     const previousEpochSignature = JSON.stringify(existingGroupEpochKeys);
+    const invitationCreatedAt =
+      typeof options.invitationCreatedAt === 'string' && options.invitationCreatedAt.trim()
+        ? options.invitationCreatedAt.trim()
+        : null;
     const existingEpochEntry =
       existingGroupEpochKeys.find(
         (entry) =>
@@ -2035,13 +2045,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
       existingGroupEpochKeys.map((entry) => [entry.epoch_number, entry])
     );
     if (existingEpochEntry) {
-      entriesByEpoch.set(epochNumber, existingEpochEntry);
+      entriesByEpoch.set(epochNumber, {
+        ...existingEpochEntry,
+        ...(invitationCreatedAt ? { invitation_created_at: invitationCreatedAt } : {})
+      });
     } else {
       const encryptedEpochPrivateKey = await encryptPrivateStringContent(normalizedEpochPrivateKey);
       entriesByEpoch.set(epochNumber, {
         epoch_number: epochNumber,
         epoch_public_key: normalizedEpochPublicKey,
-        epoch_private_key_encrypted: encryptedEpochPrivateKey
+        epoch_private_key_encrypted: encryptedEpochPrivateKey,
+        ...(invitationCreatedAt ? { invitation_created_at: invitationCreatedAt } : {})
       });
     }
 
@@ -2219,7 +2233,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
         nextEpochSigner.privateKey,
         {
           fallbackName: updatedGroupContact.name,
-          accepted: true
+          accepted: true,
+          invitationCreatedAt: new Date().toISOString()
         }
       );
 
@@ -6178,7 +6193,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
               decryptedSecret.epoch_privkey,
               {
                 fallbackName: decryptedSecret.name,
-                accepted: true
+                accepted: true,
+                invitationCreatedAt: toIsoTimestampFromUnix(event.created_at)
               }
             );
           }
@@ -6233,7 +6249,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       initialEpochState.epoch_privkey,
       {
         fallbackName: options.name,
-        accepted: true
+        accepted: true,
+        invitationCreatedAt: new Date().toISOString()
       }
     );
     if (didChange) {
@@ -8988,6 +9005,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       if (!verificationResult.isValid) {
         return;
       }
+      const epochNumber = verificationResult.epochNumber ?? 0;
 
       await contactsService.init();
       await chatDataService.init();
@@ -9036,13 +9054,47 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
       await persistIncomingGroupEpochTicket(
         senderPubkeyHex,
-        verificationResult.epochNumber ?? 0,
+        epochNumber,
         verificationResult.epochPrivateKey ?? '',
         {
           fallbackName,
-          accepted: wasAcceptedGroup
+          accepted: wasAcceptedGroup,
+          invitationCreatedAt: toIsoTimestampFromUnix(rumorEvent.created_at)
         }
       );
+
+      const epochNoticeMessage = await chatDataService.createMessage({
+        chat_public_key: senderPubkeyHex,
+        author_public_key: loggedInPubkeyHex,
+        message: `Epoch ${epochNumber}`,
+        created_at: toIsoTimestampFromUnix(rumorEvent.created_at),
+        event_id: verificationResult.signedEvent?.id ?? loggedEvent.id ?? null,
+        meta: {
+          source: 'nostr',
+          kind: 1014,
+          group_epoch_notice: {
+            epochNumber
+          }
+        }
+      });
+      if (!epochNoticeMessage) {
+        return;
+      }
+
+      if (uiThrottleMs > 0) {
+        queuePrivateMessagesUiRefresh({
+          throttleMs: uiThrottleMs,
+          reloadMessages: true
+        });
+        return;
+      }
+
+      try {
+        const { useMessageStore } = await import('src/stores/messageStore');
+        await useMessageStore().upsertPersistedMessage(epochNoticeMessage);
+      } catch (error) {
+        console.error('Failed to sync incoming epoch notice into live state', error);
+      }
       return;
     }
 
@@ -10320,7 +10372,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
             [GROUP_EPOCH_KEYS_CHAT_META_KEY]: normalizedEpochKeys.map((entry) => ({
               epoch_number: entry.epoch_number,
               epoch_public_key: entry.epoch_public_key,
-              epoch_private_key_encrypted: '[redacted]'
+              epoch_private_key_encrypted: '[redacted]',
+              ...(entry.invitation_created_at
+                ? { invitation_created_at: entry.invitation_created_at }
+                : {})
             }))
           }
         : {}),

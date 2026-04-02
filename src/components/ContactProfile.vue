@@ -660,12 +660,14 @@
                     <tr>
                       <th class="text-left">Epoch</th>
                       <th class="text-left">Public Key</th>
+                      <th class="text-left">Invitation Date</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="epoch in groupEpochRows" :key="`${epoch.epoch_number}:${epoch.epoch_public_key}`">
                       <td class="text-left">{{ epoch.epoch_number }}</td>
                       <td class="text-left">{{ epoch.epoch_public_key }}</td>
+                      <td class="text-left">{{ formatEpochInvitationDate(epoch.invitation_created_at) }}</td>
                     </tr>
                   </tbody>
                 </q-markup-table>
@@ -1105,6 +1107,10 @@ function normalizeGroupEpochRows(value: unknown): ChatGroupEpochKey[] {
       'epoch_private_key_encrypted' in entry && typeof entry.epoch_private_key_encrypted === 'string'
         ? entry.epoch_private_key_encrypted.trim()
         : '';
+    const invitationCreatedAt =
+      'invitation_created_at' in entry && typeof entry.invitation_created_at === 'string'
+        ? entry.invitation_created_at.trim()
+        : '';
 
     if (!Number.isInteger(epochNumber) || epochNumber < 0 || !epochPublicKey || !epochPrivateKeyEncrypted) {
       continue;
@@ -1113,11 +1119,31 @@ function normalizeGroupEpochRows(value: unknown): ChatGroupEpochKey[] {
     rows.push({
       epoch_number: Math.floor(epochNumber),
       epoch_public_key: epochPublicKey,
-      epoch_private_key_encrypted: epochPrivateKeyEncrypted
+      epoch_private_key_encrypted: epochPrivateKeyEncrypted,
+      ...(invitationCreatedAt ? { invitation_created_at: invitationCreatedAt } : {})
     });
   }
 
   return rows.sort((first, second) => second.epoch_number - first.epoch_number);
+}
+
+function formatEpochInvitationDate(value: string | undefined): string {
+  if (!value) {
+    return 'Unknown';
+  }
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return 'Unknown';
+  }
+
+  return new Intl.DateTimeFormat('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(parsedDate);
 }
 
 function cloneProfile(value: ContactProfileForm): ContactProfileForm {
@@ -2380,8 +2406,8 @@ body.body--dark .profile-header__action {
   flex-direction: column;
 }
 
-.profile-epochs-table td:last-child,
-.profile-epochs-table th:last-child {
+.profile-epochs-table td:nth-child(2),
+.profile-epochs-table th:nth-child(2) {
   word-break: break-all;
 }
 
