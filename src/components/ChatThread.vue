@@ -825,7 +825,7 @@ async function scrollToBottom(mode: 'auto' | 'explicit' = 'auto'): Promise<void>
         return;
       }
 
-      if (mode === 'explicit' && shouldPinMobileThreadToAbsoluteBottom()) {
+      if (shouldPinMobileThreadToAbsoluteBottom()) {
         threadBody.scrollTop = Math.max(0, threadBody.scrollHeight - threadBody.clientHeight);
         return;
       }
@@ -1677,10 +1677,19 @@ watch(
       return;
     }
 
+    const shouldForceFollowToBottom =
+      isAutomaticBottomScrollEnabled.value && !isThreadScrolledUp.value;
+
     if (pendingSentMessageReveal) {
       pendingSentMessageReveal = false;
       logThreadScrollTrace('MESSAGES_WATCHER_SENT_REVEAL');
       void scrollToBottom('explicit');
+      return;
+    }
+
+    if (shouldForceFollowToBottom) {
+      logThreadScrollTrace('MESSAGES_WATCHER_FOLLOW_FORCE_BOTTOM');
+      void scrollToBottom('auto');
       return;
     }
 
