@@ -643,7 +643,7 @@ defineExpose({
     gap: 5px;
     padding: 4px;
     border: 1px solid color-mix(in srgb, var(--tg-border) 92%, #c5d1dc 8%);
-    border-radius: 999px;
+    border-radius: 22px;
     background: color-mix(in srgb, var(--tg-panel-header-bg) 99%, rgba(255, 255, 255, 0.96) 1%);
     box-shadow: 0 8px 20px rgba(23, 35, 52, 0.1);
   }
@@ -651,7 +651,7 @@ defineExpose({
   .composer__input.q-textarea.q-field--dense :deep(.q-field__control) {
     min-height: 34px !important;
     padding-left: 4px !important;
-    border-radius: 999px !important;
+    border-radius: 18px !important;
     background: transparent !important;
     box-shadow: none !important;
   }
