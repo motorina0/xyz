@@ -115,20 +115,28 @@ const unreadChatBadgeLabel = computed(() =>
   unreadChatCount.value > 99 ? '99+' : String(unreadChatCount.value)
 );
 
+function hasActivePubkeyParam(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some((entry) => typeof entry === 'string' && entry.trim().length > 0);
+  }
+
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
 const showMobileNav = computed(() => {
   if (!isMobile.value) {
     return false;
   }
 
   if (route.name === 'chats') {
-    return !(typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0);
+    return !hasActivePubkeyParam(route.params.pubkey);
   }
 
   if (route.name === 'contacts') {
-    return !(typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0);
+    return !hasActivePubkeyParam(route.params.pubkey);
   }
 
-  if (route.name === 'settings' || String(route.name ?? '').startsWith('settings-')) {
+  if (route.name === 'settings') {
     return true;
   }
 
@@ -232,7 +240,7 @@ function navigateToSection(
 
 function goToSection(section: NavigationSection): void {
   if (section === 'chats') {
-    const hasActiveChatParam = typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0;
+    const hasActiveChatParam = hasActivePubkeyParam(route.params.pubkey);
     if (route.name !== 'chats' || hasActiveChatParam) {
       navigateToSection('chats', 'chats');
     }
@@ -240,8 +248,7 @@ function goToSection(section: NavigationSection): void {
   }
 
   if (section === 'contacts') {
-    const hasActiveContactParam =
-      typeof route.params.pubkey === 'string' && route.params.pubkey.trim().length > 0;
+    const hasActiveContactParam = hasActivePubkeyParam(route.params.pubkey);
     if (route.name !== 'contacts' || hasActiveContactParam) {
       navigateToSection('contacts', 'contacts');
     }
