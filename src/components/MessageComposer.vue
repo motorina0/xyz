@@ -720,7 +720,13 @@ defineExpose({
     height: 36px;
     margin-bottom: 0;
     border: 0;
+    border-radius: 999px !important;
+    overflow: hidden;
     box-shadow: none !important;
+  }
+
+  .composer__send::before {
+    border-radius: 999px !important;
   }
 
   .composer__send :deep(.q-icon) {
