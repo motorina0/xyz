@@ -575,9 +575,19 @@
                   </q-item-section>
 
                   <q-item-section>
-                    <q-item-label class="profile-members-list__name" lines="1">
-                      {{ memberListTitle(member) }}
-                    </q-item-label>
+                    <div class="profile-members-list__headline">
+                      <q-item-label class="profile-members-list__name" lines="1">
+                        {{ memberListTitle(member) }}
+                      </q-item-label>
+                      <q-badge
+                        v-if="isGroupOwnerMember(member)"
+                        rounded
+                        color="primary"
+                        class="profile-members-list__badge"
+                      >
+                        Admin
+                      </q-badge>
+                    </div>
                     <q-item-label
                       v-if="memberListCaption(member)"
                       caption
@@ -600,7 +610,7 @@
                       @click="handleRefreshMember(member.public_key)"
                     />
                     <q-btn
-                      v-if="canEditGroupMembers"
+                      v-if="canEditGroupMembers && !isGroupOwnerMember(member)"
                       flat
                       round
                       dense
@@ -867,6 +877,7 @@ const localProfile = reactive<ContactProfileForm>(cloneProfile(props.modelValue)
 const activeTab = ref<ProfileTab>('profile');
 const currentContact = ref<ContactRecord | null>(null);
 const currentGroupChat = ref<ChatRow | null>(null);
+const groupOwnerMember = ref<GroupMemberDraft | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
 const displayedPubkeyFormat = ref<PubkeyDisplayFormat>('hex');
@@ -888,6 +899,7 @@ const pendingGroupMemberChanges = ref<PendingGroupMemberChange[]>([]);
 const groupRelayEntries = ref<ContactRelay[]>([]);
 const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 let lookupRequestId = 0;
+let groupOwnerLookupRequestId = 0;
 
 const relayList = computed(() => uniqueRelays(localProfile.relays));
 const normalizedDisplayPubkey = computed(() => normalizePubkeyInput(localPubkey.value));
@@ -945,6 +957,13 @@ const canAddGroupRelay = computed(() => {
   const value = newGroupRelay.value.trim();
   return value.length > 0 && groupRelayValidationError.value.length === 0;
 });
+const groupOwnerPublicKey = computed(() => {
+  if (currentContact.value?.type !== 'group') {
+    return '';
+  }
+
+  return currentContact.value.meta.owner_public_key?.trim().toLowerCase() ?? '';
+});
 const canUseDefaultGroupRelays = computed(() => {
   if (groupRelayEntries.value.length !== DEFAULT_RELAYS.length) {
     return true;
@@ -968,9 +987,21 @@ const pendingRemovedGroupMemberPubkeys = computed(() => new Set(
     .filter((change) => change.action === 'remove')
     .map((change) => change.member.public_key)
 ));
-const visibleGroupMembers = computed(() => {
+const visibleStoredGroupMembers = computed(() => {
   const pendingRemovedMemberPubkeys = pendingRemovedGroupMemberPubkeys.value;
   return groupMembers.value.filter((member) => !pendingRemovedMemberPubkeys.has(member.public_key));
+});
+const visibleGroupMembers = computed(() => {
+  const ownerPublicKey = groupOwnerPublicKey.value;
+  const visibleMembers = visibleStoredGroupMembers.value.filter(
+    (member) => member.public_key !== ownerPublicKey
+  );
+  const ownerMember = groupOwnerMember.value;
+  if (!ownerMember || !ownerPublicKey) {
+    return visibleMembers;
+  }
+
+  return [ownerMember, ...visibleMembers];
 });
 const nextPublishedGroupMembers = computed(() => {
   const pendingRemovedMemberPubkeys = pendingRemovedGroupMemberPubkeys.value;
@@ -1083,6 +1114,7 @@ watch(
   (contact) => {
     syncGroupMembersFromContact(contact);
     syncGroupRelayEntriesFromContact(contact);
+    void syncGroupOwnerMemberFromContact(contact);
   },
   { immediate: true }
 );
@@ -1533,6 +1565,10 @@ function handleRemoveMember(memberPublicKey: string): void {
     return;
   }
 
+  if (isGroupOwnerPublicKey(memberPublicKey)) {
+    return;
+  }
+
   try {
     const member = groupMembers.value.find((entry) => entry.public_key === memberPublicKey);
     if (!member || findPendingGroupMemberChangeIndex(memberPublicKey) >= 0) {
@@ -1552,6 +1588,32 @@ function handleRemoveMember(memberPublicKey: string): void {
 }
 
 async function handleRefreshMember(memberPublicKey: string): Promise<void> {
+  if (isGroupOwnerPublicKey(memberPublicKey)) {
+    if (refreshingMemberPubkeys.value[memberPublicKey]) {
+      return;
+    }
+
+    refreshingMemberPubkeys.value = {
+      ...refreshingMemberPubkeys.value,
+      [memberPublicKey]: true
+    };
+
+    try {
+      const fallbackName = groupOwnerMember.value?.name?.trim() || memberPublicKey.slice(0, 16);
+      await refreshGroupOwnerMember(memberPublicKey, fallbackName);
+    } catch (error) {
+      reportUiError('Failed to refresh group owner profile', error, 'Failed to refresh member profile.');
+    } finally {
+      const nextRefreshingState = {
+        ...refreshingMemberPubkeys.value
+      };
+      delete nextRefreshingState[memberPublicKey];
+      refreshingMemberPubkeys.value = nextRefreshingState;
+    }
+
+    return;
+  }
+
   const targetMemberIndex = groupMembers.value.findIndex(
     (entry) => entry.public_key === memberPublicKey
   );
@@ -1825,6 +1887,7 @@ function resetMembersEditor(): void {
   newMemberIdentifier.value = '';
   newMemberIdentifierError.value = '';
   groupMembers.value = [];
+  groupOwnerMember.value = null;
   pendingGroupMemberChanges.value = [];
   refreshingMemberPubkeys.value = {};
 }
@@ -1878,7 +1941,10 @@ function syncGroupMembersFromContact(contact: ContactRecord | null): void {
     return;
   }
 
-  groupMembers.value = cloneGroupMembers(contact.meta.group_members);
+  const ownerPublicKey = contact.meta.owner_public_key?.trim().toLowerCase() ?? '';
+  groupMembers.value = cloneGroupMembers(contact.meta.group_members).filter(
+    (member) => member.public_key !== ownerPublicKey
+  );
 }
 
 async function persistGroupMembers(nextMembers: GroupMemberDraft[]): Promise<void> {
@@ -1896,7 +1962,10 @@ async function persistGroupMembers(nextMembers: GroupMemberDraft[]): Promise<voi
   const nextMeta: ContactMetadata = {
     ...(baseContact.meta ?? {})
   };
-  const storedMembers = cloneGroupMembers(nextMembers);
+  const ownerPublicKey = baseContact.meta.owner_public_key?.trim().toLowerCase() ?? '';
+  const storedMembers = cloneGroupMembers(nextMembers).filter(
+    (member) => member.public_key !== ownerPublicKey
+  );
 
   if (storedMembers.length > 0) {
     nextMeta.group_members = storedMembers;
@@ -1912,7 +1981,75 @@ async function persistGroupMembers(nextMembers: GroupMemberDraft[]): Promise<voi
   }
 
   applyStoredContactToCurrentContact(updatedContact);
-  groupMembers.value = cloneGroupMembers(updatedContact.meta.group_members);
+  groupMembers.value = cloneGroupMembers(updatedContact.meta.group_members).filter(
+    (member) => member.public_key !== ownerPublicKey
+  );
+}
+
+async function syncGroupOwnerMemberFromContact(contact: ContactRecord | null): Promise<void> {
+  const requestId = ++groupOwnerLookupRequestId;
+  const ownerPublicKey =
+    contact?.type === 'group' ? contact.meta.owner_public_key?.trim().toLowerCase() ?? '' : '';
+  if (!ownerPublicKey) {
+    groupOwnerMember.value = null;
+    return;
+  }
+
+  const fallbackName = ownerPublicKey.slice(0, 16);
+  groupOwnerMember.value = {
+    public_key: ownerPublicKey,
+    name: fallbackName,
+    given_name: null
+  };
+
+  try {
+    await refreshGroupOwnerMember(ownerPublicKey, fallbackName, requestId);
+  } catch (error) {
+    if (requestId !== groupOwnerLookupRequestId) {
+      return;
+    }
+
+    console.warn('Failed to load group owner preview', ownerPublicKey, error);
+  }
+}
+
+async function refreshGroupOwnerMember(
+  ownerPublicKey: string,
+  fallbackName: string,
+  requestId = ++groupOwnerLookupRequestId
+): Promise<void> {
+  await contactsService.init();
+  const storedOwner = await contactsService.getContactByPublicKey(ownerPublicKey);
+  const ownerPreview =
+    storedOwner ?? (await nostrStore.fetchContactPreviewByPublicKey(ownerPublicKey, fallbackName));
+
+  if (requestId !== groupOwnerLookupRequestId) {
+    return;
+  }
+
+  if (!ownerPreview) {
+    groupOwnerMember.value = {
+      public_key: ownerPublicKey,
+      name: fallbackName,
+      given_name: null
+    };
+    return;
+  }
+
+  groupOwnerMember.value = buildStoredGroupMember(
+    ownerPreview,
+    null,
+    ownerPreview.meta?.nprofile?.trim() ?? null,
+    ownerPreview.meta?.nip05?.trim() ?? null
+  );
+}
+
+function isGroupOwnerPublicKey(publicKey: string): boolean {
+  return groupOwnerPublicKey.value.length > 0 && publicKey.trim().toLowerCase() === groupOwnerPublicKey.value;
+}
+
+function isGroupOwnerMember(member: GroupMemberDraft): boolean {
+  return isGroupOwnerPublicKey(member.public_key);
 }
 
 function memberDisplayName(member: GroupMemberDraft): string {

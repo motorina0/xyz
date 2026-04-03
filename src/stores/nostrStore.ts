@@ -2258,9 +2258,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     const normalizedMemberPubkeys = normalizeUniqueMemberPublicKeys(memberPublicKeys, [
       normalizedOwnerPublicKey
     ]);
+    const normalizedTicketRecipientPubkeys = shouldRotateEpoch
+      ? normalizeUniqueMemberPublicKeys([
+          ...normalizedMemberPubkeys,
+          normalizedOwnerPublicKey
+        ])
+      : normalizedMemberPubkeys;
 
     const failedMemberPubkeys: string[] = [];
-    for (const memberPublicKey of normalizedMemberPubkeys) {
+    for (const memberPublicKey of normalizedTicketRecipientPubkeys) {
       try {
         const relaySaveStatus = await sendGroupEpochTicket(
           normalizedGroupPublicKey,
@@ -2283,8 +2289,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return {
       epochNumber,
       createdNewEpoch: shouldRotateEpoch,
-      attemptedMemberCount: normalizedMemberPubkeys.length,
-      deliveredMemberCount: normalizedMemberPubkeys.length - failedMemberPubkeys.length,
+      attemptedMemberCount: normalizedTicketRecipientPubkeys.length,
+      deliveredMemberCount: normalizedTicketRecipientPubkeys.length - failedMemberPubkeys.length,
       failedMemberPubkeys,
       publishedRelayUrls: Array.from(publishedRelayUrls.values())
     };
