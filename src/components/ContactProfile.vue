@@ -1889,9 +1889,12 @@ async function persistGroupMembers(nextMembers: GroupMemberDraft[]): Promise<voi
   }
 
   await contactsService.init();
+  const latestStoredContact = await contactsService.getContactById(contact.id);
+  const baseContact =
+    latestStoredContact && latestStoredContact.type === 'group' ? latestStoredContact : contact;
 
   const nextMeta: ContactMetadata = {
-    ...(contact.meta ?? {})
+    ...(baseContact.meta ?? {})
   };
   const storedMembers = cloneGroupMembers(nextMembers);
 
@@ -1901,7 +1904,7 @@ async function persistGroupMembers(nextMembers: GroupMemberDraft[]): Promise<voi
     delete nextMeta.group_members;
   }
 
-  const updatedContact = await contactsService.updateContact(contact.id, {
+  const updatedContact = await contactsService.updateContact(baseContact.id, {
     meta: nextMeta
   });
   if (!updatedContact) {
