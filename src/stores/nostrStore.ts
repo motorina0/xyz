@@ -2416,14 +2416,22 @@ export const useNostrStore = defineStore('nostrStore', () => {
       normalizedOwnerPublicKey
     ]);
     const nextMemberPubkeySet = new Set(nextMemberPubkeys);
+    const currentMemberPubkeySet = new Set(currentMemberPubkeys);
     const hasRemovedMembers = currentMemberPubkeys.some(
       (memberPublicKey) => !nextMemberPubkeySet.has(memberPublicKey)
     );
+    const addedMemberPubkeys = nextMemberPubkeys.filter(
+      (memberPublicKey) => !currentMemberPubkeySet.has(memberPublicKey)
+    );
 
-    return publishGroupEpochTickets(normalizedGroupPublicKey, nextMemberPubkeys, {
+    return publishGroupEpochTickets(
+      normalizedGroupPublicKey,
+      hasRemovedMembers ? nextMemberPubkeys : addedMemberPubkeys,
+      {
       rotateEpoch: hasRemovedMembers,
       seedRelayUrls
-    });
+      }
+    );
   }
 
   async function sendGroupEpochTicket(
@@ -3223,7 +3231,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
     const reqFrame = buildNostrReqFrame(subId, subscription.filters);
 
-    console.info(JSON.stringify(reqFrame));
+    console.log(JSON.stringify(reqFrame));
     logDeveloperTrace('info', `subscription:${name}`, 'req', {
       subId,
       reqFrame,
