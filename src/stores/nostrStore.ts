@@ -477,6 +477,59 @@ function createInitialStartupStepSnapshots(): StartupStepSnapshot[] {
   }));
 }
 
+function beginStartupStepSnapshotValue(
+  step: StartupStepSnapshot,
+  now: number
+): StartupStepSnapshot {
+  if (step.status === 'in_progress') {
+    return step;
+  }
+
+  return {
+    ...step,
+    status: 'in_progress',
+    startedAt: now,
+    completedAt: null,
+    durationMs: null,
+    errorMessage: null
+  };
+}
+
+function completeStartupStepSnapshotValue(
+  step: StartupStepSnapshot,
+  now: number
+): StartupStepSnapshot {
+  const startedAt = step.startedAt ?? now;
+  return {
+    ...step,
+    status: 'success',
+    startedAt,
+    completedAt: now,
+    durationMs: Math.max(0, now - startedAt),
+    errorMessage: null
+  };
+}
+
+function failStartupStepSnapshotValue(
+  step: StartupStepSnapshot,
+  error: unknown,
+  now: number
+): StartupStepSnapshot {
+  const startedAt = step.startedAt ?? now;
+  return {
+    ...step,
+    status: 'error',
+    startedAt,
+    completedAt: now,
+    durationMs: Math.max(0, now - startedAt),
+    errorMessage: error instanceof Error ? error.message : String(error)
+  };
+}
+
+function resetStartupStepSnapshotsValue(): StartupStepSnapshot[] {
+  return createInitialStartupStepSnapshots();
+}
+
 function hasStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
@@ -1045,19 +1098,23 @@ function shouldPreserveExistingGroupRelaysValue(
 }
 
 export const __nostrStoreTestUtils = {
+  beginStartupStepSnapshot: beginStartupStepSnapshotValue,
   buildAvatarFallback: buildAvatarFallbackValue,
   buildIdentifierFallbacks: buildIdentifierFallbacksValue,
   buildUpdatedContactMeta: buildUpdatedContactMetaValue,
   buildGroupInviteRequestPlan: buildGroupInviteRequestPlanValue,
+  completeStartupStepSnapshot: completeStartupStepSnapshotValue,
   contactMetadataEqual: contactMetadataEqualValue,
   contactRelayListsEqual: contactRelayListsEqualValue,
   createInitialStartupStepSnapshots,
+  failStartupStepSnapshot: failStartupStepSnapshotValue,
   findConflictingKnownGroupEpochNumber: findConflictingKnownGroupEpochNumberValue,
   findHigherKnownGroupEpochConflict: findHigherKnownGroupEpochConflictValue,
   normalizeChatGroupEpochKeys: normalizeChatGroupEpochKeysValue,
   normalizeRelayStatusUrls: normalizeRelayStatusUrlsValue,
   normalizeWritableRelayUrls: normalizeWritableRelayUrlsValue,
   relayEntriesFromRelayList: relayEntriesFromRelayListValue,
+  resetStartupStepSnapshots: resetStartupStepSnapshotsValue,
   resolveGroupDisplayName: resolveGroupDisplayNameValue,
   resolveGroupPublishRelayUrls: resolveGroupPublishRelayUrlsValue,
   resolveCurrentGroupChatEpochEntry: resolveCurrentGroupChatEpochEntryValue,
@@ -1252,44 +1309,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function beginStartupStep(stepId: StartupStepId): void {
     const step = getStartupStepSnapshot(stepId);
-    if (step.status === 'in_progress') {
+    const nextStep = beginStartupStepSnapshotValue(step, Date.now());
+    if (nextStep === step) {
       return;
     }
-
-    const now = Date.now();
-    step.status = 'in_progress';
-    step.startedAt = now;
-    step.completedAt = null;
-    step.durationMs = null;
-    step.errorMessage = null;
+    Object.assign(step, nextStep);
     showStartupStepProgress(stepId);
   }
 
   function completeStartupStep(stepId: StartupStepId): void {
     const step = getStartupStepSnapshot(stepId);
-    const now = Date.now();
-    if (step.startedAt === null) {
-      step.startedAt = now;
-    }
-
-    step.status = 'success';
-    step.completedAt = now;
-    step.durationMs = Math.max(0, now - step.startedAt);
-    step.errorMessage = null;
+    Object.assign(step, completeStartupStepSnapshotValue(step, Date.now()));
     finalizeStartupStepDisplay(stepId, 'success');
   }
 
   function failStartupStep(stepId: StartupStepId, error: unknown): void {
     const step = getStartupStepSnapshot(stepId);
-    const now = Date.now();
-    if (step.startedAt === null) {
-      step.startedAt = now;
-    }
-
-    step.status = 'error';
-    step.completedAt = now;
-    step.durationMs = Math.max(0, now - step.startedAt);
-    step.errorMessage = error instanceof Error ? error.message : String(error);
+    Object.assign(step, failStartupStepSnapshotValue(step, error, Date.now()));
     finalizeStartupStepDisplay(stepId, 'error');
   }
 
@@ -1297,7 +1333,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     clearStartupDisplayTimer();
     startupDisplayToken += 1;
     startupDisplayShownAt = 0;
-    startupSteps.value = createInitialStartupStepSnapshots();
+    startupSteps.value = resetStartupStepSnapshotsValue();
     startupDisplay.value = {
       stepId: null,
       label: null,

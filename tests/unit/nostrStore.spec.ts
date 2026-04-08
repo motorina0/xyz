@@ -2,19 +2,23 @@ import { describe, expect, it } from 'vitest';
 import { __nostrStoreTestUtils } from 'src/stores/nostrStore';
 
 const {
+  beginStartupStepSnapshot,
   buildAvatarFallback,
   buildIdentifierFallbacks,
   buildUpdatedContactMeta,
   buildGroupInviteRequestPlan,
+  completeStartupStepSnapshot,
   contactMetadataEqual,
   contactRelayListsEqual,
   createInitialStartupStepSnapshots,
+  failStartupStepSnapshot,
   findConflictingKnownGroupEpochNumber,
   findHigherKnownGroupEpochConflict,
   normalizeChatGroupEpochKeys,
   normalizeRelayStatusUrls,
   normalizeWritableRelayUrls,
   relayEntriesFromRelayList,
+  resetStartupStepSnapshots,
   resolveGroupDisplayName,
   resolveGroupPublishRelayUrls,
   resolveCurrentGroupChatEpochEntry,
@@ -43,6 +47,63 @@ describe('nostrStore logic', () => {
       status: 'pending'
     });
     expect(steps.every((step) => step.startedAt === null && step.completedAt === null)).toBe(true);
+  });
+
+  it('transitions startup steps through begin, complete, fail, and reset without stale state leakage', () => {
+    const staleStep = {
+      ...createInitialStartupStepSnapshots()[0],
+      status: 'error' as const,
+      startedAt: 10,
+      completedAt: 25,
+      durationMs: 15,
+      errorMessage: 'previous failure'
+    };
+
+    expect(beginStartupStepSnapshot(staleStep, 40)).toMatchObject({
+      status: 'in_progress',
+      startedAt: 40,
+      completedAt: null,
+      durationMs: null,
+      errorMessage: null
+    });
+
+    const activeStep = {
+      ...staleStep,
+      status: 'in_progress' as const
+    };
+    expect(beginStartupStepSnapshot(activeStep, 99)).toBe(activeStep);
+
+    expect(
+      completeStartupStepSnapshot(createInitialStartupStepSnapshots()[1], 75)
+    ).toMatchObject({
+      status: 'success',
+      startedAt: 75,
+      completedAt: 75,
+      durationMs: 0,
+      errorMessage: null
+    });
+
+    expect(
+      failStartupStepSnapshot(
+        {
+          ...createInitialStartupStepSnapshots()[2],
+          status: 'in_progress',
+          startedAt: 30,
+          completedAt: null,
+          durationMs: null
+        },
+        new Error('restore failed'),
+        55
+      )
+    ).toMatchObject({
+      status: 'error',
+      startedAt: 30,
+      completedAt: 55,
+      durationMs: 25,
+      errorMessage: 'restore failed'
+    });
+
+    expect(resetStartupStepSnapshots().every((step) => step.status === 'pending')).toBe(true);
   });
 
   it('normalizes group epoch entries, filters invalid rows, and sorts descending', () => {
@@ -192,6 +253,48 @@ describe('nostrStore logic', () => {
       },
       olderHigherEpochEntry: {
         epoch_number: 1,
+        epoch_public_key: EPOCH_KEY_B
+      }
+    });
+  });
+
+  it('picks the first timestamped higher epoch when an incoming invite has no created-at value', () => {
+    const conflict = findHigherKnownGroupEpochConflict(
+      {
+        type: 'group',
+        meta: {
+          group_epoch_keys: [
+            {
+              epoch_number: 3,
+              epoch_public_key: EPOCH_KEY_C,
+              epoch_private_key_encrypted: 'enc-3'
+            },
+            {
+              epoch_number: 2,
+              epoch_public_key: EPOCH_KEY_B,
+              epoch_private_key_encrypted: 'enc-2',
+              invitation_created_at: '2026-01-03T00:00:00.000Z'
+            },
+            {
+              epoch_number: 1,
+              epoch_public_key: EPOCH_KEY_A,
+              epoch_private_key_encrypted: 'enc-1',
+              invitation_created_at: '2026-01-02T00:00:00.000Z'
+            }
+          ]
+        }
+      } as never,
+      0,
+      null
+    );
+
+    expect(conflict).toMatchObject({
+      higherEpochEntry: {
+        epoch_number: 3,
+        epoch_public_key: EPOCH_KEY_C
+      },
+      olderHigherEpochEntry: {
+        epoch_number: 2,
         epoch_public_key: EPOCH_KEY_B
       }
     });
@@ -372,6 +475,20 @@ describe('nostrStore logic', () => {
     ).toBe('request');
   });
 
+  it('treats any prior outgoing activity as an accepted inbox-state signal', () => {
+    expect(
+      resolveIncomingChatInboxState({
+        chat: {
+          meta: {
+            inbox_state: 'blocked',
+            last_outgoing_message_at: '2026-01-03T00:00:00.000Z'
+          }
+        } as never,
+        isAcceptedContact: false
+      })
+    ).toBe('accepted');
+  });
+
   it('treats accepted contacts as accepted even before inbox metadata is written', () => {
     expect(
       resolveIncomingChatInboxState({
@@ -424,6 +541,42 @@ describe('nostrStore logic', () => {
         preview: null
       })
     ).toBeNull();
+  });
+
+  it('updates existing request-state invite chats without dropping prior metadata', () => {
+    expect(
+      buildGroupInviteRequestPlan({
+        groupPublicKey: EPOCH_KEY_A,
+        createdAt: '2026-01-06T00:00:00.000Z',
+        existingChat: {
+          name: 'Existing Group',
+          unread_count: 2,
+          meta: {
+            custom_flag: true,
+            last_incoming_message_at: '2026-01-04T00:00:00.000Z'
+          }
+        } as never,
+        preview: {
+          name: 'Preview Name',
+          meta: {
+            display_name: 'Preview Display',
+            picture: 'https://example.com/preview.png'
+          }
+        } as never
+      })
+    ).toMatchObject({
+      shouldCreate: false,
+      nextName: 'Preview Display',
+      nextUnreadCount: 3,
+      nextMeta: {
+        custom_flag: true,
+        contact_name: 'Preview Display',
+        picture: 'https://example.com/preview.png',
+        request_type: 'group_invite',
+        request_message: 'This is an invitation to a group.',
+        last_incoming_message_at: '2026-01-06T00:00:00.000Z'
+      }
+    });
   });
 
   it('resolves group publish relays from explicit seeds and writable group relays only', () => {

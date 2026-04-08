@@ -359,6 +359,77 @@ function resolveChatRecipientPublicKeyFromRow(
     : chat.public_key;
 }
 
+function resolveSendRelayUrlsValue(options: {
+  chatPublicKey: string;
+  relayUrls?: string[];
+  recipientRelayUrls?: string[];
+}): string[] {
+  const hasExplicitRelayUrls = Array.isArray(options.relayUrls);
+  const normalizedRelayUrls = hasExplicitRelayUrls
+    ? inputSanitizerService.normalizeStringArray(options.relayUrls)
+    : inputSanitizerService.normalizeStringArray(options.recipientRelayUrls ?? []);
+
+  if (normalizedRelayUrls.length === 0) {
+    if (hasExplicitRelayUrls) {
+      throw new Error('Cannot send encrypted event without application relays.');
+    }
+
+    throw new MissingContactRelaysError(options.chatPublicKey);
+  }
+
+  return normalizedRelayUrls;
+}
+
+function resolveChatDeliveryTargetValue<T extends Pick<ChatRow, 'public_key' | 'type' | 'meta'>>(
+  chat: T | null | undefined,
+  options: {
+    relayUrls?: string[];
+    recipientRelayUrls?: string[];
+  } = {}
+): {
+  chat: T;
+  recipientPublicKey: string;
+  relayUrls: string[];
+  publishSelfCopy: boolean;
+} | null {
+  if (!chat) {
+    return null;
+  }
+
+  const recipientPublicKey = resolveChatRecipientPublicKeyFromRow(chat);
+  if (!recipientPublicKey) {
+    throw new Error('Group chat is missing the current epoch public key.');
+  }
+
+  return {
+    chat,
+    recipientPublicKey,
+    relayUrls: resolveSendRelayUrlsValue({
+      chatPublicKey: chat.public_key,
+      relayUrls: options.relayUrls,
+      recipientRelayUrls: options.recipientRelayUrls
+    }),
+    publishSelfCopy: chat.type !== 'group'
+  };
+}
+
+function resolveReplyTargetEventIdValue(
+  replyTo: Pick<MessageReplyPreview, 'eventId' | 'messageId'> | null,
+  persistedEventId?: string | null
+): string | null {
+  const directEventId = normalizeEventId(replyTo?.eventId);
+  if (directEventId) {
+    return directEventId;
+  }
+
+  const localMessageId = Number.parseInt(replyTo?.messageId ?? '', 10);
+  if (!Number.isInteger(localMessageId) || localMessageId <= 0) {
+    return null;
+  }
+
+  return normalizeEventId(persistedEventId);
+}
+
 function applyMessageUpsert(
   currentMessages: Message[],
   paginationState: ChatMessagePaginationState | null | undefined,
@@ -452,13 +523,17 @@ export const __messageStoreTestUtils = {
   areReactionListsEqual: areReactionListsEqualValue,
   buildChatMetaWithUnseenReactionCount: buildChatMetaWithUnseenReactionCountValue,
   buildDeletedMessageMeta,
+  buildDefaultChatMessagePaginationState,
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
   compareMessageCursors,
   countOwnUnseenReactions,
   mergeMessagesById,
   readUnseenReactionCountFromMeta: readUnseenReactionCountFromMetaValue,
+  resolveChatDeliveryTarget: resolveChatDeliveryTargetValue,
   resolveChatRecipientPublicKey: resolveChatRecipientPublicKeyFromRow,
+  resolveReplyTargetEventId: resolveReplyTargetEventIdValue,
+  resolveSendRelayUrls: resolveSendRelayUrlsValue,
   takeLeadingRowsWithAuthor,
   takeTrailingRowsWithAuthor
 };
@@ -676,19 +751,13 @@ export const useMessageStore = defineStore('messageStore', () => {
     chatPublicKey: string,
     relayUrls: string[] | undefined
   ): Promise<string[]> {
-    const normalizedRelayUrls = Array.isArray(relayUrls)
-      ? inputSanitizerService.normalizeStringArray(relayUrls)
-      : await resolveRecipientRelayUrls(chatPublicKey);
-
-    if (normalizedRelayUrls.length === 0) {
-      if (Array.isArray(relayUrls)) {
-        throw new Error('Cannot send encrypted event without application relays.');
-      }
-
-      throw new MissingContactRelaysError(chatPublicKey);
-    }
-
-    return normalizedRelayUrls;
+    return resolveSendRelayUrlsValue({
+      chatPublicKey,
+      relayUrls,
+      recipientRelayUrls: Array.isArray(relayUrls)
+        ? relayUrls
+        : await resolveRecipientRelayUrls(chatPublicKey)
+    });
   }
 
   async function resolveChatDeliveryTarget(
@@ -705,23 +774,16 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const recipientPublicKey = resolveChatRecipientPublicKeyFromRow(chat);
-    if (!recipientPublicKey) {
-      throw new Error('Group chat is missing the current epoch public key.');
-    }
-
-    return {
-      chat,
-      recipientPublicKey,
-      relayUrls: await resolveSendRelayUrls(chat.public_key, relayUrls),
-      publishSelfCopy: chat.type !== 'group'
-    };
+    return resolveChatDeliveryTargetValue(chat, {
+      relayUrls,
+      recipientRelayUrls: relayUrls ? relayUrls : await resolveRecipientRelayUrls(chat.public_key)
+    });
   }
 
   async function resolveReplyTargetEventId(
     replyTo: MessageReplyPreview | null
   ): Promise<string | null> {
-    const directEventId = normalizeEventId(replyTo?.eventId);
+    const directEventId = resolveReplyTargetEventIdValue(replyTo, null);
     if (directEventId) {
       return directEventId;
     }
@@ -733,7 +795,7 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     await chatDataService.init();
     const replyMessageRow = await chatDataService.getMessageById(localMessageId);
-    return normalizeEventId(replyMessageRow?.event_id);
+    return resolveReplyTargetEventIdValue(replyTo, replyMessageRow?.event_id);
   }
 
   function upsertMessageInState(

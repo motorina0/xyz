@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { __messageStoreTestUtils } from 'src/stores/messageStore';
+import { __messageStoreTestUtils, MissingContactRelaysError } from 'src/stores/messageStore';
 
 const {
   applyMessageUpsert,
   areReactionListsEqual,
   buildChatMetaWithUnseenReactionCount,
+  buildDefaultChatMessagePaginationState,
   buildDeletedMessageMeta,
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
@@ -12,7 +13,10 @@ const {
   countOwnUnseenReactions,
   mergeMessagesById,
   readUnseenReactionCountFromMeta,
+  resolveChatDeliveryTarget,
   resolveChatRecipientPublicKey,
+  resolveReplyTargetEventId,
+  resolveSendRelayUrls,
   takeLeadingRowsWithAuthor,
   takeTrailingRowsWithAuthor
 } = __messageStoreTestUtils;
@@ -182,6 +186,119 @@ describe('messageStore logic', () => {
     });
   });
 
+  it('resolves send relays from explicit inputs and throws the right missing-relay errors', () => {
+    expect(
+      resolveSendRelayUrls({
+        chatPublicKey: 'chat-pubkey',
+        relayUrls: [' ws://relay.example ', 'ws://relay.example/'],
+        recipientRelayUrls: ['wss://ignored.example']
+      })
+    ).toEqual(['ws://relay.example', 'ws://relay.example/']);
+
+    expect(() =>
+      resolveSendRelayUrls({
+        chatPublicKey: 'chat-pubkey',
+        relayUrls: ['   ']
+      })
+    ).toThrow('Cannot send encrypted event without application relays.');
+
+    expect(() =>
+      resolveSendRelayUrls({
+        chatPublicKey: 'chat-pubkey',
+        recipientRelayUrls: []
+      })
+    ).toThrow(MissingContactRelaysError);
+  });
+
+  it('builds chat delivery targets for user and group chats and rejects groups without a current epoch', () => {
+    expect(
+      resolveChatDeliveryTarget(
+        {
+          public_key: 'user-chat',
+          type: 'user',
+          meta: {}
+        } as never,
+        {
+          recipientRelayUrls: ['wss://contact.example']
+        }
+      )
+    ).toMatchObject({
+      recipientPublicKey: 'user-chat',
+      relayUrls: ['wss://contact.example'],
+      publishSelfCopy: true
+    });
+
+    expect(
+      resolveChatDeliveryTarget(
+        {
+          public_key: 'group-chat',
+          type: 'group',
+          meta: {
+            current_epoch_public_key: 'ABCD'
+          }
+        } as never,
+        {
+          recipientRelayUrls: ['wss://group.example']
+        }
+      )
+    ).toMatchObject({
+      recipientPublicKey: 'abcd',
+      relayUrls: ['wss://group.example'],
+      publishSelfCopy: false
+    });
+
+    expect(() =>
+      resolveChatDeliveryTarget(
+        {
+          public_key: 'group-chat',
+          type: 'group',
+          meta: {}
+        } as never,
+        {
+          recipientRelayUrls: ['wss://group.example']
+        }
+      )
+    ).toThrow('Group chat is missing the current epoch public key.');
+
+    expect(
+      resolveChatDeliveryTarget(null, {
+        recipientRelayUrls: ['wss://group.example']
+      })
+    ).toBeNull();
+  });
+
+  it('prefers direct reply event ids and otherwise falls back to persisted message event ids', () => {
+    expect(
+      resolveReplyTargetEventId(
+        {
+          messageId: '12',
+          eventId: ' ABC123 '
+        } as never,
+        'def456'
+      )
+    ).toBe('abc123');
+
+    expect(
+      resolveReplyTargetEventId(
+        {
+          messageId: '12',
+          eventId: '   '
+        } as never,
+        ' DEF456 '
+      )
+    ).toBe('def456');
+
+    expect(
+      resolveReplyTargetEventId(
+        {
+          messageId: '0',
+          eventId: null
+        } as never,
+        ' DEF456 '
+      )
+    ).toBeNull();
+  });
+
   it('counts unseen reactions only on messages authored by the logged-in user', () => {
     expect(
       countOwnUnseenReactions(
@@ -219,6 +336,28 @@ describe('messageStore logic', () => {
         'me'
       )
     ).toBe(1);
+  });
+
+  it('treats missing logged-in identity as a startup-safe zero for unseen reactions', () => {
+    expect(
+      countOwnUnseenReactions(
+        [
+          {
+            author_public_key: 'me',
+            meta: {
+              reactions: [
+                {
+                  emoji: '👍',
+                  name: 'thumbs up',
+                  reactorPublicKey: 'other-user'
+                }
+              ]
+            }
+          }
+        ] as never,
+        null
+      )
+    ).toBe(0);
   });
 
   it('treats viewed reactions as seen and recognizes no-op reaction lists', () => {
@@ -414,6 +553,105 @@ describe('messageStore logic', () => {
     expect(result.paginationState.newestCursor).toEqual({
       id: 3,
       created_at: '2026-01-03T00:00:00.000Z'
+    });
+  });
+
+  it('ignores newer inserts when the loaded window still hides newer history', () => {
+    const existingMessages = [
+      {
+        id: '2',
+        chatId: 'chat',
+        text: 'middle',
+        sender: 'them',
+        sentAt: '2026-01-02T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      },
+      {
+        id: '3',
+        chatId: 'chat',
+        text: 'newer',
+        sender: 'them',
+        sentAt: '2026-01-03T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      }
+    ];
+
+    const result = applyMessageUpsert(
+      existingMessages as never,
+      {
+        ...buildDefaultChatMessagePaginationState(),
+        oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        newestCursor: { id: 3, created_at: '2026-01-03T00:00:00.000Z' },
+        hasNewer: true
+      },
+      {
+        id: '4',
+        chatId: 'chat',
+        text: 'latest',
+        sender: 'them',
+        sentAt: '2026-01-04T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      },
+      {
+        allowOutsideLoadedWindow: false
+      }
+    );
+
+    expect(result.ignored).toBe(true);
+    expect(result.messages).toEqual(existingMessages);
+  });
+
+  it('allows outside-window inserts when restore or live-sync explicitly requests them', () => {
+    const result = applyMessageUpsert(
+      [
+        {
+          id: '2',
+          chatId: 'chat',
+          text: 'middle',
+          sender: 'them',
+          sentAt: '2026-01-02T00:00:00.000Z',
+          authorPublicKey: 'b',
+          eventId: null,
+          nostrEvent: null,
+          meta: {}
+        }
+      ] as never,
+      {
+        ...buildDefaultChatMessagePaginationState(),
+        oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        newestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        hasOlder: true
+      },
+      {
+        id: '1',
+        chatId: 'chat',
+        text: 'older',
+        sender: 'them',
+        sentAt: '2026-01-01T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      },
+      {
+        allowOutsideLoadedWindow: true
+      }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.messages.map((message) => message.id)).toEqual(['1', '2']);
+    expect(result.paginationState.oldestCursor).toEqual({
+      id: 2,
+      created_at: '2026-01-02T00:00:00.000Z'
     });
   });
 
