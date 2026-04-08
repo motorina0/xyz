@@ -7,10 +7,14 @@
     ]"
   >
     <div class="bubble-stack" :class="isMine ? 'bubble-stack--mine' : 'bubble-stack--their'">
-      <div
+      <button
         v-if="showAuthorName"
+        type="button"
         class="bubble__author"
         :class="isMine ? 'bubble__author--mine' : 'bubble__author--their'"
+        data-testid="thread-author-profile-link"
+        :aria-label="`Open profile for ${authorLabel}`"
+        @click.stop="handleOpenAuthorProfile"
       >
         <CachedAvatar
           :src="authorAvatarSrc"
@@ -19,7 +23,7 @@
           class="bubble__author-avatar"
         />
         <span class="bubble__author-name">{{ authorLabel }}</span>
-      </div>
+      </button>
       <div
         class="bubble"
         :class="isMine ? 'bubble--mine' : 'bubble--their'"
@@ -369,6 +373,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: 'reply', message: Message): void;
   (event: 'open-reply-target', messageId: string): void;
+  (event: 'open-profile', publicKey: string): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
   (event: 'remove-reaction', payload: { message: Message; reaction: MessageReaction }): void;
@@ -1116,6 +1121,19 @@ function handleReply(): void {
   emit('reply', props.message);
 }
 
+function handleOpenAuthorProfile(): void {
+  const publicKey = props.message.authorPublicKey.trim();
+  if (!publicKey) {
+    return;
+  }
+
+  try {
+    emit('open-profile', publicKey);
+  } catch (error) {
+    reportUiError('Failed to open author profile from message bubble', error);
+  }
+}
+
 function handleOpenReplyTarget(): void {
   if (!replyPreview.value) {
     return;
@@ -1366,7 +1384,18 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: var(--bubble-author-gap);
   margin: 0 0 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
   opacity: 1;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bubble__author:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--q-primary) 58%, transparent);
+  outline-offset: 3px;
 }
 
 .bubble__author--mine {

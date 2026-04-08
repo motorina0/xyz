@@ -31,7 +31,8 @@ import {
   waitForNoThreadMessage,
   waitForReaction,
   waitForThreadMessageCount,
-  waitForThreadMessage
+  waitForThreadMessage,
+  threadMessage
 } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -109,6 +110,10 @@ test('group owner can create a group, invite a member, and exchange messages bot
     await waitForThreadMessage(alice.page, bobGroupMessage, {
       chatId: groupPublicKey
     });
+    await threadMessage(alice.page, bobGroupMessage)
+      .getByTestId('thread-author-profile-link')
+      .click();
+    await alice.page.waitForURL(new RegExp(`#\\/contacts\\/${bob.session.publicKey}$`));
   } finally {
     await disposeUsers(alice, bob);
   }

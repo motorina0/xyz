@@ -107,6 +107,7 @@
               :author-label="item.authorLabel"
               :show-author-name="item.showSenderName"
               :show-author-on-mobile="chat?.type === 'group' && item.message.sender === 'them'"
+              @open-profile="handleOpenAuthorProfile"
               @reply="handleReplyToMessage"
               @react="handleReactToMessage"
               @delete-message="handleDeleteMessage"
@@ -1632,9 +1633,26 @@ function handleOpenProfile(): void {
       return;
     }
 
-    emit('open-profile', props.chat.publicKey);
+    emitOpenProfile(props.chat.publicKey);
   } catch (error) {
     reportUiError('Failed to open profile from chat thread', error);
+  }
+}
+
+function emitOpenProfile(publicKey: string): void {
+  const normalized = publicKey.trim();
+  if (!normalized) {
+    return;
+  }
+
+  emit('open-profile', normalized);
+}
+
+function handleOpenAuthorProfile(publicKey: string): void {
+  try {
+    emitOpenProfile(publicKey);
+  } catch (error) {
+    reportUiError('Failed to open message author profile from chat thread', error);
   }
 }
 
