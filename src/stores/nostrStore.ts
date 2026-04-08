@@ -485,6 +485,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const chatStore = useChatStore();
   const relayStore = useRelayStore();
   const INITIAL_CONNECT_TIMEOUT_MS = 3000;
+  const RELAY_CONNECT_FAILURE_COOLDOWN_MS = 10 * 1000;
+  const BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS = 5 * 1000;
+  const PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS = 250;
   const relayStatusVersion = ref(0);
   const contactListVersion = ref(0);
   const isRestoringStartupState = ref(false);
@@ -511,6 +514,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let developerTraceCounter = 0;
   let nostrSubscriptionRequestCounter = 0;
   const configuredRelayUrls = new Set<string>();
+  const relayConnectPromises = new Map<string, Promise<void>>();
+  const relayConnectFailureCooldownUntilByUrl = new Map<string, number>();
   let connectPromise: Promise<void> | null = null;
   let hasActivatedPool = false;
   let hasRelayStatusListeners = false;
@@ -523,6 +528,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let restoreGroupIdentitySecretsPromise: Promise<void> | null = null;
   let restoreContactCursorStatePromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
+  const groupContactRefreshPromises = new Map<string, Promise<ContactRecord | null>>();
+  const backgroundGroupContactRefreshStartedAt = new Map<string, number>();
   const pendingIncomingReactions = new Map<string, PendingIncomingReaction[]>();
   const pendingIncomingDeletions = new Map<string, PendingIncomingDeletion[]>();
   const pendingContactCursorPublishTimers = new Map<string, ReturnType<typeof globalThis.setTimeout>>();
@@ -557,6 +564,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let privateMessagesWatchdogRunPromise: Promise<void> | null = null;
   let privateMessagesWatchdogLastRecoveryAt = 0;
   let privateMessagesSubscriptionShouldBeActive = false;
+  let privateMessagesEpochSubscriptionRefreshTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let pendingPrivateMessagesEpochSubscriptionRefreshOptions: SubscribePrivateMessagesOptions | null = null;
+  let privateMessagesEpochSubscriptionRefreshQueue = Promise.resolve();
+  const loggedInvalidGroupEpochConflictKeys = new Set<string>();
   let hasPrivateMessagesWatchdogOnlineListener = false;
   const privateMessagesWatchdogRelayConnectionStates = new Map<string, boolean>();
   let privateMessagesIngestQueue = Promise.resolve();
@@ -1656,6 +1667,152 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
+  function parseOptionalUnixTimestamp(value: string | null | undefined): number | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = Date.parse(trimmed);
+    if (Number.isNaN(parsed)) {
+      return null;
+    }
+
+    return Math.floor(parsed / 1000);
+  }
+
+  function findHigherKnownGroupEpochConflict(
+    chat: Pick<ChatRow, 'meta' | 'type'> | null | undefined,
+    incomingEpochNumber: number,
+    incomingCreatedAt: string | null = null
+  ): {
+    higherEpochEntry: ChatGroupEpochKey;
+    olderHigherEpochEntry: ChatGroupEpochKey | null;
+  } | null {
+    if (!chat || chat.type !== 'group') {
+      return null;
+    }
+
+    const higherEpochEntries = resolveGroupChatEpochEntries(chat)
+      .filter((entry) => entry.epoch_number > incomingEpochNumber)
+      .sort((first, second) => second.epoch_number - first.epoch_number);
+    if (higherEpochEntries.length === 0) {
+      return null;
+    }
+
+    const incomingCreatedAtUnix = parseOptionalUnixTimestamp(incomingCreatedAt);
+    const olderHigherEpochEntry =
+      incomingCreatedAtUnix === null
+        ? higherEpochEntries.find((entry) => parseOptionalUnixTimestamp(entry.invitation_created_at) !== null) ?? null
+        : higherEpochEntries.find((entry) => {
+            const higherEpochCreatedAtUnix = parseOptionalUnixTimestamp(entry.invitation_created_at);
+            return higherEpochCreatedAtUnix !== null && higherEpochCreatedAtUnix <= incomingCreatedAtUnix;
+          }) ?? null;
+
+    return {
+      higherEpochEntry: higherEpochEntries[0],
+      olderHigherEpochEntry
+    };
+  }
+
+  function findConflictingKnownGroupEpochNumber(
+    chat: Pick<ChatRow, 'meta' | 'type'> | null | undefined,
+    incomingEpochNumber: number,
+    incomingEpochPublicKey: string | null | undefined
+  ): ChatGroupEpochKey | null {
+    if (!chat || chat.type !== 'group') {
+      return null;
+    }
+
+    const normalizedIncomingEpochPublicKey = inputSanitizerService.normalizeHexKey(
+      incomingEpochPublicKey ?? ''
+    );
+    if (!normalizedIncomingEpochPublicKey) {
+      return null;
+    }
+
+    return (
+      resolveGroupChatEpochEntries(chat).find(
+        (entry) =>
+          entry.epoch_number === incomingEpochNumber &&
+          entry.epoch_public_key !== normalizedIncomingEpochPublicKey
+      ) ?? null
+    );
+  }
+
+  function logInvalidIncomingEpochNumber(
+    groupPublicKey: string,
+    epochNumber: number,
+    epochPublicKey: string | null,
+    createdAt: string | null,
+    conflict: {
+      higherEpochEntry: ChatGroupEpochKey;
+      olderHigherEpochEntry: ChatGroupEpochKey | null;
+    }
+  ): void {
+    const logKey = [
+      inputSanitizerService.normalizeHexKey(groupPublicKey) ?? groupPublicKey,
+      String(epochNumber),
+      inputSanitizerService.normalizeHexKey(epochPublicKey ?? '') ?? '',
+      createdAt ?? ''
+    ].join(':');
+    if (loggedInvalidGroupEpochConflictKeys.has(logKey)) {
+      return;
+    }
+
+    loggedInvalidGroupEpochConflictKeys.add(logKey);
+    console.warn(
+      `Invalid epoch number ${epochNumber}. A higher epoch was issued which is older than this epoch ${epochNumber} ${createdAt ?? 'unknown'}`,
+      {
+        groupPublicKey,
+        epochPublicKey: epochPublicKey ?? null,
+        higherEpochNumber: conflict.higherEpochEntry.epoch_number,
+        higherEpochPublicKey: conflict.higherEpochEntry.epoch_public_key,
+        higherEpochCreatedAt:
+          conflict.olderHigherEpochEntry?.invitation_created_at ??
+          conflict.higherEpochEntry.invitation_created_at ??
+          null,
+        createdAt: createdAt ?? null
+      }
+    );
+  }
+
+  function logConflictingIncomingEpochNumber(
+    groupPublicKey: string,
+    epochNumber: number,
+    epochPublicKey: string | null,
+    createdAt: string | null,
+    conflict: ChatGroupEpochKey
+  ): void {
+    const logKey = [
+      'conflicting-epoch-number',
+      inputSanitizerService.normalizeHexKey(groupPublicKey) ?? groupPublicKey,
+      String(epochNumber),
+      inputSanitizerService.normalizeHexKey(epochPublicKey ?? '') ?? '',
+      inputSanitizerService.normalizeHexKey(conflict.epoch_public_key) ?? conflict.epoch_public_key,
+      createdAt ?? ''
+    ].join(':');
+    if (loggedInvalidGroupEpochConflictKeys.has(logKey)) {
+      return;
+    }
+
+    loggedInvalidGroupEpochConflictKeys.add(logKey);
+    console.warn(
+      `Invalid epoch number ${epochNumber}. Epoch ${epochNumber} was already issued with a different epoch public key ${createdAt ?? 'unknown'}`,
+      {
+        groupPublicKey,
+        epochPublicKey: epochPublicKey ?? null,
+        conflictingEpochPublicKey: conflict.epoch_public_key,
+        conflictingEpochCreatedAt: conflict.invitation_created_at ?? null,
+        createdAt: createdAt ?? null
+      }
+    );
+  }
+
   function derivePublicKeyFromPrivateKey(privateKey: string): string | null {
     const normalizedPrivateKey = inputSanitizerService.normalizeHexKey(privateKey);
     if (!normalizedPrivateKey) {
@@ -1823,7 +1980,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     await chatDataService.init();
-    const recipients = new Set<string>([loggedInPubkeyHex]);
+    const groupRecipientPubkeys = new Set<string>();
     const chats = await chatDataService.listChats();
     for (const chat of chats) {
       if (chat.type !== 'group') {
@@ -1831,12 +1988,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }
 
       const currentEpochEntry = resolveCurrentGroupChatEpochEntry(chat);
-      if (currentEpochEntry?.epoch_public_key) {
-        recipients.add(currentEpochEntry.epoch_public_key);
+      const epochPublicKey = inputSanitizerService.normalizeHexKey(currentEpochEntry?.epoch_public_key ?? '');
+      if (epochPublicKey && epochPublicKey !== loggedInPubkeyHex) {
+        groupRecipientPubkeys.add(epochPublicKey);
       }
     }
 
-    return Array.from(recipients);
+    return [loggedInPubkeyHex, ...Array.from(groupRecipientPubkeys).sort((first, second) => first.localeCompare(second))];
   }
 
   function buildRelaySaveStatus(relayStatuses: MessageRelayStatus[]): RelaySaveStatus {
@@ -2104,6 +2262,36 @@ export const useNostrStore = defineStore('nostrStore', () => {
       typeof options.invitationCreatedAt === 'string' && options.invitationCreatedAt.trim()
         ? options.invitationCreatedAt.trim()
         : null;
+    const conflictingEpochNumber = findConflictingKnownGroupEpochNumber(
+      existingChat,
+      epochNumber,
+      normalizedEpochPublicKey
+    );
+    if (conflictingEpochNumber) {
+      logConflictingIncomingEpochNumber(
+        normalizedGroupPublicKey,
+        epochNumber,
+        normalizedEpochPublicKey,
+        invitationCreatedAt,
+        conflictingEpochNumber
+      );
+      return;
+    }
+    const higherEpochConflict = findHigherKnownGroupEpochConflict(
+      existingChat,
+      epochNumber,
+      invitationCreatedAt
+    );
+    if (higherEpochConflict) {
+      logInvalidIncomingEpochNumber(
+        normalizedGroupPublicKey,
+        epochNumber,
+        normalizedEpochPublicKey,
+        invitationCreatedAt,
+        higherEpochConflict
+      );
+      return;
+    }
     const existingEpochEntry =
       existingGroupEpochKeys.find(
         (entry) =>
@@ -2172,17 +2360,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
           ...nextMeta
         }
       });
-      try {
-        await subscribePrivateMessagesForLoggedInUser(true, {
-          seedRelayUrls: options.seedRelayUrls,
-          sinceOverride: getPrivateMessagesEpochSwitchSince()
-        });
-      } catch (error) {
-        console.warn(
-          'Failed to refresh private message subscription after creating group epoch state',
-          error
-        );
-      }
+      queueEpochDrivenPrivateMessagesSubscriptionRefresh({
+        seedRelayUrls: options.seedRelayUrls,
+        sinceOverride: getPrivateMessagesEpochSwitchSince()
+      });
       await useChatStore().reload();
       void restoreGroupEpochHistory(normalizedGroupPublicKey, normalizedEpochPublicKey);
       return;
@@ -2201,14 +2382,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ...(shouldUpdateMeta ? { meta: nextMeta } : {})
     });
     if (previousCurrentEpochPublicKey !== nextCurrentEpochPublicKey) {
-      try {
-        await subscribePrivateMessagesForLoggedInUser(true, {
-          seedRelayUrls: options.seedRelayUrls,
-          sinceOverride: getPrivateMessagesEpochSwitchSince()
-        });
-      } catch (error) {
-        console.warn('Failed to refresh private message subscription after epoch ticket update', error);
-      }
+      queueEpochDrivenPrivateMessagesSubscriptionRefresh({
+        seedRelayUrls: options.seedRelayUrls,
+        sinceOverride: getPrivateMessagesEpochSwitchSince()
+      });
     }
     await useChatStore().reload();
 
@@ -3234,7 +3411,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
     const reqFrame = buildNostrReqFrame(subId, subscription.filters);
 
-    console.log(JSON.stringify(reqFrame));
     logDeveloperTrace('info', `subscription:${name}`, 'req', {
       subId,
       reqFrame,
@@ -5455,7 +5631,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await ensureRelayConnections(relayUrls);
 
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const relayListEvent = await ndk.fetchEvent(
       {
         kinds: [NDKKind.RelayList],
@@ -5964,6 +6140,70 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function mergeSubscribePrivateMessagesOptions(
+    first: SubscribePrivateMessagesOptions,
+    second: SubscribePrivateMessagesOptions
+  ): SubscribePrivateMessagesOptions {
+    const mergedSeedRelayUrls = normalizeRelayStatusUrls([
+      ...inputSanitizerService.normalizeStringArray(first.seedRelayUrls ?? []),
+      ...inputSanitizerService.normalizeStringArray(second.seedRelayUrls ?? [])
+    ]);
+    const firstSinceOverride =
+      Number.isInteger(first.sinceOverride) && Number(first.sinceOverride) >= 0
+        ? Math.floor(Number(first.sinceOverride))
+        : null;
+    const secondSinceOverride =
+      Number.isInteger(second.sinceOverride) && Number(second.sinceOverride) >= 0
+        ? Math.floor(Number(second.sinceOverride))
+        : null;
+    const mergedSinceOverride =
+      firstSinceOverride === null
+        ? secondSinceOverride
+        : secondSinceOverride === null
+          ? firstSinceOverride
+          : Math.min(firstSinceOverride, secondSinceOverride);
+    const mergedRestoreThrottleMs = Math.max(
+      normalizeThrottleMs(first.restoreThrottleMs),
+      normalizeThrottleMs(second.restoreThrottleMs)
+    );
+
+    return {
+      ...(mergedRestoreThrottleMs > 0 ? { restoreThrottleMs: mergedRestoreThrottleMs } : {}),
+      ...(mergedSeedRelayUrls.length > 0 ? { seedRelayUrls: mergedSeedRelayUrls } : {}),
+      ...(mergedSinceOverride !== null ? { sinceOverride: mergedSinceOverride } : {}),
+      ...(first.startupTrackStep === true || second.startupTrackStep === true
+        ? { startupTrackStep: true }
+        : {})
+    };
+  }
+
+  function queueEpochDrivenPrivateMessagesSubscriptionRefresh(
+    options: SubscribePrivateMessagesOptions = {}
+  ): void {
+    pendingPrivateMessagesEpochSubscriptionRefreshOptions =
+      pendingPrivateMessagesEpochSubscriptionRefreshOptions === null
+        ? mergeSubscribePrivateMessagesOptions({}, options)
+        : mergeSubscribePrivateMessagesOptions(
+            pendingPrivateMessagesEpochSubscriptionRefreshOptions,
+            options
+          );
+
+    if (privateMessagesEpochSubscriptionRefreshTimerId !== null) {
+      globalThis.clearTimeout(privateMessagesEpochSubscriptionRefreshTimerId);
+    }
+
+    privateMessagesEpochSubscriptionRefreshTimerId = globalThis.setTimeout(() => {
+      privateMessagesEpochSubscriptionRefreshTimerId = null;
+      const refreshOptions = pendingPrivateMessagesEpochSubscriptionRefreshOptions ?? {};
+      pendingPrivateMessagesEpochSubscriptionRefreshOptions = null;
+      privateMessagesEpochSubscriptionRefreshQueue = privateMessagesEpochSubscriptionRefreshQueue
+        .then(() => subscribePrivateMessagesForLoggedInUser(true, refreshOptions))
+        .catch((error) => {
+          console.warn('Failed to refresh private message subscription after epoch ticket update', error);
+        });
+    }, PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS);
+  }
+
   function ensurePrivateMessagesWatchdog(): void {
     if (typeof window === 'undefined') {
       return;
@@ -6145,7 +6385,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ): void {
     queueContactProfileSubscriptionRefresh(seedRelayUrls, force);
     queueContactRelayListSubscriptionRefresh(seedRelayUrls, force);
-    queuePrivateMessagesSubscriptionRefresh(force);
+    queuePrivateMessagesSubscriptionRefresh(force, { seedRelayUrls });
   }
 
   async function applyContactProfileEvent(event: NDKEvent): Promise<void> {
@@ -7366,25 +7606,59 @@ export const useNostrStore = defineStore('nostrStore', () => {
       return null;
     }
 
-    try {
-      await refreshContactByPublicKey(normalizedGroupPublicKey, fallbackName);
-    } catch (error) {
-      console.warn('Failed to refresh group contact profile', normalizedGroupPublicKey, error);
+    const pendingRefresh = groupContactRefreshPromises.get(normalizedGroupPublicKey);
+    if (pendingRefresh) {
+      return pendingRefresh;
     }
 
-    const contact = await ensureContactStoredAsGroup(normalizedGroupPublicKey, {
-      fallbackName
+    const refreshPromise = (async (): Promise<ContactRecord | null> => {
+      try {
+        await refreshContactByPublicKey(normalizedGroupPublicKey, fallbackName);
+      } catch (error) {
+        console.warn('Failed to refresh group contact profile', normalizedGroupPublicKey, error);
+      }
+
+      const contact = await ensureContactStoredAsGroup(normalizedGroupPublicKey, {
+        fallbackName
+      });
+      try {
+        await refreshContactRelayList(normalizedGroupPublicKey);
+      } catch (error) {
+        console.warn('Failed to refresh group contact relay list', normalizedGroupPublicKey, error);
+      }
+      if (contact) {
+        await useChatStore().syncContactProfile(normalizedGroupPublicKey);
+      }
+
+      return contact;
+    })().finally(() => {
+      groupContactRefreshPromises.delete(normalizedGroupPublicKey);
     });
-    try {
-      await refreshContactRelayList(normalizedGroupPublicKey);
-    } catch (error) {
-      console.warn('Failed to refresh group contact relay list', normalizedGroupPublicKey, error);
-    }
-    if (contact) {
-      await useChatStore().syncContactProfile(normalizedGroupPublicKey);
+
+    groupContactRefreshPromises.set(normalizedGroupPublicKey, refreshPromise);
+    return refreshPromise;
+  }
+
+  function queueBackgroundGroupContactRefresh(groupPublicKey: string, fallbackName = ''): void {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPublicKey) {
+      return;
     }
 
-    return contact;
+    if (groupContactRefreshPromises.has(normalizedGroupPublicKey)) {
+      return;
+    }
+
+    const now = Date.now();
+    const lastStartedAt = backgroundGroupContactRefreshStartedAt.get(normalizedGroupPublicKey) ?? 0;
+    if (now - lastStartedAt < BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS) {
+      return;
+    }
+
+    backgroundGroupContactRefreshStartedAt.set(normalizedGroupPublicKey, now);
+    void refreshGroupContactByPublicKey(normalizedGroupPublicKey, fallbackName).catch((error) => {
+      console.warn('Failed to refresh group contact after epoch ticket', normalizedGroupPublicKey, error);
+    });
   }
 
   async function fetchContactPreviewByPublicKey(
@@ -7843,21 +8117,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
       const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
       if (configuredRelayUrls.has(normalizedRelayUrl)) {
         const existingRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
-        ensureRelayAuthFailureListener(existingRelay);
-        if (existingRelay && !existingRelay.connected) {
-          logDeveloperTrace('info', 'relay-connect', 'reconnecting configured relay', {
-            reason: 'ensureRelayConnections',
-            ...buildRelaySnapshot(existingRelay)
-          });
-          relaysToReconnect.set(
-            normalizedRelayUrl,
-            existingRelay.connect(INITIAL_CONNECT_TIMEOUT_MS).catch((error) => {
-              console.warn('Failed to reconnect relay', normalizedRelayUrl, {
-                error,
-                relay: buildRelaySnapshot(existingRelay)
-              });
-            })
-          );
+        const reconnectPromise = connectRelayForEnsureRelayConnections(
+          existingRelay,
+          normalizedRelayUrl,
+          'reconnect'
+        );
+        if (reconnectPromise) {
+          relaysToReconnect.set(normalizedRelayUrl, reconnectPromise);
         }
         continue;
       }
@@ -7865,21 +8131,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
       ndk.addExplicitRelay(normalizedRelayUrl, undefined, true);
       configuredRelayUrls.add(normalizedRelayUrl);
       const addedRelay = ndk.pool.getRelay(normalizedRelayUrl, false);
-      ensureRelayAuthFailureListener(addedRelay);
-      if (addedRelay && !addedRelay.connected) {
-        logDeveloperTrace('info', 'relay-connect', 'connecting new explicit relay', {
-          reason: 'ensureRelayConnections',
-          ...buildRelaySnapshot(addedRelay)
-        });
-        relaysToReconnect.set(
-          normalizedRelayUrl,
-          addedRelay.connect(INITIAL_CONNECT_TIMEOUT_MS).catch((error) => {
-            console.warn('Failed to connect relay', normalizedRelayUrl, {
-              error,
-              relay: buildRelaySnapshot(addedRelay)
-            });
-          })
-        );
+      const connectPromise = connectRelayForEnsureRelayConnections(
+        addedRelay,
+        normalizedRelayUrl,
+        'connect'
+      );
+      if (connectPromise) {
+        relaysToReconnect.set(normalizedRelayUrl, connectPromise);
       }
       bumpRelayStatusVersion();
     }
@@ -7905,6 +8163,61 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await connectPromise;
     bumpRelayStatusVersion();
+  }
+
+  function connectRelayForEnsureRelayConnections(
+    relay: NDKRelay | null | undefined,
+    normalizedRelayUrl: string,
+    mode: 'connect' | 'reconnect'
+  ): Promise<void> | null {
+    ensureRelayAuthFailureListener(relay);
+    if (!relay || relay.connected || relay.status !== NDKRelayStatus.DISCONNECTED) {
+      return null;
+    }
+
+    const pendingConnectPromise = relayConnectPromises.get(normalizedRelayUrl);
+    if (pendingConnectPromise) {
+      return pendingConnectPromise;
+    }
+
+    const cooldownUntil = relayConnectFailureCooldownUntilByUrl.get(normalizedRelayUrl) ?? 0;
+    if (cooldownUntil > Date.now()) {
+      return null;
+    }
+
+    logDeveloperTrace(
+      'info',
+      'relay-connect',
+      mode === 'reconnect' ? 'reconnecting configured relay' : 'connecting new explicit relay',
+      {
+        reason: 'ensureRelayConnections',
+        ...buildRelaySnapshot(relay)
+      }
+    );
+
+    const connectPromise = relay
+      .connect(INITIAL_CONNECT_TIMEOUT_MS)
+      .catch((error) => {
+        relayConnectFailureCooldownUntilByUrl.set(
+          normalizedRelayUrl,
+          Date.now() + RELAY_CONNECT_FAILURE_COOLDOWN_MS
+        );
+        console.warn(
+          mode === 'reconnect' ? 'Failed to reconnect relay' : 'Failed to connect relay',
+          normalizedRelayUrl,
+          {
+            cooldownMs: RELAY_CONNECT_FAILURE_COOLDOWN_MS,
+            error,
+            relay: buildRelaySnapshot(relay)
+          }
+        );
+      })
+      .finally(() => {
+        relayConnectPromises.delete(normalizedRelayUrl);
+      });
+
+    relayConnectPromises.set(normalizedRelayUrl, connectPromise);
+    return connectPromise;
   }
 
   function getRelayConnectionState(relayUrl: string): RelayConnectionState {
@@ -9541,11 +9854,84 @@ export const useNostrStore = defineStore('nostrStore', () => {
         return;
       }
       const epochNumber = verificationResult.epochNumber ?? 0;
+      const epochPublicKey = derivePublicKeyFromPrivateKey(verificationResult.epochPrivateKey ?? '');
 
       await contactsService.init();
       await chatDataService.init();
       const senderContact = await contactsService.getContactByPublicKey(senderPubkeyHex);
       const existingGroupChat = await chatDataService.getChatByPublicKey(senderPubkeyHex);
+      const incomingEpochCreatedAt = toIsoTimestampFromUnix(rumorEvent.created_at);
+      const conflictingEpochNumber = findConflictingKnownGroupEpochNumber(
+        existingGroupChat,
+        epochNumber,
+        epochPublicKey
+      );
+      if (conflictingEpochNumber) {
+        logConflictingIncomingEpochNumber(
+          senderPubkeyHex,
+          epochNumber,
+          epochPublicKey,
+          incomingEpochCreatedAt,
+          conflictingEpochNumber
+        );
+        logInboundEvent('drop', {
+          reason: 'conflicting-epoch-public-key',
+          epochNumber,
+          epochPublicKey: formatSubscriptionLogValue(epochPublicKey),
+          conflictingEpochPublicKey: formatSubscriptionLogValue(
+            conflictingEpochNumber.epoch_public_key
+          ),
+          conflictingEpochCreatedAt: conflictingEpochNumber.invitation_created_at ?? null,
+          createdAt: incomingEpochCreatedAt,
+          ...buildInboundTraceDetails({
+            wrappedEvent,
+            rumorEvent,
+            loggedInPubkeyHex,
+            senderPubkeyHex,
+            chatPubkey: senderPubkeyHex,
+            relayUrls: wrappedRelayUrls,
+            recipients
+          })
+        });
+        return;
+      }
+      const higherEpochConflict = findHigherKnownGroupEpochConflict(
+        existingGroupChat,
+        epochNumber,
+        incomingEpochCreatedAt
+      );
+      if (higherEpochConflict) {
+        logInvalidIncomingEpochNumber(
+          senderPubkeyHex,
+          epochNumber,
+          epochPublicKey,
+          incomingEpochCreatedAt,
+          higherEpochConflict
+        );
+        logInboundEvent('drop', {
+          reason: 'invalid-epoch-number',
+          epochNumber,
+          higherEpochNumber: higherEpochConflict.higherEpochEntry.epoch_number,
+          higherEpochPublicKey: formatSubscriptionLogValue(
+            higherEpochConflict.higherEpochEntry.epoch_public_key
+          ),
+          higherEpochCreatedAt:
+            higherEpochConflict.olderHigherEpochEntry?.invitation_created_at ??
+            higherEpochConflict.higherEpochEntry.invitation_created_at ??
+            null,
+          createdAt: incomingEpochCreatedAt,
+          ...buildInboundTraceDetails({
+            wrappedEvent,
+            rumorEvent,
+            loggedInPubkeyHex,
+            senderPubkeyHex,
+            chatPubkey: senderPubkeyHex,
+            relayUrls: wrappedRelayUrls,
+            recipients
+          })
+        });
+        return;
+      }
       const existingGroupInboxState =
         existingGroupChat?.meta && typeof existingGroupChat.meta.inbox_state === 'string'
           ? existingGroupChat.meta.inbox_state.trim()
@@ -9564,7 +9950,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
         existingGroupChat?.meta?.contact_name?.trim() ||
         existingGroupChat?.name?.trim() ||
         resolveGroupDisplayName(senderPubkeyHex);
-      const epochPublicKey = derivePublicKeyFromPrivateKey(verificationResult.epochPrivateKey ?? '');
 
       logInboundEvent('epoch-ticket-received', {
         direction,
@@ -9592,13 +9977,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
         {
           fallbackName: fallbackGroupName,
           accepted: wasAcceptedGroup,
-          invitationCreatedAt: toIsoTimestampFromUnix(rumorEvent.created_at),
+          invitationCreatedAt: incomingEpochCreatedAt,
           seedRelayUrls: wrappedRelayUrls
         }
       );
-      void refreshGroupContactByPublicKey(senderPubkeyHex, fallbackGroupName).catch((error) => {
-        console.warn('Failed to refresh group contact after epoch ticket', senderPubkeyHex, error);
-      });
+      queueBackgroundGroupContactRefresh(senderPubkeyHex, fallbackGroupName);
 
       if (!wasAcceptedGroup) {
         await upsertIncomingGroupInviteRequestChat(
@@ -9620,7 +10003,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
         chat_public_key: senderPubkeyHex,
         author_public_key: senderPubkeyHex,
         message: `Epoch ${epochNumber}`,
-        created_at: toIsoTimestampFromUnix(rumorEvent.created_at),
+        created_at: incomingEpochCreatedAt,
         event_id: verificationResult.signedEvent?.id ?? loggedEvent.id ?? null,
         meta: {
           source: 'nostr',
@@ -10040,7 +10423,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       privateMessagesSubscriptionShouldBeActive = true;
       await contactsService.init();
       await chatDataService.init();
-      const relayUrls = await resolvePrivateMessageReadRelayUrls();
+      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
       if (relayUrls.length === 0) {
         privateMessagesSubscriptionShouldBeActive = false;
         logSubscription('private-messages', 'skip', {
@@ -10075,15 +10458,33 @@ export const useNostrStore = defineStore('nostrStore', () => {
           : shouldRunStartupBackfill
             ? getPrivateMessagesStartupLiveSince()
             : getFilterSince();
-      if (!force && privateMessagesSubscription && privateMessagesSubscriptionSignature === signature) {
+      const hasMatchingActiveSubscription =
+        Boolean(privateMessagesSubscription) && privateMessagesSubscriptionSignature === signature;
+      const currentSubscriptionSince =
+        Number.isInteger(privateMessagesSubscriptionSince.value) &&
+        Number(privateMessagesSubscriptionSince.value) >= 0
+          ? Number(privateMessagesSubscriptionSince.value)
+          : null;
+      const requiresBroaderSinceWindow =
+        currentSubscriptionSince === null || filterSince < currentSubscriptionSince;
+      if (
+        hasMatchingActiveSubscription &&
+        (!force || !requiresBroaderSinceWindow)
+      ) {
+        privateMessagesRestoreThrottleMs = Math.max(
+          privateMessagesRestoreThrottleMs,
+          normalizeThrottleMs(options.restoreThrottleMs)
+        );
         syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
         logSubscription('private-messages', 'skip', {
-          reason: 'already-active',
+          reason: force ? 'already-active-force-no-change' : 'already-active',
           signature,
           pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
           authMethod,
           recipientCount: recipientPubkeys.length,
           recipients: recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
+          requestedSince: filterSince,
+          currentSince: currentSubscriptionSince,
           ...buildSubscriptionRelayDetails(relayUrls)
         });
         if (shouldTrackStartupStep) {
@@ -10147,7 +10548,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       privateMessagesSubscriptionLastEoseAt.value = null;
       bumpDeveloperDiagnosticsVersion();
 
-      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
       const privateMessagesFilters: NDKFilter = {
         kinds: [NDKKind.GiftWrap],
         '#p': recipientPubkeys,
@@ -10496,6 +10897,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     stopMyRelayListSubscription();
     stopPrivateContactListSubscription();
     stopPrivateMessagesSubscription();
+    if (privateMessagesEpochSubscriptionRefreshTimerId !== null) {
+      globalThis.clearTimeout(privateMessagesEpochSubscriptionRefreshTimerId);
+      privateMessagesEpochSubscriptionRefreshTimerId = null;
+    }
+    pendingPrivateMessagesEpochSubscriptionRefreshOptions = null;
+    privateMessagesEpochSubscriptionRefreshQueue = Promise.resolve();
+    loggedInvalidGroupEpochConflictKeys.clear();
     if (chatChecksTimeoutId !== null) {
       globalThis.clearTimeout(chatChecksTimeoutId);
       chatChecksTimeoutId = null;
@@ -10547,6 +10955,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesIngestQueue = Promise.resolve();
     privateMessagesUiRefreshQueue = Promise.resolve();
     configuredRelayUrls.clear();
+    relayConnectPromises.clear();
+    relayConnectFailureCooldownUntilByUrl.clear();
+    groupContactRefreshPromises.clear();
+    backgroundGroupContactRefreshStartedAt.clear();
+    pendingPrivateMessagesEpochSubscriptionRefreshOptions = null;
+    privateMessagesEpochSubscriptionRefreshQueue = Promise.resolve();
+    loggedInvalidGroupEpochConflictKeys.clear();
     contactListVersion.value = 0;
     relayStatusVersion.value += 1;
 
