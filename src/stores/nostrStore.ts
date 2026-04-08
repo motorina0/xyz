@@ -107,6 +107,7 @@ import { createContactRelayRuntime } from 'src/stores/nostr/contactRelayRuntime'
 import { createContactSubscriptionsRuntime } from 'src/stores/nostr/contactSubscriptionsRuntime';
 import { createMyRelayListRuntime } from 'src/stores/nostr/myRelayListRuntime';
 import { createPrivateContactListRuntime } from 'src/stores/nostr/privateContactListRuntime';
+import { createPrivateMessagesSubscriptionRuntime } from 'src/stores/nostr/privateMessagesSubscriptionRuntime';
 import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessagesUiRuntime';
 import { hasStorage, isPlainRecord } from 'src/stores/nostr/shared';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
@@ -287,8 +288,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restoreGroupIdentitySecretsPromise: null as Promise<void> | null,
     restorePrivatePreferencesPromise: null as Promise<void> | null
   };
-  let privateMessagesSubscription: ReturnType<typeof ndk.subscribe> | null = null;
-  let privateMessagesSubscriptionSignature = '';
   let privateMessagesBackfillSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let privateMessagesBackfillPromise: Promise<void> | null = null;
   let privateMessagesBackfillRunToken = 0;
@@ -297,18 +296,30 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let privateMessagesBackfillDelayResolver: (() => void) | null = null;
   const groupEpochHistoryRestorePromises = new Map<string, Promise<void>>();
   const restoredGroupEpochHistoryKeys = new Set<string>();
-  let privateMessagesWatchdogTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
-  let privateMessagesWatchdogRunPromise: Promise<void> | null = null;
-  let privateMessagesWatchdogLastRecoveryAt = 0;
-  let privateMessagesSubscriptionShouldBeActive = false;
   let privateMessagesEpochSubscriptionRefreshTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let pendingPrivateMessagesEpochSubscriptionRefreshOptions: SubscribePrivateMessagesOptions | null = null;
   let privateMessagesEpochSubscriptionRefreshQueue = Promise.resolve();
   const loggedInvalidGroupEpochConflictKeys = new Set<string>();
-  let hasPrivateMessagesWatchdogOnlineListener = false;
-  const privateMessagesWatchdogRelayConnectionStates = new Map<string, boolean>();
   let privateMessagesIngestQueue = Promise.resolve();
   let privateMessagesRestoreThrottleMs = 0;
+  let subscribePrivateMessagesForLoggedInUserRuntime: (
+    force?: boolean,
+    options?: SubscribePrivateMessagesOptions
+  ) => Promise<void> = async () => {
+    throw new Error('Private messages subscription runtime is not initialized.');
+  };
+  let ensurePrivateMessagesWatchdogRuntime: () => void = () => {};
+  let refreshAllStoredContactsRuntime: () => Promise<Record<string, unknown>> = async () => {
+    throw new Error('Private messages refresh runtime is not initialized.');
+  };
+  let startPrivateMessagesStartupBackfillRuntime: (
+    loggedInPubkeyHex: string,
+    recipientPubkeys: string[],
+    relayUrls: string[],
+    liveSince: number
+  ) => void = () => {
+    throw new Error('Private messages backfill runtime is not initialized.');
+  };
   const authenticatedRelayUrls = new Set<string>();
   const pendingEventSinceState = {
     pendingEventSinceUpdate: 0
@@ -407,7 +418,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
 
   relayStore.init();
-  ensurePrivateMessagesWatchdog();
 
   watch(
     () =>
@@ -4331,6 +4341,17 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
+  function ensurePrivateMessagesWatchdog(): void {
+    ensurePrivateMessagesWatchdogRuntime();
+  }
+
+  async function subscribePrivateMessagesForLoggedInUser(
+    force = false,
+    options: SubscribePrivateMessagesOptions = {}
+  ): Promise<void> {
+    return subscribePrivateMessagesForLoggedInUserRuntime(force, options);
+  }
+
   function queuePrivateMessagesSubscriptionRefresh(
     force = false,
     options: SubscribePrivateMessagesOptions = {}
@@ -4404,180 +4425,75 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }, PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS);
   }
 
-  function ensurePrivateMessagesWatchdog(): void {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (!hasPrivateMessagesWatchdogOnlineListener) {
-      window.addEventListener('online', handlePrivateMessagesWatchdogBrowserOnline);
-      hasPrivateMessagesWatchdogOnlineListener = true;
-    }
-
-    queuePrivateMessagesWatchdog(PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS);
-  }
-
-  function handlePrivateMessagesWatchdogBrowserOnline(): void {
-    if (!privateMessagesSubscriptionShouldBeActive) {
-      return;
-    }
-
-    logSubscription('private-messages', 'watchdog-browser-online');
-    queuePrivateMessagesWatchdog(0);
-  }
-
-  function queuePrivateMessagesWatchdog(delayMs = PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS): void {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (privateMessagesWatchdogTimeoutId !== null) {
-      globalThis.clearTimeout(privateMessagesWatchdogTimeoutId);
-    }
-
-    privateMessagesWatchdogTimeoutId = globalThis.setTimeout(() => {
-      privateMessagesWatchdogTimeoutId = null;
-      void runPrivateMessagesWatchdog();
-    }, Math.max(0, Math.floor(delayMs)));
-  }
-
-  function syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls: string[]): void {
-    const normalizedRelayUrls = normalizeRelayStatusUrls(relayUrls);
-    const nextRelayUrlSet = new Set(normalizedRelayUrls);
-
-    for (const relayUrl of privateMessagesWatchdogRelayConnectionStates.keys()) {
-      if (!nextRelayUrlSet.has(relayUrl)) {
-        privateMessagesWatchdogRelayConnectionStates.delete(relayUrl);
-      }
-    }
-
-    for (const relayUrl of normalizedRelayUrls) {
-      const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
-      privateMessagesWatchdogRelayConnectionStates.set(relayUrl, Boolean(relay?.connected));
-    }
-  }
-
-  function isBrowserOfflineForPrivateMessagesWatchdog(): boolean {
-    return typeof navigator !== 'undefined' && navigator.onLine === false;
-  }
-
-  async function recoverPrivateMessagesSubscriptionFromWatchdog(
-    reason: string,
-    details: Record<string, unknown> = {}
-  ): Promise<void> {
-    const now = Date.now();
-    if (now - privateMessagesWatchdogLastRecoveryAt < PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS) {
-      logSubscription('private-messages', 'watchdog-recover-skipped', {
-        reason,
-        cooldownMs: PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS,
-        ...details
-      });
-      return;
-    }
-
-    privateMessagesWatchdogLastRecoveryAt = now;
-    logSubscription('private-messages', 'watchdog-recover', {
-      reason,
-      ...details
-    });
-    await subscribePrivateMessagesForLoggedInUser(true, {
-      restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
-    });
-  }
-
-  async function runPrivateMessagesWatchdog(): Promise<void> {
-    if (privateMessagesWatchdogRunPromise) {
-      return privateMessagesWatchdogRunPromise;
-    }
-
-    privateMessagesWatchdogRunPromise = (async () => {
-      try {
-        if (!privateMessagesSubscriptionShouldBeActive) {
-          privateMessagesWatchdogRelayConnectionStates.clear();
-          return;
-        }
-
-        if (isRestoringStartupState.value) {
-          return;
-        }
-
-        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-        const authMethod = getStoredAuthMethod();
-        if (!loggedInPubkeyHex || !authMethod) {
-          privateMessagesSubscriptionShouldBeActive = false;
-          privateMessagesWatchdogRelayConnectionStates.clear();
-          return;
-        }
-
-        const browserOffline = isBrowserOfflineForPrivateMessagesWatchdog();
-        const relayUrls = normalizeRelayStatusUrls(privateMessagesSubscriptionRelayUrls.value);
-        if (!privateMessagesSubscription || !privateMessagesSubscriptionSignature || relayUrls.length === 0) {
-          if (browserOffline) {
-            return;
-          }
-
-          await recoverPrivateMessagesSubscriptionFromWatchdog('subscription-missing', {
-            hasSubscription: Boolean(privateMessagesSubscription),
-            hasSignature: Boolean(privateMessagesSubscriptionSignature),
-            relayCount: relayUrls.length
-          });
-          return;
-        }
-
-        const relayStatesBefore = new Map<string, boolean>();
-        for (const relayUrl of relayUrls) {
-          const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
-          relayStatesBefore.set(relayUrl, Boolean(relay?.connected));
-        }
-
-        const disconnectedRelayUrls = relayUrls.filter((relayUrl) => !relayStatesBefore.get(relayUrl));
-        if (disconnectedRelayUrls.length > 0 && !browserOffline) {
-          const shouldLogReconnectAttempt = disconnectedRelayUrls.some(
-            (relayUrl) => privateMessagesWatchdogRelayConnectionStates.get(relayUrl) !== false
-          );
-          if (shouldLogReconnectAttempt) {
-            logSubscription('private-messages', 'watchdog-reconnect-relays', {
-              disconnectedRelayUrls,
-              ...buildSubscriptionRelayDetails(relayUrls)
-            });
-          }
-          await ensureRelayConnections(relayUrls);
-        }
-
-        const relayStatesAfter = new Map<string, boolean>();
-        for (const relayUrl of relayUrls) {
-          const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
-          relayStatesAfter.set(relayUrl, Boolean(relay?.connected));
-        }
-
-        const reconnectedRelayUrls = relayUrls.filter((relayUrl) => {
-          const before = relayStatesBefore.get(relayUrl) ?? false;
-          const after = relayStatesAfter.get(relayUrl) ?? false;
-          const previous = privateMessagesWatchdogRelayConnectionStates.get(relayUrl);
-          return after && ((!before && disconnectedRelayUrls.includes(relayUrl)) || previous === false);
-        });
-
-        syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
-
-        if (reconnectedRelayUrls.length > 0) {
-          await recoverPrivateMessagesSubscriptionFromWatchdog('relay-reconnected', {
-            reconnectedRelayUrls,
-            ...buildSubscriptionRelayDetails(relayUrls)
-          });
-        }
-      } catch (error) {
-        console.warn('Private messages watchdog failed', error);
-        logSubscription('private-messages', 'watchdog-error', {
-          error
-        });
-      } finally {
-        privateMessagesWatchdogRunPromise = null;
-        queuePrivateMessagesWatchdog(PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS);
-      }
-    })();
-
-    return privateMessagesWatchdogRunPromise;
-  }
+  const {
+    ensurePrivateMessagesWatchdog: ensurePrivateMessagesWatchdogImpl,
+    getPrivateMessagesSubscription,
+    getPrivateMessagesSubscriptionSignature,
+    isPrivateMessagesSubscriptionRelayTracked,
+    markPrivateMessagesWatchdogRelayDisconnected,
+    queuePrivateMessagesWatchdog,
+    resetPrivateMessagesSubscriptionRuntimeState,
+    stopPrivateMessagesLiveSubscription,
+    subscribePrivateMessagesForLoggedInUser: subscribePrivateMessagesForLoggedInUserImpl
+  } = createPrivateMessagesSubscriptionRuntime({
+    beginStartupStep,
+    buildFilterSinceDetails,
+    buildPrivateMessageSubscriptionTargetDetails,
+    buildSubscriptionEventDetails,
+    buildSubscriptionRelayDetails,
+    bumpDeveloperDiagnosticsVersion,
+    clearPrivateMessagesUiRefreshState,
+    completeStartupStep,
+    ensureRelayConnections,
+    extractRelayUrlsFromEvent,
+    failStartupStep,
+    flushPrivateMessagesUiRefreshNow,
+    formatSubscriptionLogValue,
+    getFilterSince,
+    getLoggedInPublicKeyHex,
+    getOrCreateSigner,
+    getPrivateMessagesRestoreThrottleMs: () => privateMessagesRestoreThrottleMs,
+    getPrivateMessagesStartupLiveSince,
+    getRelaySnapshots,
+    getStartupStepSnapshot,
+    getStoredAuthMethod,
+    isRestoringStartupState,
+    listPrivateMessageRecipientPubkeys,
+    logSubscription,
+    ndk,
+    normalizeEventId,
+    normalizeRelayStatusUrls,
+    normalizeThrottleMs,
+    privateMessagesSubscriptionLastEoseAt,
+    privateMessagesSubscriptionLastEventCreatedAt,
+    privateMessagesSubscriptionLastEventId,
+    privateMessagesSubscriptionLastEventSeenAt,
+    privateMessagesSubscriptionRelayUrls,
+    privateMessagesSubscriptionSince,
+    privateMessagesSubscriptionStartedAt,
+    queuePrivateMessageIngestion,
+    refreshAllStoredContacts: () => refreshAllStoredContactsRuntime(),
+    relaySignature,
+    resolvePrivateMessageReadRelayUrls,
+    schedulePostPrivateMessagesEoseChecks,
+    setPrivateMessagesRestoreThrottleMs: (value) => {
+      privateMessagesRestoreThrottleMs = value;
+    },
+    startPrivateMessagesStartupBackfill: (loggedInPubkeyHex, recipientPubkeys, relayUrls, liveSince) => {
+      startPrivateMessagesStartupBackfillRuntime(
+        loggedInPubkeyHex,
+        recipientPubkeys,
+        relayUrls,
+        liveSince
+      );
+    },
+    subscribeWithReqLogging,
+    updateStoredEventSinceFromCreatedAt,
+    updateStoredPrivateMessagesLastReceivedFromCreatedAt
+  });
+  ensurePrivateMessagesWatchdogRuntime = ensurePrivateMessagesWatchdogImpl;
+  subscribePrivateMessagesForLoggedInUserRuntime = subscribePrivateMessagesForLoggedInUserImpl;
+  ensurePrivateMessagesWatchdog();
 
   const {
     resetContactSubscriptionsRuntimeState,
@@ -4865,6 +4781,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       cursorUiReloaded
     };
   }
+  refreshAllStoredContactsRuntime = refreshAllStoredContacts;
 
   function bumpRelayStatusVersion(): void {
     relayStatusVersion.value += 1;
@@ -5000,7 +4917,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       authenticatedRelayUrls.delete(relay.url);
       bumpRelayStatusVersion();
       logRelayLifecycle('connect', relay);
-      if (privateMessagesSubscriptionRelayUrls.value.includes(relay.url)) {
+      if (isPrivateMessagesSubscriptionRelayTracked(relay.url)) {
         queuePrivateMessagesWatchdog(0);
       }
     });
@@ -5012,8 +4929,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       authenticatedRelayUrls.delete(relay.url);
       bumpRelayStatusVersion();
       logRelayLifecycle('disconnect', relay);
-      if (privateMessagesSubscriptionRelayUrls.value.includes(relay.url)) {
-        privateMessagesWatchdogRelayConnectionStates.set(relay.url, false);
+      if (isPrivateMessagesSubscriptionRelayTracked(relay.url)) {
+        markPrivateMessagesWatchdogRelayDisconnected(relay.url);
         queuePrivateMessagesWatchdog(0);
       }
     });
@@ -5902,26 +5819,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
         privateMessagesBackfillSignature = '';
       });
   }
+  startPrivateMessagesStartupBackfillRuntime = startPrivateMessagesStartupBackfill;
 
   function stopPrivateMessagesSubscription(reason = 'replace'): void {
     stopPrivateMessagesBackfill(reason);
-
-    if (privateMessagesSubscription) {
-      logSubscription('private-messages', 'stop', {
-        reason,
-        signature: privateMessagesSubscriptionSignature || null
-      });
-      privateMessagesSubscription.stop();
-      privateMessagesSubscription = null;
-    }
-
-    clearPrivateMessagesUiRefreshState();
-    privateMessagesWatchdogRelayConnectionStates.clear();
-    privateMessagesSubscriptionSignature = '';
-    privateMessagesRestoreThrottleMs = 0;
-    privateMessagesSubscriptionRelayUrls.value = [];
-    privateMessagesSubscriptionSince.value = null;
-    bumpDeveloperDiagnosticsVersion();
+    stopPrivateMessagesLiveSubscription(reason);
   }
 
   function queuePrivateMessageIngestion(
@@ -6679,263 +6581,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  async function subscribePrivateMessagesForLoggedInUser(
-    force = false,
-    options: SubscribePrivateMessagesOptions = {}
-  ): Promise<void> {
-    const hasActiveStartupTracking = getStartupStepSnapshot('private-message-events').status === 'in_progress';
-    const shouldTrackStartupStep = options.startupTrackStep === true || hasActiveStartupTracking;
-    const shouldRunStartupBackfill =
-      !Number.isInteger(options.sinceOverride) &&
-      (options.startupTrackStep === true || hasActiveStartupTracking || isRestoringStartupState.value);
-    if (options.startupTrackStep === true) {
-      beginStartupStep('private-message-events');
-    }
-
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    const authMethod = getStoredAuthMethod();
-
-    if (!loggedInPubkeyHex || !authMethod) {
-      privateMessagesSubscriptionShouldBeActive = false;
-      logSubscription('private-messages', 'skip', {
-        reason: 'missing-login',
-        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        authMethod: authMethod ?? null
-      });
-      stopPrivateMessagesSubscription('missing-login');
-      if (shouldTrackStartupStep) {
-        completeStartupStep('private-message-events');
-      }
-      return;
-    }
-
-    try {
-      privateMessagesSubscriptionShouldBeActive = true;
-      await contactsService.init();
-      await chatDataService.init();
-      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
-      if (relayUrls.length === 0) {
-        privateMessagesSubscriptionShouldBeActive = false;
-        logSubscription('private-messages', 'skip', {
-          reason: 'no-relays',
-          pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-          authMethod
-        });
-        stopPrivateMessagesSubscription('no-relays');
-        if (shouldTrackStartupStep) {
-          completeStartupStep('private-message-events');
-        }
-        return;
-      }
-      const recipientPubkeys = await listPrivateMessageRecipientPubkeys();
-      if (recipientPubkeys.length === 0) {
-        privateMessagesSubscriptionShouldBeActive = false;
-        logSubscription('private-messages', 'skip', {
-          reason: 'no-recipients',
-          pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-          authMethod
-        });
-        stopPrivateMessagesSubscription('no-recipients');
-        if (shouldTrackStartupStep) {
-          completeStartupStep('private-message-events');
-        }
-        return;
-      }
-      const signature = `${recipientPubkeys.join(',')}:${relaySignature(relayUrls)}`;
-      const filterSince =
-        Number.isInteger(options.sinceOverride) && Number(options.sinceOverride) >= 0
-          ? Math.floor(Number(options.sinceOverride))
-          : shouldRunStartupBackfill
-            ? getPrivateMessagesStartupLiveSince()
-            : getFilterSince();
-      const hasMatchingActiveSubscription =
-        Boolean(privateMessagesSubscription) && privateMessagesSubscriptionSignature === signature;
-      const currentSubscriptionSince =
-        Number.isInteger(privateMessagesSubscriptionSince.value) &&
-        Number(privateMessagesSubscriptionSince.value) >= 0
-          ? Number(privateMessagesSubscriptionSince.value)
-          : null;
-      const requiresBroaderSinceWindow =
-        currentSubscriptionSince === null || filterSince < currentSubscriptionSince;
-      if (
-        hasMatchingActiveSubscription &&
-        (!force || !requiresBroaderSinceWindow)
-      ) {
-        privateMessagesRestoreThrottleMs = Math.max(
-          privateMessagesRestoreThrottleMs,
-          normalizeThrottleMs(options.restoreThrottleMs)
-        );
-        syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
-        logSubscription('private-messages', 'skip', {
-          reason: force ? 'already-active-force-no-change' : 'already-active',
-          signature,
-          pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-          authMethod,
-          recipientCount: recipientPubkeys.length,
-          recipients: recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
-          requestedSince: filterSince,
-          currentSince: currentSubscriptionSince,
-          ...buildSubscriptionRelayDetails(relayUrls)
-        });
-        if (shouldTrackStartupStep) {
-          completeStartupStep('private-message-events');
-        }
-        return;
-      }
-
-      logSubscription('private-messages', 'prepare', {
-        force,
-        signature,
-        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        authMethod,
-        recipientCount: recipientPubkeys.length,
-        recipients: recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
-        ...buildFilterSinceDetails(filterSince),
-        restoreThrottleMs: normalizeThrottleMs(options.restoreThrottleMs),
-        relaySnapshots: getRelaySnapshots(relayUrls),
-        ...buildSubscriptionRelayDetails(relayUrls)
-      });
-
-      await ensureRelayConnections(relayUrls);
-      await getOrCreateSigner();
-      stopPrivateMessagesSubscription();
-      privateMessagesRestoreThrottleMs = normalizeThrottleMs(options.restoreThrottleMs);
-      const relaySnapshots = getRelaySnapshots(relayUrls);
-      const disconnectedRelayUrls = relayUrls.filter((relayUrl) => {
-        const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
-        return !relay || !relay.connected;
-      });
-      const privateMessageTargetDetails = await buildPrivateMessageSubscriptionTargetDetails(
-        recipientPubkeys,
-        loggedInPubkeyHex
-      );
-
-      if (disconnectedRelayUrls.length > 0) {
-        logSubscription('private-messages', 'relay-health', {
-          reason: 'subscription-relays-disconnected',
-          signature,
-          disconnectedRelayUrls,
-          relaySnapshots
-        });
-      }
-
-      logSubscription('private-messages', 'start', {
-        force,
-        signature,
-        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        authMethod,
-        recipientCount: recipientPubkeys.length,
-        recipients: recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
-        ...buildFilterSinceDetails(filterSince),
-        restoreThrottleMs: privateMessagesRestoreThrottleMs,
-        relaySnapshots,
-        ...buildSubscriptionRelayDetails(relayUrls),
-        ...privateMessageTargetDetails
-      });
-      privateMessagesSubscriptionRelayUrls.value = [...relayUrls];
-      privateMessagesSubscriptionSince.value = filterSince;
-      privateMessagesSubscriptionStartedAt.value = new Date().toISOString();
-      privateMessagesSubscriptionLastEoseAt.value = null;
-      bumpDeveloperDiagnosticsVersion();
-
-      const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
-      const privateMessagesFilters: NDKFilter = {
-        kinds: [NDKKind.GiftWrap],
-        '#p': recipientPubkeys,
-        since: filterSince
-      };
-      privateMessagesSubscription = subscribeWithReqLogging(
-        'private-messages',
-        'private-messages-live',
-        privateMessagesFilters,
-        {
-          relaySet,
-          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
-          onEvent: (event) => {
-            const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
-            logSubscription('private-messages', 'event', {
-              signature,
-              ...buildSubscriptionEventDetails(wrappedEvent),
-              ...buildSubscriptionRelayDetails(extractRelayUrlsFromEvent(wrappedEvent))
-            });
-            privateMessagesSubscriptionLastEventSeenAt.value = new Date().toISOString();
-            privateMessagesSubscriptionLastEventId.value =
-              normalizeEventId(wrappedEvent.id) ?? wrappedEvent.id ?? null;
-            privateMessagesSubscriptionLastEventCreatedAt.value =
-              Number.isInteger(wrappedEvent.created_at) ? Number(wrappedEvent.created_at) : null;
-            bumpDeveloperDiagnosticsVersion();
-            updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
-            updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
-            queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
-          },
-          onEose: () => {
-            logSubscription('private-messages', 'eose', {
-              signature,
-              restoreThrottleMs: privateMessagesRestoreThrottleMs
-            });
-            privateMessagesSubscriptionLastEoseAt.value = new Date().toISOString();
-            bumpDeveloperDiagnosticsVersion();
-            privateMessagesRestoreThrottleMs = 0;
-            flushPrivateMessagesUiRefreshNow();
-            schedulePostPrivateMessagesEoseChecks();
-            if (shouldTrackStartupStep) {
-              completeStartupStep('private-message-events');
-            }
-            if (shouldRunStartupBackfill) {
-              void (async () => {
-                try {
-                  const contactRefreshSummary = await refreshAllStoredContacts();
-                  logSubscription('private-messages', 'contacts-refresh-after-eose', {
-                    signature,
-                    ...contactRefreshSummary
-                  });
-                } catch (error) {
-                  console.warn('Failed to refresh contacts after private messages startup EOSE', error);
-                  logSubscription('private-messages', 'contacts-refresh-after-eose-error', {
-                    signature,
-                    error
-                  });
-                } finally {
-                  startPrivateMessagesStartupBackfill(
-                    loggedInPubkeyHex,
-                    recipientPubkeys,
-                    relayUrls,
-                    filterSince
-                  );
-                }
-              })();
-            }
-          }
-        },
-        {
-          signature,
-          ...buildFilterSinceDetails(filterSince),
-          ...buildSubscriptionRelayDetails(relayUrls),
-          ...privateMessageTargetDetails
-        }
-      );
-      privateMessagesSubscriptionSignature = signature;
-      syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
-
-      logSubscription('private-messages', 'active', {
-        signature,
-        pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
-        authMethod,
-        recipientCount: recipientPubkeys.length,
-        recipients: recipientPubkeys.map((value) => formatSubscriptionLogValue(value)),
-        ...buildFilterSinceDetails(filterSince),
-        restoreThrottleMs: privateMessagesRestoreThrottleMs,
-        relaySnapshots,
-        ...buildSubscriptionRelayDetails(relayUrls)
-      });
-    } catch (error) {
-      if (shouldTrackStartupStep) {
-        failStartupStep('private-message-events', error);
-      }
-      throw error;
-    }
-  }
-
   async function fetchMyRelayList(relayUrls: string[]): Promise<string[]> {
     const relayEntries = await fetchMyRelayListEntries(relayUrls);
     if (relayEntries === null) {
@@ -7159,9 +6804,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     cachedSigner = null;
     cachedSignerSessionKey = null;
     ndk.signer = undefined;
-    privateMessagesWatchdogLastRecoveryAt = 0;
-    privateMessagesSubscriptionShouldBeActive = false;
-    privateMessagesWatchdogRelayConnectionStates.clear();
+    resetPrivateMessagesSubscriptionRuntimeState({ clearLastEventState: true });
     resetStartupStepTracking();
     pendingIncomingReactions.clear();
     pendingIncomingDeletions.clear();
@@ -7171,11 +6814,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
     pendingContactCursorPublishTimers.clear();
     resetTrackedContactEventState();
-    privateMessagesSubscriptionStartedAt.value = null;
-    privateMessagesSubscriptionLastEventSeenAt.value = null;
-    privateMessagesSubscriptionLastEventId.value = null;
-    privateMessagesSubscriptionLastEventCreatedAt.value = null;
-    privateMessagesSubscriptionLastEoseAt.value = null;
     void clearDeveloperTraceEntries().catch((error) => {
       console.error('Failed to clear developer trace entries.', error);
     });
@@ -7310,8 +6948,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getFilterSince,
     getLoggedInPublicKeyHex,
     getPrivateMessagesRestoreThrottleMs: () => privateMessagesRestoreThrottleMs,
-    getPrivateMessagesSubscription: () => privateMessagesSubscription,
-    getPrivateMessagesSubscriptionSignature: () => privateMessagesSubscriptionSignature,
+    getPrivateMessagesSubscription,
+    getPrivateMessagesSubscriptionSignature,
     getRelayConnectionState,
     getRelaySnapshots,
     getStoredAuthMethod,
