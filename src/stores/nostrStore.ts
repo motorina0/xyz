@@ -49,6 +49,7 @@ import type {
   ChatGroupEpochKey,
   ChatMetadata,
   DeletedMessageMetadata,
+  GroupMemberTicketDelivery,
   MessageReplyPreview,
   MessageReaction,
   MessageRelayStatus,
@@ -61,6 +62,11 @@ import {
   countUnseenReactionsForAuthor,
   normalizeMessageReactions
 } from 'src/utils/messageReactions';
+import { normalizeMessageRelayStatuses } from 'src/utils/messageRelayStatus';
+import {
+  mergeGroupMemberTicketDeliveries,
+  normalizeGroupMemberTicketDeliveries
+} from 'src/utils/groupMemberTicketDelivery';
 import {
   areBrowserNotificationsEnabled,
   clearBrowserNotificationsPreference
@@ -432,6 +438,7 @@ const GROUP_PRIVATE_KEY_CONTACT_META_KEY = 'group_private_key_encrypted';
 const GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY = 'owner_public_key';
 const PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY = 'private_contact_list_member';
 const GROUP_EPOCH_KEYS_CHAT_META_KEY = 'group_epoch_keys';
+const GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY = 'group_member_ticket_deliveries';
 const GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY = 'current_epoch_public_key';
 const GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY = 'current_epoch_private_key_encrypted';
 const GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY = 'epoch_public_key';
@@ -1667,6 +1674,100 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
+  async function upsertGroupMemberTicketDelivery(
+    groupPublicKey: string,
+    delivery: GroupMemberTicketDelivery
+  ): Promise<void> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPublicKey) {
+      return;
+    }
+
+    const normalizedDeliveryEntries = normalizeGroupMemberTicketDeliveries([delivery]);
+    const normalizedDelivery = normalizedDeliveryEntries[0] ?? null;
+    if (!normalizedDelivery) {
+      return;
+    }
+
+    await chatDataService.init();
+    const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+    if (!existingChat) {
+      return;
+    }
+
+    const existingDeliveries = normalizeGroupMemberTicketDeliveries(
+      existingChat.meta?.[GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY]
+    );
+    const nextDeliveries = mergeGroupMemberTicketDeliveries(
+      existingDeliveries,
+      normalizedDelivery
+    );
+    const nextMeta: ChatMetadata = {
+      ...(existingChat.meta ?? {}),
+      [GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY]: nextDeliveries
+    };
+
+    await chatDataService.updateChat(normalizedGroupPublicKey, {
+      meta: nextMeta
+    });
+  }
+
+  async function appendRelayStatusesToGroupMemberTicketEvent(
+    groupPublicKey: string,
+    memberPublicKey: string,
+    epochNumber: number,
+    relayStatuses: MessageRelayStatus[],
+    options: {
+      event?: NostrEvent;
+      direction?: NostrEventDirection;
+      eventId?: string;
+      createdAt?: string;
+    } = {}
+  ): Promise<void> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedMemberPublicKey = inputSanitizerService.normalizeHexKey(memberPublicKey);
+    const normalizedEpochNumber = Number(epochNumber);
+    const normalizedRelayStatuses = normalizeMessageRelayStatuses(relayStatuses);
+    const normalizedEventId = normalizeEventId(
+      options.eventId ?? options.event?.id ?? null
+    );
+    const createdAt =
+      typeof options.createdAt === 'string' && options.createdAt.trim()
+        ? options.createdAt.trim()
+        : new Date().toISOString();
+
+    if (
+      !normalizedGroupPublicKey ||
+      !normalizedMemberPublicKey ||
+      !Number.isInteger(normalizedEpochNumber) ||
+      normalizedEpochNumber < 0 ||
+      !normalizedEventId
+    ) {
+      return;
+    }
+
+    await upsertGroupMemberTicketDelivery(normalizedGroupPublicKey, {
+      member_public_key: normalizedMemberPublicKey,
+      epoch_number: Math.floor(normalizedEpochNumber),
+      event_id: normalizedEventId,
+      created_at: createdAt
+    });
+
+    if (normalizedRelayStatuses.length === 0) {
+      return;
+    }
+
+    await nostrEventDataService.appendRelayStatuses(normalizedEventId, normalizedRelayStatuses, {
+      event: options.event
+        ? {
+            ...options.event,
+            id: normalizedEventId
+          }
+        : undefined,
+      direction: options.direction
+    });
+  }
+
   function parseOptionalUnixTimestamp(value: string | null | undefined): number | null {
     if (typeof value !== 'string') {
       return null;
@@ -2665,8 +2766,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       throw new Error('Cannot send epoch ticket without at least one group relay.');
     }
 
-    await ensureRelayConnections(relayUrls);
-
     const createdAt = Math.floor(Date.now() / 1000);
     const epochTicketEvent = new NDKEvent(ndk, {
       kind: 1014,
@@ -2680,13 +2779,76 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
     await epochTicketEvent.sign(groupSigner);
 
-    const recipient = new NDKUser({ pubkey: normalizedMemberPublicKey });
-    const giftWrapEvent = await giftWrapSignedEvent(epochTicketEvent, recipient, groupSigner);
-    const publishResult = await publishEventWithRelayStatuses(
-      giftWrapEvent,
-      relayUrls,
-      'recipient'
+    const storedEpochTicketEvent = await toStoredNostrEvent(epochTicketEvent);
+    const epochTicketEventId = normalizeEventId(
+      storedEpochTicketEvent?.id ?? epochTicketEvent.id
     );
+    const createdAtIso = toIsoTimestampFromUnix(createdAt);
+    const epochNumber = Math.floor(Number(secret.epoch_number));
+
+    if (epochTicketEventId && createdAtIso) {
+      await appendRelayStatusesToGroupMemberTicketEvent(
+        normalizedGroupPublicKey,
+        normalizedMemberPublicKey,
+        epochNumber,
+        buildPendingOutboundRelayStatuses(relayUrls, 'recipient'),
+        {
+          event: storedEpochTicketEvent ?? undefined,
+          direction: 'out',
+          eventId: epochTicketEventId,
+          createdAt: createdAtIso
+        }
+      );
+    }
+
+    let publishResult: RelayPublishStatusesResult | null = null;
+
+    try {
+      await ensureRelayConnections(relayUrls);
+      const recipient = new NDKUser({ pubkey: normalizedMemberPublicKey });
+      const giftWrapEvent = await giftWrapSignedEvent(epochTicketEvent, recipient, groupSigner);
+      publishResult = await publishEventWithRelayStatuses(
+        giftWrapEvent,
+        relayUrls,
+        'recipient'
+      );
+    } catch (error) {
+      const failureDetail =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to publish epoch ticket.';
+      if (epochTicketEventId && createdAtIso) {
+        await appendRelayStatusesToGroupMemberTicketEvent(
+          normalizedGroupPublicKey,
+          normalizedMemberPublicKey,
+          epochNumber,
+          buildFailedOutboundRelayStatuses(relayUrls, 'recipient', failureDetail),
+          {
+            event: storedEpochTicketEvent ?? undefined,
+            direction: 'out',
+            eventId: epochTicketEventId,
+            createdAt: createdAtIso
+          }
+        );
+      }
+      throw error;
+    }
+
+    if (epochTicketEventId && createdAtIso) {
+      await appendRelayStatusesToGroupMemberTicketEvent(
+        normalizedGroupPublicKey,
+        normalizedMemberPublicKey,
+        epochNumber,
+        publishResult.relayStatuses,
+        {
+          event: storedEpochTicketEvent ?? undefined,
+          direction: 'out',
+          eventId: epochTicketEventId,
+          createdAt: createdAtIso
+        }
+      );
+    }
+
     const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
     if (publishResult.error && !relaySaveStatus.errorMessage) {
       relaySaveStatus.errorMessage = publishResult.error.message;
@@ -3734,7 +3896,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     });
   }
 
-  function createStoredDirectMessageRumorEvent(event: NostrEvent): NDKEvent | null {
+  function createStoredSignedEvent(event: NostrEvent): NDKEvent | null {
     const pubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
     if (!pubkey) {
       return null;
@@ -3752,8 +3914,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
       pubkey,
       content: event.content,
       tags,
-      ...(event.id?.trim() ? { id: event.id.trim() } : {})
+      ...(event.id?.trim() ? { id: event.id.trim() } : {}),
+      ...(event.sig?.trim() ? { sig: event.sig.trim() } : {})
     });
+  }
+
+  function createStoredDirectMessageRumorEvent(event: NostrEvent): NDKEvent | null {
+    return createStoredSignedEvent(event);
   }
 
   function approximateGiftWrapNow(drift = 5): number {
@@ -11346,6 +11513,133 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
+  async function retryGroupEpochTicketRelay(
+    eventId: string,
+    relayUrl: string
+  ): Promise<void> {
+    const normalizedEventId = normalizeEventId(eventId);
+    const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
+    if (!normalizedEventId || !normalizedRelayUrl) {
+      throw new Error('Invalid group ticket relay retry input.');
+    }
+
+    await Promise.all([contactsService.init(), chatDataService.init(), nostrEventDataService.init()]);
+
+    const storedEvent = await nostrEventDataService.getEventById(normalizedEventId);
+    if (!storedEvent || storedEvent.direction !== 'out') {
+      throw new Error('No outbound group ticket event found for retry.');
+    }
+
+    const signedEpochTicketEvent = createStoredSignedEvent(storedEvent.event);
+    if (!signedEpochTicketEvent || signedEpochTicketEvent.kind !== 1014) {
+      throw new Error('Failed to rebuild the group epoch ticket for retry.');
+    }
+
+    const groupPublicKey = inputSanitizerService.normalizeHexKey(storedEvent.event.pubkey);
+    const memberPublicKey = inputSanitizerService.normalizeHexKey(
+      readFirstTagValue(storedEvent.event.tags, 'p') ?? ''
+    );
+    const epochNumber = readEpochNumberTag(storedEvent.event.tags);
+    const createdAt = toIsoTimestampFromUnix(storedEvent.event.created_at);
+    if (!groupPublicKey || !memberPublicKey || epochNumber === null || !createdAt) {
+      throw new Error('Stored group epoch ticket is missing retry metadata.');
+    }
+
+    const groupContact = await contactsService.getContactByPublicKey(groupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found for retry.');
+    }
+
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    if (!loggedInPubkeyHex || !normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can retry group epoch ticket delivery.');
+    }
+
+    const { secret } = await ensureGroupIdentitySecretEpochState(groupContact, []);
+    const groupSigner = new NDKPrivateKeySigner(secret.group_privkey, ndk);
+    const signerUser = await groupSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== groupPublicKey) {
+      throw new Error('Decrypted group private key does not match the group public key.');
+    }
+
+    await appendRelayStatusesToGroupMemberTicketEvent(
+      groupPublicKey,
+      memberPublicKey,
+      epochNumber,
+      buildPendingOutboundRelayStatuses([normalizedRelayUrl], 'recipient'),
+      {
+        event: storedEvent.event,
+        direction: 'out',
+        eventId: normalizedEventId,
+        createdAt
+      }
+    );
+
+    try {
+      await ensureRelayConnections([normalizedRelayUrl]);
+      const recipient = new NDKUser({ pubkey: memberPublicKey });
+      const giftWrapEvent = await giftWrapSignedEvent(
+        signedEpochTicketEvent,
+        recipient,
+        groupSigner
+      );
+      const publishResult = await publishEventWithRelayStatuses(
+        giftWrapEvent,
+        [normalizedRelayUrl],
+        'recipient'
+      );
+
+      await appendRelayStatusesToGroupMemberTicketEvent(
+        groupPublicKey,
+        memberPublicKey,
+        epochNumber,
+        publishResult.relayStatuses,
+        {
+          event: storedEvent.event,
+          direction: 'out',
+          eventId: normalizedEventId,
+          createdAt
+        }
+      );
+
+      if (publishResult.error) {
+        const failedRelayStatus = publishResult.relayStatuses.find(
+          (relayStatus) =>
+            relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
+        );
+        const detail = failedRelayStatus?.detail?.trim();
+        if (detail) {
+          throw new Error(detail);
+        }
+
+        throw publishResult.error;
+      }
+    } catch (error) {
+      const retryFailureDetail =
+        error instanceof Error && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to publish epoch ticket.';
+
+      await appendRelayStatusesToGroupMemberTicketEvent(
+        groupPublicKey,
+        memberPublicKey,
+        epochNumber,
+        buildFailedOutboundRelayStatuses([normalizedRelayUrl], 'recipient', retryFailureDetail),
+        {
+          event: storedEvent.event,
+          direction: 'out',
+          eventId: normalizedEventId,
+          createdAt
+        }
+      );
+
+      throw error;
+    }
+  }
+
   function buildPendingReactionDiagnostics(): DeveloperPendingReactionSnapshot[] {
     return Array.from(pendingIncomingReactions.entries())
       .map(([targetEventId, entries]) => ({
@@ -11831,6 +12125,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     reconnectDeveloperRelay,
     restartPrivateMessagesDiagnosticsSubscription,
     retryDirectMessageRelay,
+    retryGroupEpochTicketRelay,
     scheduleContactCursorPublish,
     sendGroupEpochTicket,
     sendDirectMessage,

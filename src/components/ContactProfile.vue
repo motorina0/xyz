@@ -614,6 +614,36 @@
                     >
                       {{ memberListCaption(member) }}
                     </q-item-label>
+                    <div
+                      v-if="hasMemberLatestGroupTicketStatus(member)"
+                      class="profile-member-delivery"
+                    >
+                      <q-badge
+                        outline
+                        color="primary"
+                        class="profile-member-delivery__epoch"
+                        data-testid="group-member-ticket-epoch-badge"
+                      >
+                        {{ memberLatestGroupTicketEpochLabel(member) }}
+                      </q-badge>
+                      <button
+                        type="button"
+                        class="profile-member-delivery__status-hitbox"
+                        data-testid="group-member-ticket-status"
+                        :aria-label="`Open relay delivery status for ${memberListTitle(member)}`"
+                        @click="openGroupMemberTicketStatus(member)"
+                      >
+                        <div class="profile-member-delivery__status">
+                          <span
+                            v-for="segment in memberLatestGroupTicketStatusSegments(member)"
+                            :key="segment.key"
+                            class="profile-member-delivery__status-segment"
+                            :class="segment.className"
+                            :style="{ flex: `${segment.weight} 1 0` }"
+                          />
+                        </div>
+                      </button>
+                    </div>
                   </q-item-section>
 
                   <q-item-section side top class="profile-members-list__actions">
@@ -816,6 +846,59 @@
         />
       </div>
     </div>
+
+    <AppDialog
+      v-if="selectedGroupMemberTicketStatus"
+      :model-value="selectedGroupMemberTicketStatus !== null"
+      :title="selectedGroupMemberTicketStatusTitle"
+      plain
+      max-width="460px"
+      @update:model-value="closeGroupMemberTicketStatusDialog"
+    >
+      <div
+        v-if="selectedGroupMemberTicketStatusItems.length === 0"
+        class="profile-member-delivery__dialog-empty"
+      >
+        No relay status recorded yet.
+      </div>
+      <ul v-else class="profile-member-delivery__dialog-list">
+        <li
+          v-for="item in selectedGroupMemberTicketStatusItems"
+          :key="item.key"
+          class="profile-member-delivery__dialog-item"
+        >
+          <span class="profile-member-delivery__dialog-item-main">
+            <span
+              class="profile-member-delivery__status-dot"
+              :class="item.dotClass"
+              aria-hidden="true"
+            />
+            <span class="profile-member-delivery__dialog-copy">
+              <span class="profile-member-delivery__dialog-relay">{{ item.relayUrl }}</span>
+              <span
+                v-if="item.detail"
+                class="profile-member-delivery__dialog-detail"
+              >
+                {{ item.detail }}
+              </span>
+            </span>
+          </span>
+          <q-btn
+            v-if="item.retryable"
+            flat
+            dense
+            no-caps
+            size="sm"
+            color="primary"
+            label="Retry"
+            class="profile-member-delivery__dialog-retry"
+            :loading="isRetryingGroupMemberTicketRelay(item)"
+            :disable="isRetryingGroupMemberTicketRelay(item)"
+            @click="retrySelectedGroupMemberTicketRelay(item)"
+          />
+        </li>
+      </ul>
+    </AppDialog>
   </div>
 </template>
 
@@ -823,24 +906,32 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { isValidPubkey, normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
 import { useQuasar } from 'quasar';
+import AppDialog from 'src/components/AppDialog.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
 import { chatDataService, type ChatRow } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
+import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useNostrStore } from 'src/stores/nostrStore';
+import type {
+  GroupMemberTicketDelivery,
+  MessageRelayStatus,
+  NostrEventEntry,
+  ChatGroupEpochKey
+} from 'src/types/chat';
 import type {
   ContactGroupMember,
   ContactMetadata,
   ContactRecord,
   ContactRelay
 } from 'src/types/contact';
-import type { ChatGroupEpochKey } from 'src/types/chat';
 import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
+import { normalizeGroupMemberTicketDeliveries } from 'src/utils/groupMemberTicketDelivery';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 type ProfileTab = 'profile' | 'members' | 'epochs' | 'relays';
@@ -856,6 +947,20 @@ type PubkeyDisplayFormat = 'hex' | 'npub';
 interface PendingGroupMemberChange {
   action: PendingGroupMemberChangeAction;
   member: GroupMemberDraft;
+}
+
+interface GroupMemberTicketStatusListItem {
+  key: string;
+  relayUrl: string;
+  detail?: string;
+  status: 'published' | 'failed' | 'pending';
+  retryable: boolean;
+  dotClass: string;
+}
+
+interface SelectedGroupMemberTicketStatus {
+  delivery: GroupMemberTicketDelivery;
+  memberLabel: string;
 }
 
 interface Props {
@@ -916,8 +1021,12 @@ const groupMembers = ref<GroupMemberDraft[]>([]);
 const pendingGroupMemberChanges = ref<PendingGroupMemberChange[]>([]);
 const groupRelayEntries = ref<ContactRelay[]>([]);
 const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
+const groupMemberTicketEventsById = ref<Record<string, NostrEventEntry | null>>({});
+const selectedGroupMemberTicketStatus = ref<SelectedGroupMemberTicketStatus | null>(null);
+const retryingGroupMemberTicketRelayKeys = ref<string[]>([]);
 let lookupRequestId = 0;
 let groupOwnerLookupRequestId = 0;
+let groupMemberTicketEventsRequestId = 0;
 
 const relayList = computed(() => uniqueRelays(localProfile.relays));
 const normalizedDisplayPubkey = computed(() => normalizePubkeyInput(localPubkey.value));
@@ -1042,6 +1151,53 @@ const currentEpochPublicKey = computed(() => {
 
   return groupEpochRows.value[0]?.epoch_public_key ?? '';
 });
+const groupMemberTicketDeliveries = computed(() => {
+  return normalizeGroupMemberTicketDeliveries(
+    currentGroupChat.value?.meta?.group_member_ticket_deliveries
+  );
+});
+const groupMemberTicketDeliverySignature = computed(() => {
+  return groupMemberTicketDeliveries.value
+    .map((delivery) => {
+      return [
+        delivery.member_public_key,
+        delivery.epoch_number,
+        delivery.event_id,
+        delivery.created_at
+      ].join(':');
+    })
+    .join('|');
+});
+const latestGroupMemberTicketDeliveryByMember = computed(() => {
+  const deliveriesByMember = new Map<string, GroupMemberTicketDelivery>();
+
+  for (const delivery of groupMemberTicketDeliveries.value) {
+    if (!deliveriesByMember.has(delivery.member_public_key)) {
+      deliveriesByMember.set(delivery.member_public_key, delivery);
+    }
+  }
+
+  return deliveriesByMember;
+});
+const selectedGroupMemberTicketRelayStatuses = computed(() => {
+  const delivery = selectedGroupMemberTicketStatus.value?.delivery;
+  if (!delivery) {
+    return [] as MessageRelayStatus[];
+  }
+
+  return groupMemberTicketEventsById.value[delivery.event_id]?.relay_statuses ?? [];
+});
+const selectedGroupMemberTicketStatusItems = computed<GroupMemberTicketStatusListItem[]>(() => {
+  return buildGroupMemberTicketStatusItems(selectedGroupMemberTicketRelayStatuses.value);
+});
+const selectedGroupMemberTicketStatusTitle = computed(() => {
+  const selectedStatus = selectedGroupMemberTicketStatus.value;
+  if (!selectedStatus) {
+    return 'Relay Status';
+  }
+
+  return `${selectedStatus.memberLabel} · Epoch ${selectedStatus.delivery.epoch_number}`;
+});
 
 const normalizedHeaderPubkey = computed(() => localPubkey.value.trim());
 
@@ -1137,6 +1293,14 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => groupMemberTicketDeliverySignature.value,
+  () => {
+    void loadGroupMemberTicketEvents();
+  },
+  { immediate: true }
+);
+
 function normalizeGroupEpochRows(value: unknown): ChatGroupEpochKey[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1194,6 +1358,252 @@ function formatEpochInvitationDate(value: string | undefined): string {
     hour: '2-digit',
     minute: '2-digit'
   }).format(parsedDate);
+}
+
+function memberLatestGroupTicketDelivery(
+  member: GroupMemberDraft
+): GroupMemberTicketDelivery | null {
+  return latestGroupMemberTicketDeliveryByMember.value.get(
+    member.public_key.trim().toLowerCase()
+  ) ?? null;
+}
+
+function memberLatestGroupTicketRelayStatuses(member: GroupMemberDraft): MessageRelayStatus[] {
+  const delivery = memberLatestGroupTicketDelivery(member);
+  if (!delivery) {
+    return [];
+  }
+
+  return groupMemberTicketEventsById.value[delivery.event_id]?.relay_statuses ?? [];
+}
+
+function hasMemberLatestGroupTicketStatus(member: GroupMemberDraft): boolean {
+  return memberLatestGroupTicketRelayStatuses(member).length > 0;
+}
+
+function memberLatestGroupTicketEpochLabel(member: GroupMemberDraft): string {
+  const delivery = memberLatestGroupTicketDelivery(member);
+  return delivery ? `Epoch ${delivery.epoch_number}` : '';
+}
+
+function groupMemberTicketStatusDotClass(
+  status: GroupMemberTicketStatusListItem['status']
+): string {
+  switch (status) {
+    case 'published':
+      return 'profile-member-delivery__status-dot--green';
+    case 'failed':
+      return 'profile-member-delivery__status-dot--red';
+    case 'pending':
+    default:
+      return 'profile-member-delivery__status-dot--gray';
+  }
+}
+
+function groupMemberTicketStatusSegmentClass(
+  status: GroupMemberTicketStatusListItem['status']
+): string {
+  switch (status) {
+    case 'published':
+      return 'profile-member-delivery__status-segment--green';
+    case 'failed':
+      return 'profile-member-delivery__status-segment--red';
+    case 'pending':
+    default:
+      return 'profile-member-delivery__status-segment--gray';
+  }
+}
+
+function buildGroupMemberTicketStatusItems(
+  relayStatuses: MessageRelayStatus[]
+): GroupMemberTicketStatusListItem[] {
+  const statusPriority: Record<GroupMemberTicketStatusListItem['status'], number> = {
+    published: 0,
+    failed: 1,
+    pending: 2
+  };
+
+  return relayStatuses
+    .filter((relayStatus) => {
+      return (
+        relayStatus.direction === 'outbound' &&
+        relayStatus.scope === 'recipient' &&
+        (relayStatus.status === 'published' ||
+          relayStatus.status === 'failed' ||
+          relayStatus.status === 'pending')
+      );
+    })
+    .slice()
+    .sort((first, second) => {
+      const byStatus = statusPriority[first.status] - statusPriority[second.status];
+      if (byStatus !== 0) {
+        return byStatus;
+      }
+
+      return first.relay_url.localeCompare(second.relay_url);
+    })
+    .map((relayStatus) => ({
+      key: `${relayStatus.status}-${relayStatus.relay_url}`,
+      relayUrl: relayStatus.relay_url,
+      detail: relayStatus.detail,
+      status: relayStatus.status,
+      retryable: relayStatus.status === 'failed',
+      dotClass: groupMemberTicketStatusDotClass(relayStatus.status)
+    }));
+}
+
+function memberLatestGroupTicketStatusSegments(member: GroupMemberDraft): Array<{
+  key: GroupMemberTicketStatusListItem['status'];
+  className: string;
+  weight: number;
+}> {
+  const relayStatuses = memberLatestGroupTicketRelayStatuses(member);
+  const published = relayStatuses.filter((relayStatus) => {
+    return relayStatus.direction === 'outbound' &&
+      relayStatus.scope === 'recipient' &&
+      relayStatus.status === 'published';
+  }).length;
+  const failed = relayStatuses.filter((relayStatus) => {
+    return relayStatus.direction === 'outbound' &&
+      relayStatus.scope === 'recipient' &&
+      relayStatus.status === 'failed';
+  }).length;
+  const pending = relayStatuses.filter((relayStatus) => {
+    return relayStatus.direction === 'outbound' &&
+      relayStatus.scope === 'recipient' &&
+      relayStatus.status === 'pending';
+  }).length;
+
+  return [
+    {
+      key: 'published',
+      className: groupMemberTicketStatusSegmentClass('published'),
+      weight: published
+    },
+    {
+      key: 'failed',
+      className: groupMemberTicketStatusSegmentClass('failed'),
+      weight: failed
+    },
+    {
+      key: 'pending',
+      className: groupMemberTicketStatusSegmentClass('pending'),
+      weight: pending
+    }
+  ].filter((segment) => segment.weight > 0);
+}
+
+async function loadGroupMemberTicketEvents(): Promise<void> {
+  const requestId = ++groupMemberTicketEventsRequestId;
+  const deliveries = groupMemberTicketDeliveries.value;
+  if (deliveries.length === 0) {
+    groupMemberTicketEventsById.value = {};
+    return;
+  }
+
+  try {
+    await nostrEventDataService.init();
+    const eventIds = deliveries.map((delivery) => delivery.event_id);
+    const eventsById = await nostrEventDataService.getEventsByIds(eventIds);
+    if (requestId !== groupMemberTicketEventsRequestId) {
+      return;
+    }
+
+    groupMemberTicketEventsById.value = Object.fromEntries(
+      eventIds.map((eventId) => [eventId, eventsById.get(eventId) ?? null])
+    );
+  } catch (error) {
+    if (requestId !== groupMemberTicketEventsRequestId) {
+      return;
+    }
+
+    console.warn('Failed to load group member ticket relay statuses', error);
+    groupMemberTicketEventsById.value = {};
+  }
+}
+
+async function refreshGroupMemberTicketEvent(eventId: string): Promise<void> {
+  const normalizedEventId = eventId.trim().toLowerCase();
+  if (!normalizedEventId) {
+    return;
+  }
+
+  await nostrEventDataService.init();
+  const eventEntry = await nostrEventDataService.getEventById(normalizedEventId);
+  groupMemberTicketEventsById.value = {
+    ...groupMemberTicketEventsById.value,
+    [normalizedEventId]: eventEntry
+  };
+}
+
+function openGroupMemberTicketStatus(member: GroupMemberDraft): void {
+  const delivery = memberLatestGroupTicketDelivery(member);
+  if (!delivery) {
+    return;
+  }
+
+  selectedGroupMemberTicketStatus.value = {
+    delivery,
+    memberLabel: memberListTitle(member)
+  };
+}
+
+function closeGroupMemberTicketStatusDialog(isOpen = false): void {
+  if (isOpen) {
+    return;
+  }
+
+  selectedGroupMemberTicketStatus.value = null;
+}
+
+function retryingGroupMemberTicketRelayKey(eventId: string, relayUrl: string): string {
+  return `${eventId.trim().toLowerCase()}|${relayUrl.trim()}`;
+}
+
+function isRetryingGroupMemberTicketRelay(item: GroupMemberTicketStatusListItem): boolean {
+  const eventId = selectedGroupMemberTicketStatus.value?.delivery.event_id ?? '';
+  return retryingGroupMemberTicketRelayKeys.value.includes(
+    retryingGroupMemberTicketRelayKey(eventId, item.relayUrl)
+  );
+}
+
+async function retrySelectedGroupMemberTicketRelay(
+  item: GroupMemberTicketStatusListItem
+): Promise<void> {
+  const selectedStatus = selectedGroupMemberTicketStatus.value;
+  if (!selectedStatus || !item.retryable) {
+    return;
+  }
+
+  const retryKey = retryingGroupMemberTicketRelayKey(
+    selectedStatus.delivery.event_id,
+    item.relayUrl
+  );
+  if (retryingGroupMemberTicketRelayKeys.value.includes(retryKey)) {
+    return;
+  }
+
+  retryingGroupMemberTicketRelayKeys.value = [
+    ...retryingGroupMemberTicketRelayKeys.value,
+    retryKey
+  ];
+
+  try {
+    await nostrStore.retryGroupEpochTicketRelay(
+      selectedStatus.delivery.event_id,
+      item.relayUrl
+    );
+    await refreshGroupMemberTicketEvent(selectedStatus.delivery.event_id);
+  } catch (error) {
+    reportUiError(
+      'Failed to retry group member ticket relay',
+      error,
+      'Failed to retry relay.'
+    );
+  } finally {
+    retryingGroupMemberTicketRelayKeys.value =
+      retryingGroupMemberTicketRelayKeys.value.filter((key) => key !== retryKey);
+  }
 }
 
 function cloneProfile(value: ContactProfileForm): ContactProfileForm {
@@ -1908,6 +2318,8 @@ function resetMembersEditor(): void {
   groupOwnerMember.value = null;
   pendingGroupMemberChanges.value = [];
   refreshingMemberPubkeys.value = {};
+  selectedGroupMemberTicketStatus.value = null;
+  retryingGroupMemberTicketRelayKeys.value = [];
 }
 
 function isMemberRefreshing(pubkey: string): boolean {
@@ -2614,6 +3026,130 @@ body.body--dark .profile-header__action {
 .profile-members-list__caption {
   word-break: break-word;
   color: var(--tg-text-secondary);
+}
+
+.profile-member-delivery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  min-width: 0;
+}
+
+.profile-member-delivery__epoch {
+  flex-shrink: 0;
+}
+
+.profile-member-delivery__status-hitbox {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.profile-member-delivery__status-hitbox:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--q-primary) 58%, transparent);
+  outline-offset: 3px;
+  border-radius: 999px;
+}
+
+.profile-member-delivery__status {
+  display: inline-flex;
+  align-items: center;
+  width: 28px;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--tg-text-secondary) 16%, transparent);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.profile-member-delivery__status-segment {
+  height: 100%;
+}
+
+.profile-member-delivery__status-segment--green {
+  background: #27c281;
+}
+
+.profile-member-delivery__status-segment--red {
+  background: #f05656;
+}
+
+.profile-member-delivery__status-segment--gray {
+  background: color-mix(in srgb, var(--tg-text-secondary) 45%, transparent);
+}
+
+.profile-member-delivery__dialog-empty {
+  color: var(--tg-text-secondary);
+}
+
+.profile-member-delivery__dialog-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.profile-member-delivery__dialog-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.profile-member-delivery__dialog-item-main {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.profile-member-delivery__status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.profile-member-delivery__status-dot--green {
+  background: #27c281;
+}
+
+.profile-member-delivery__status-dot--red {
+  background: #f05656;
+}
+
+.profile-member-delivery__status-dot--gray {
+  background: color-mix(in srgb, var(--tg-text-secondary) 50%, transparent);
+}
+
+.profile-member-delivery__dialog-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.profile-member-delivery__dialog-relay {
+  word-break: break-word;
+  color: var(--tg-text);
+}
+
+.profile-member-delivery__dialog-detail {
+  word-break: break-word;
+  color: var(--tg-text-secondary);
+  font-size: 0.84rem;
+}
+
+.profile-member-delivery__dialog-retry {
+  flex-shrink: 0;
 }
 
 .profile-members-list__actions {

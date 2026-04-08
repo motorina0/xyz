@@ -90,6 +90,19 @@ test('group owner can create a group, invite a member, and exchange messages bot
     });
 
     await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
+    const invitedMemberRow = alice.page
+      .locator('.profile-members-list .q-item')
+      .filter({ hasText: bob.session.publicKey.slice(0, 32) })
+      .first();
+    await expect(invitedMemberRow.getByTestId('group-member-ticket-epoch-badge')).toContainText('Epoch 0');
+    await expect(invitedMemberRow.getByTestId('group-member-ticket-status')).toBeVisible();
+    await invitedMemberRow.getByTestId('group-member-ticket-status').click();
+    await expect(
+      alice.page.locator('.profile-member-delivery__dialog-relay').filter({
+        hasText: E2E_RELAY_URL
+      })
+    ).toBeVisible();
+    await alice.page.keyboard.press('Escape');
 
     await openRequests(bob.page);
     await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');

@@ -10,6 +10,13 @@ export interface ChatGroupEpochKey {
   invitation_created_at?: string;
 }
 
+export interface GroupMemberTicketDelivery {
+  member_public_key: string;
+  epoch_number: number;
+  event_id: string;
+  created_at: string;
+}
+
 export interface ChatMetadata {
   avatar?: string;
   picture?: string;
@@ -26,6 +33,7 @@ export interface ChatMetadata {
   last_incoming_message_at?: string;
   last_outgoing_message_at?: string;
   group_epoch_keys?: ChatGroupEpochKey[];
+  group_member_ticket_deliveries?: GroupMemberTicketDelivery[];
   current_epoch_public_key?: string;
   current_epoch_private_key_encrypted?: string;
   epoch_public_key?: string;
