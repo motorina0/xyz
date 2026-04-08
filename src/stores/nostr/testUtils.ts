@@ -1,0 +1,53 @@
+import {
+  beginStartupStepSnapshotValue,
+  completeStartupStepSnapshotValue,
+  createInitialStartupStepSnapshots,
+  failStartupStepSnapshotValue,
+  resetStartupStepSnapshotsValue
+} from 'src/stores/nostr/startupState';
+import {
+  buildAvatarFallbackValue,
+  buildGroupInviteRequestPlanValue,
+  buildIdentifierFallbacksValue,
+  buildUpdatedContactMetaValue,
+  contactMetadataEqualValue,
+  contactRelayListsEqualValue,
+  findConflictingKnownGroupEpochNumberValue,
+  findHigherKnownGroupEpochConflictValue,
+  normalizeChatGroupEpochKeysValue,
+  normalizeRelayStatusUrlsValue,
+  normalizeWritableRelayUrlsValue,
+  relayEntriesFromRelayListValue,
+  resolveCurrentGroupChatEpochEntryValue,
+  resolveGroupChatEpochEntriesValue,
+  resolveGroupDisplayNameValue,
+  resolveGroupPublishRelayUrlsValue,
+  resolveIncomingChatInboxStateValue,
+  shouldPreserveExistingGroupRelaysValue
+} from 'src/stores/nostr/valueUtils';
+
+export const __nostrStoreTestUtils = {
+  beginStartupStepSnapshot: beginStartupStepSnapshotValue,
+  buildAvatarFallback: buildAvatarFallbackValue,
+  buildIdentifierFallbacks: buildIdentifierFallbacksValue,
+  buildUpdatedContactMeta: buildUpdatedContactMetaValue,
+  buildGroupInviteRequestPlan: buildGroupInviteRequestPlanValue,
+  completeStartupStepSnapshot: completeStartupStepSnapshotValue,
+  contactMetadataEqual: contactMetadataEqualValue,
+  contactRelayListsEqual: contactRelayListsEqualValue,
+  createInitialStartupStepSnapshots,
+  failStartupStepSnapshot: failStartupStepSnapshotValue,
+  findConflictingKnownGroupEpochNumber: findConflictingKnownGroupEpochNumberValue,
+  findHigherKnownGroupEpochConflict: findHigherKnownGroupEpochConflictValue,
+  normalizeChatGroupEpochKeys: normalizeChatGroupEpochKeysValue,
+  normalizeRelayStatusUrls: normalizeRelayStatusUrlsValue,
+  normalizeWritableRelayUrls: normalizeWritableRelayUrlsValue,
+  relayEntriesFromRelayList: relayEntriesFromRelayListValue,
+  resetStartupStepSnapshots: resetStartupStepSnapshotsValue,
+  resolveGroupDisplayName: resolveGroupDisplayNameValue,
+  resolveGroupPublishRelayUrls: resolveGroupPublishRelayUrlsValue,
+  resolveCurrentGroupChatEpochEntry: resolveCurrentGroupChatEpochEntryValue,
+  resolveGroupChatEpochEntries: resolveGroupChatEpochEntriesValue,
+  resolveIncomingChatInboxState: resolveIncomingChatInboxStateValue,
+  shouldPreserveExistingGroupRelays: shouldPreserveExistingGroupRelaysValue
+};

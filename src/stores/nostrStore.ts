@@ -29,11 +29,6 @@ import NDK, {
 import { getEmojiEntryByValue } from 'src/data/topEmojis';
 import { chatDataService, type ChatRow } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import {
-  developerTraceDataService,
-  type DeveloperTraceEntry,
-  type DeveloperTraceLevel
-} from 'src/services/developerTraceDataService';
 import { imageCacheService } from 'src/services/imageCacheService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
@@ -54,6 +49,70 @@ import {
   type StartupStepStatus
 } from 'src/stores/nostr/startupState';
 import {
+  AUTH_METHOD_STORAGE_KEY,
+  BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS,
+  CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY,
+  CHAT_REQUEST_MESSAGE_META_KEY,
+  CHAT_REQUEST_TYPE_META_KEY,
+  CONTACT_CURSOR_FETCH_BATCH_SIZE,
+  CONTACT_CURSOR_PUBLISH_DELAY_MS,
+  CONTACT_CURSOR_VERSION,
+  DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS,
+  DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
+  EVENT_FILTER_LOOKBACK_SECONDS,
+  EVENT_SINCE_STORAGE_KEY,
+  GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY,
+  GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY,
+  GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY,
+  GROUP_EPOCH_KEYS_CHAT_META_KEY,
+  GROUP_IDENTITY_SECRET_TAG,
+  GROUP_IDENTITY_SECRET_VERSION,
+  GROUP_INVITE_REQUEST_MESSAGE,
+  GROUP_INVITE_REQUEST_TYPE,
+  GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY,
+  GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY,
+  GROUP_PRIVATE_KEY_CONTACT_META_KEY,
+  INITIAL_CONNECT_TIMEOUT_MS,
+  INVITATION_PROOF_TAG,
+  LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
+  PRIVATE_CONTACT_LIST_D_TAG,
+  PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
+  PRIVATE_CONTACT_LIST_TITLE,
+  PRIVATE_KEY_STORAGE_KEY,
+  PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS,
+  PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS,
+  PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
+  PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY,
+  PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS,
+  PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
+  PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY,
+  PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS,
+  PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+  PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS,
+  PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS,
+  PRIVATE_PREFERENCES_D_TAG,
+  PRIVATE_PREFERENCES_KIND,
+  PRIVATE_PREFERENCES_STORAGE_KEY,
+  PUBLIC_KEY_STORAGE_KEY,
+  RELAY_CONNECT_FAILURE_COOLDOWN_MS,
+  RELAY_STORAGE_KEYS,
+  STARTUP_STEP_MIN_PROGRESS_MS,
+  UNKNOWN_REPLY_MESSAGE_TEXT
+} from 'src/stores/nostr/constants';
+import {
+  createDeveloperTraceRuntime,
+  readDeveloperDiagnosticsEnabledFromStorage
+} from 'src/stores/nostr/developerTrace';
+import { createDeveloperDiagnosticsRuntime } from 'src/stores/nostr/developerDiagnostics';
+import { createContactProfileRuntime } from 'src/stores/nostr/contactProfileRuntime';
+import { createContactRelayRuntime } from 'src/stores/nostr/contactRelayRuntime';
+import { hasStorage, isPlainRecord } from 'src/stores/nostr/shared';
+import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
+import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
+import { createStartupRuntime } from 'src/stores/nostr/startupRuntime';
+import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContactStateRuntime';
+import { createUserActions } from 'src/stores/nostr/userActions';
+import {
   buildAvatarFallbackValue,
   buildGroupInviteRequestPlanValue,
   buildIdentifierFallbacksValue,
@@ -73,6 +132,52 @@ import {
   resolveIncomingChatInboxStateValue,
   shouldPreserveExistingGroupRelaysValue
 } from 'src/stores/nostr/valueUtils';
+import { __nostrStoreTestUtils } from 'src/stores/nostr/testUtils';
+import type {
+  AuthMethod,
+  ContactCursorContent,
+  ContactCursorState,
+  ContactProfileEventState,
+  ContactRefreshLifecycle,
+  ContactRelayListEventState,
+  ContactRelayListFetchResult,
+  CreateGroupChatInput,
+  CreateGroupChatResult,
+  DeveloperDiagnosticsSnapshot,
+  DeveloperGroupMessageSubscriptionSnapshot,
+  DeveloperPendingDeletionSnapshot,
+  DeveloperPendingQueueRefreshSummary,
+  DeveloperPendingReactionSnapshot,
+  DeveloperPrivateMessagesSubscriptionSnapshot,
+  DeveloperRelayRow,
+  DeveloperRelaySnapshot,
+  DeveloperSessionSnapshot,
+  DeveloperTraceEntry,
+  DeveloperTraceLevel,
+  GiftWrappedRumorPublishResult,
+  GroupIdentitySecretContent,
+  MessageRow,
+  NostrIdentifierResolutionResult,
+  NostrNip05DataResult,
+  PendingIncomingDeletion,
+  PendingIncomingReaction,
+  PrivateMessagesBackfillState,
+  PrivatePreferences,
+  PublishGroupMemberChangesResult,
+  PublishUserMetadataInput,
+  QueuePrivateMessageUiRefreshOptions,
+  RelayConnectionState,
+  RelayListMetadataEntry,
+  RelayPublishStatusesResult,
+  RelaySaveStatus,
+  RotateGroupEpochResult,
+  SendDirectMessageDeletionOptions,
+  SendDirectMessageOptions,
+  SendDirectMessageReactionOptions,
+  SendGiftWrappedRumorOptions,
+  SubscribePrivateMessagesOptions,
+  SubscriptionLogName
+} from 'src/stores/nostr/types';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useRelayStore } from 'src/stores/relayStore';
@@ -105,412 +210,36 @@ import {
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 
 export type {
-  DeveloperTraceEntry,
-  DeveloperTraceLevel
-} from 'src/services/developerTraceDataService';
-export type {
   StartupDisplaySnapshot,
   StartupStepId,
   StartupStepSnapshot,
   StartupStepStatus
 } from 'src/stores/nostr/startupState';
-
-export interface NostrIdentifierResolutionResult {
-  isValid: boolean;
-  normalizedPubkey: string | null;
-  resolvedName: string | null;
-  relays: string[];
-  identifierType: 'pubkey' | 'nip05' | null;
-  error: 'invalid' | 'nip05_unresolved' | null;
-}
+export type {
+  AuthMethod,
+  CreateGroupChatResult,
+  DeveloperDiagnosticsSnapshot,
+  DeveloperPendingQueueRefreshSummary,
+  DeveloperTraceEntry,
+  DeveloperTraceLevel,
+  NostrIdentifierResolutionResult,
+  NostrNip05DataResult,
+  PublishGroupMemberChangesResult,
+  PublishUserMetadataInput,
+  RelayConnectionState,
+  RelaySaveStatus,
+  RotateGroupEpochResult
+} from 'src/stores/nostr/types';
 
 export type NostrNpubValidationResult = NpubValidationResult;
 export type NostrNsecValidationResult = NsecValidationResult;
 export type NostrPrivateKeyValidationResult = PrivateKeyValidationResult;
-
-export interface NostrNip05DataResult {
-  isValid: boolean;
-  normalizedPubkey: string | null;
-  name: string | null;
-  relays: string[];
-  error: 'invalid' | 'nip05_unresolved' | null;
-}
-
-export type RelayConnectionState = 'connected' | 'issue';
-
-export interface PublishUserMetadataInput {
-  [key: string]: unknown;
-  name?: string;
-  about?: string;
-  picture?: string;
-  display_name?: string;
-  website?: string;
-  banner?: string;
-  bot?: boolean;
-  group?: boolean;
-  birthday?: {
-    year?: number;
-    month?: number;
-    day?: number;
-  };
-}
-
-export interface RelayListMetadataEntry {
-  url: string;
-  read?: boolean;
-  write?: boolean;
-}
-
-export type AuthMethod = 'nsec' | 'nip07';
-
-interface SendGiftWrappedRumorOptions {
-  localMessageId?: number;
-  createdAt?: string;
-  publishSelfCopy?: boolean;
-}
-
-interface SendDirectMessageOptions extends SendGiftWrappedRumorOptions {
-  replyToEventId?: string | null;
-}
-
-interface SendDirectMessageReactionOptions {
-  createdAt?: string;
-  targetKind?: number;
-  publishSelfCopy?: boolean;
-}
-
-interface SendDirectMessageDeletionOptions {
-  createdAt?: string;
-  publishSelfCopy?: boolean;
-}
-
-interface RelayPublishStatusesResult {
-  relayStatuses: MessageRelayStatus[];
-  error: Error | null;
-}
-
-export interface RelaySaveStatus {
-  relayUrls: string[];
-  publishedRelayUrls: string[];
-  failedRelayUrls: string[];
-  errorMessage: string | null;
-}
-
-export interface CreateGroupChatResult {
-  groupPublicKey: string;
-  encryptedPrivateKey: string;
-  groupSecretSave: RelaySaveStatus;
-  contactListSyncError: string | null;
-}
-
-export interface PublishGroupMemberChangesResult {
-  epochNumber: number;
-  createdNewEpoch: boolean;
-  attemptedMemberCount: number;
-  deliveredMemberCount: number;
-  failedMemberPubkeys: string[];
-  publishedRelayUrls: string[];
-}
-
-export type RotateGroupEpochResult = PublishGroupMemberChangesResult;
-
-interface CreateGroupChatInput {
-  name?: string;
-  about?: string;
-  relayUrls?: string[];
-}
-
-interface GiftWrappedRumorPublishResult {
-  giftWrapEvent: NostrEvent;
-  rumorEvent: NostrEvent | null;
-  rumorEventId: string | null;
-  relayStatuses: MessageRelayStatus[];
-}
-
-interface SubscribePrivateMessagesOptions {
-  restoreThrottleMs?: number;
-  seedRelayUrls?: string[];
-  sinceOverride?: number;
-  startupTrackStep?: boolean;
-}
-
-interface PrivateMessagesBackfillState {
-  pubkey: string;
-  nextSince: number;
-  nextUntil: number;
-  floorSince: number;
-  delayMs: number;
-  completed: boolean;
-}
-
-interface QueuePrivateMessageUiRefreshOptions {
-  throttleMs?: number;
-  reloadChats?: boolean;
-  reloadMessages?: boolean;
-}
-
-interface PendingIncomingReaction {
-  chatPublicKey: string;
-  targetAuthorPublicKey: string | null;
-  reaction: MessageReaction;
-}
-
-interface PendingIncomingDeletion {
-  deletionAuthorPublicKey: string;
-  deleteEventId: string | null;
-  deletedAt: string;
-  targetKind: number | null;
-}
-
-type SubscriptionLogName =
-  | 'contact-profile'
-  | 'contact-relay-list'
-  | 'my-relay-list'
-  | 'private-contact-list'
-  | 'private-messages';
-
-interface PrivatePreferences {
-  contactSecret: string;
-  [key: string]: unknown;
-}
-
-interface ContactCursorContent {
-  version: string;
-  last_seen_incoming_activity_at: string;
-  last_seen_incoming_activity_event_id: string | null;
-}
-
-interface ContactCursorState {
-  at: string;
-  eventId: string | null;
-}
-
-interface GroupIdentitySecretContent {
-  version: number;
-  group_pubkey: string;
-  group_privkey: string;
-  epoch_number?: number;
-  epoch_privkey?: string;
-  name?: string;
-  about?: string;
-}
-
-interface ContactRelayListFetchResult {
-  createdAt: number;
-  eventId: string;
-  relayEntries: ContactRelay[];
-}
-
-interface ContactRelayListEventState {
-  createdAt: number;
-  eventId: string;
-}
-
-interface ContactProfileEventState {
-  createdAt: number;
-  eventId: string;
-}
-
-export interface DeveloperRelaySnapshot {
-  present: boolean;
-  url: string | null;
-  connected: boolean;
-  status: number | null;
-  statusName: string | null;
-  attempts: number | null;
-  success: number | null;
-  connectedAt: number | null;
-  nextReconnectAt: number | null;
-  validationRatio: number | null;
-  lastDurationMs: number | null;
-}
-
-export interface DeveloperRelayRow extends DeveloperRelaySnapshot {
-  inReadSet: boolean;
-  inPublishSet: boolean;
-  inPrivateMessagesSubscription: boolean;
-  isConfigured: boolean;
-}
-
-export interface DeveloperPendingReactionSnapshot {
-  targetEventId: string;
-  count: number;
-  entries: Array<{
-    chatPublicKey: string;
-    targetAuthorPublicKey: string | null;
-    emoji: string;
-    reactorPublicKey: string;
-    createdAt: string;
-    eventId: string | null;
-  }>;
-}
-
-export interface DeveloperPendingDeletionSnapshot {
-  targetEventId: string;
-  count: number;
-  entries: Array<{
-    deletionAuthorPublicKey: string;
-    deleteEventId: string | null;
-    deletedAt: string;
-    targetKind: number | null;
-  }>;
-}
-
-export interface DeveloperPrivateMessagesSubscriptionSnapshot {
-  active: boolean;
-  signature: string | null;
-  relayUrls: string[];
-  relaySnapshots: DeveloperRelaySnapshot[];
-  since: number | null;
-  sinceIso: string | null;
-  restoreThrottleMs: number;
-  startedAt: string | null;
-  lastEventSeenAt: string | null;
-  lastEventId: string | null;
-  lastEventCreatedAt: number | null;
-  lastEventCreatedAtIso: string | null;
-  lastEoseAt: string | null;
-}
-
-export interface DeveloperGroupMessageSubscriptionSnapshot {
-  name: string;
-  pubkey: string;
-  epochPubkey: string;
-  epochNumber: number | null;
-  details: Record<string, unknown>;
-}
-
-export interface DeveloperSessionSnapshot {
-  loggedInPubkey: string | null;
-  authMethod: AuthMethod | null;
-  eventSince: number;
-  eventSinceIso: string | null;
-  filterSince: number;
-  filterSinceIso: string | null;
-  isRestoringStartupState: boolean;
-  hasNip07Extension: boolean;
-  appRelayUrls: string[];
-  myRelayEntries: ContactRelay[];
-  effectiveReadRelayUrls: string[];
-  effectivePublishRelayUrls: string[];
-  configuredRelayUrls: string[];
-}
-
-export interface DeveloperDiagnosticsSnapshot {
-  session: DeveloperSessionSnapshot;
-  privateMessagesSubscription: DeveloperPrivateMessagesSubscriptionSnapshot;
-  groupMessagesSubscription: DeveloperGroupMessageSubscriptionSnapshot[];
-  relayRows: DeveloperRelayRow[];
-  pendingReactions: DeveloperPendingReactionSnapshot[];
-  pendingDeletions: DeveloperPendingDeletionSnapshot[];
-}
-
-export interface DeveloperPendingQueueRefreshSummary {
-  initialTargetCount: number;
-  initialEntryCount: number;
-  remainingTargetCount: number;
-  remainingEntryCount: number;
-}
-
-interface ContactRefreshLifecycle {
-  refreshRelayList?: boolean;
-  onProfileFetchStart?: () => void;
-  onProfileFetchEnd?: (error: unknown | null) => void;
-  onRelayFetchStart?: () => void;
-  onRelayFetchEnd?: (error: unknown | null) => void;
-}
-
-const PRIVATE_KEY_STORAGE_KEY = 'nsec';
-const PUBLIC_KEY_STORAGE_KEY = 'npub';
-const AUTH_METHOD_STORAGE_KEY = 'auth-method';
-const EVENT_SINCE_STORAGE_KEY = 'nostr-event-since';
-const PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY = 'nostr-private-messages-last-received-event';
-const PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY = 'nostr-private-messages-backfill-state';
-const PRIVATE_PREFERENCES_STORAGE_KEY = 'privatePreferences';
-const DEVELOPER_DIAGNOSTICS_STORAGE_KEY = 'developer-diagnostics-enabled';
-const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
-const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
-const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
-const PRIVATE_PREFERENCES_KIND = 30078;
-const PRIVATE_PREFERENCES_D_TAG = '1';
-const GROUP_IDENTITY_SECRET_TAG = 'group';
-const GROUP_IDENTITY_SECRET_VERSION = 1;
-const GROUP_PRIVATE_KEY_CONTACT_META_KEY = 'group_private_key_encrypted';
-const GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY = 'owner_public_key';
-const PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY = 'private_contact_list_member';
-const GROUP_EPOCH_KEYS_CHAT_META_KEY = 'group_epoch_keys';
-const GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY = 'group_member_ticket_deliveries';
-const GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY = 'current_epoch_public_key';
-const GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY = 'current_epoch_private_key_encrypted';
-const GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY = 'epoch_public_key';
-const CHAT_REQUEST_TYPE_META_KEY = 'request_type';
-const CHAT_REQUEST_MESSAGE_META_KEY = 'request_message';
-const CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY = 'last_incoming_message_at';
-const GROUP_INVITE_REQUEST_TYPE = 'group_invite';
-const GROUP_INVITE_REQUEST_MESSAGE = 'This is an invitation to a group.';
-const INVITATION_PROOF_TAG = 'invitation_proof';
-const CONTACT_CURSOR_VERSION = '0.1';
-const CONTACT_CURSOR_PUBLISH_DELAY_MS = 5000;
-const CONTACT_CURSOR_FETCH_BATCH_SIZE = 100;
-const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
-const PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS = 2000;
-const PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS = 2 * 24 * 60 * 60;
-const PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS = 7 * 24 * 60 * 60;
-const PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS = 90 * 24 * 60 * 60;
-const PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS = 3000;
-const PRIVATE_MESSAGES_BACKFILL_DELAY_STEP_MS = 1000;
-const PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS = 10 * 1000;
-const PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS = 10 * 1000;
-const PRIVATE_MESSAGES_WATCHDOG_RECOVERY_COOLDOWN_MS = 15 * 1000;
-const DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS = 90 * 24 * 60 * 60;
-const EVENT_FILTER_LOOKBACK_SECONDS = 2 * 60 * 60;
-const UNKNOWN_REPLY_MESSAGE_TEXT = 'Unkown message.';
-const STARTUP_STEP_MIN_PROGRESS_MS = 500;
-
-function hasStorage(): boolean {
-  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
-}
-
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-type MessageRow = Awaited<ReturnType<typeof chatDataService.listMessages>>[number];
-
-export const __nostrStoreTestUtils = {
-  beginStartupStepSnapshot: beginStartupStepSnapshotValue,
-  buildAvatarFallback: buildAvatarFallbackValue,
-  buildIdentifierFallbacks: buildIdentifierFallbacksValue,
-  buildUpdatedContactMeta: buildUpdatedContactMetaValue,
-  buildGroupInviteRequestPlan: buildGroupInviteRequestPlanValue,
-  completeStartupStepSnapshot: completeStartupStepSnapshotValue,
-  contactMetadataEqual: contactMetadataEqualValue,
-  contactRelayListsEqual: contactRelayListsEqualValue,
-  createInitialStartupStepSnapshots,
-  failStartupStepSnapshot: failStartupStepSnapshotValue,
-  findConflictingKnownGroupEpochNumber: findConflictingKnownGroupEpochNumberValue,
-  findHigherKnownGroupEpochConflict: findHigherKnownGroupEpochConflictValue,
-  normalizeChatGroupEpochKeys: normalizeChatGroupEpochKeysValue,
-  normalizeRelayStatusUrls: normalizeRelayStatusUrlsValue,
-  normalizeWritableRelayUrls: normalizeWritableRelayUrlsValue,
-  relayEntriesFromRelayList: relayEntriesFromRelayListValue,
-  resetStartupStepSnapshots: resetStartupStepSnapshotsValue,
-  resolveGroupDisplayName: resolveGroupDisplayNameValue,
-  resolveGroupPublishRelayUrls: resolveGroupPublishRelayUrlsValue,
-  resolveCurrentGroupChatEpochEntry: resolveCurrentGroupChatEpochEntryValue,
-  resolveGroupChatEpochEntries: resolveGroupChatEpochEntriesValue,
-  resolveIncomingChatInboxState: resolveIncomingChatInboxStateValue,
-  shouldPreserveExistingGroupRelays: shouldPreserveExistingGroupRelaysValue
-};
+export { __nostrStoreTestUtils } from 'src/stores/nostr/testUtils';
 
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
   const chatStore = useChatStore();
   const relayStore = useRelayStore();
-  const INITIAL_CONNECT_TIMEOUT_MS = 3000;
-  const RELAY_CONNECT_FAILURE_COOLDOWN_MS = 10 * 1000;
-  const BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS = 5 * 1000;
-  const PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS = 250;
   const relayStatusVersion = ref(0);
   const contactListVersion = ref(0);
   const isRestoringStartupState = ref(false);
@@ -522,7 +251,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     status: null,
     showProgress: false
   });
-  const developerDiagnosticsEnabled = ref(readDeveloperDiagnosticsEnabled());
+  const developerDiagnosticsEnabled = ref(
+    readDeveloperDiagnosticsEnabledFromStorage(DEVELOPER_DIAGNOSTICS_STORAGE_KEY)
+  );
   const developerDiagnosticsVersion = ref(0);
   const developerTraceVersion = ref(0);
   const privateMessagesSubscriptionRelayUrls = ref<string[]>([]);
@@ -534,7 +265,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
   let cachedSigner: NDKSigner | null = null;
   let cachedSignerSessionKey: string | null = null;
-  let developerTraceCounter = 0;
   let nostrSubscriptionRequestCounter = 0;
   const configuredRelayUrls = new Set<string>();
   const relayConnectPromises = new Map<string, Promise<void>>();
@@ -547,9 +277,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let restoreMyRelayListPromise: Promise<void> | null = null;
   let syncLoggedInContactProfilePromise: Promise<void> | null = null;
   let restorePrivateContactListPromise: Promise<void> | null = null;
-  let restorePrivatePreferencesPromise: Promise<void> | null = null;
-  let restoreGroupIdentitySecretsPromise: Promise<void> | null = null;
-  let restoreContactCursorStatePromise: Promise<void> | null = null;
   let syncRecentChatContactsPromise: Promise<void> | null = null;
   const groupContactRefreshPromises = new Map<string, Promise<ContactRecord | null>>();
   const backgroundGroupContactRefreshStartedAt = new Map<string, number>();
@@ -557,22 +284,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const pendingIncomingDeletions = new Map<string, PendingIncomingDeletion[]>();
   const pendingContactCursorPublishTimers = new Map<string, ReturnType<typeof globalThis.setTimeout>>();
   const pendingContactCursorPublishStates = new Map<string, ContactCursorState>();
+  const restoreRuntimeState = {
+    restoreContactCursorStatePromise: null as Promise<void> | null,
+    restoreGroupIdentitySecretsPromise: null as Promise<void> | null,
+    restorePrivatePreferencesPromise: null as Promise<void> | null
+  };
   let contactProfileSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let contactProfileSubscriptionSignature = '';
   let contactProfileApplyQueue = Promise.resolve();
-  const lastContactProfileEventStateByPubkey = new Map<string, ContactProfileEventState>();
   let contactRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let contactRelayListSubscriptionSignature = '';
   let contactRelayListApplyQueue = Promise.resolve();
-  const lastContactRelayListEventStateByPubkey = new Map<string, ContactRelayListEventState>();
   let myRelayListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let myRelayListSubscriptionSignature = '';
   let myRelayListApplyQueue = Promise.resolve();
   let privateContactListSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let privateContactListSubscriptionSignature = '';
   let privateContactListApplyQueue = Promise.resolve();
-  let lastPrivateContactListCreatedAt = 0;
-  let lastPrivateContactListEventId = '';
   let privateMessagesSubscription: ReturnType<typeof ndk.subscribe> | null = null;
   let privateMessagesSubscriptionSignature = '';
   let privateMessagesBackfillSubscription: ReturnType<typeof ndk.subscribe> | null = null;
@@ -607,10 +335,101 @@ export const useNostrStore = defineStore('nostrStore', () => {
   let shouldRunChatChecksForAllChats = false;
   const pendingChatCheckChatIds = new Set<string>();
   const authenticatedRelayUrls = new Set<string>();
-  let pendingEventSinceUpdate = 0;
-  let startupDisplayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-  let startupDisplayToken = 0;
-  let startupDisplayShownAt = 0;
+  const pendingEventSinceState = {
+    pendingEventSinceUpdate: 0
+  };
+  const startupRuntimeState = {
+    startupDisplayShownAt: 0,
+    startupDisplayTimer: null as ReturnType<typeof globalThis.setTimeout> | null,
+    startupDisplayToken: 0
+  };
+  const developerTraceState = {
+    developerTraceCounter: 0
+  };
+  const {
+    buildContactProfileEventState,
+    buildContactRelayListEventState,
+    markContactProfileEventApplied,
+    markContactRelayListEventApplied,
+    markPrivateContactListEventApplied,
+    pruneTrackedContactProfileEventState,
+    pruneTrackedContactRelayListEventState,
+    resetTrackedContactEventState,
+    shouldApplyContactProfileEvent,
+    shouldApplyContactRelayListEvent,
+    shouldApplyPrivateContactListEvent
+  } = createTrackedContactStateRuntime();
+  const {
+    beginStartupStep,
+    clearStartupDisplayTimer,
+    completeStartupStep,
+    createStartupBatchTracker,
+    failStartupStep,
+    getStartupStepSnapshot,
+    resetStartupStepTracking
+  } = createStartupRuntime({
+    startupDisplay,
+    startupState: startupRuntimeState,
+    startupSteps,
+    startupStepMinProgressMs: STARTUP_STEP_MIN_PROGRESS_MS
+  });
+  const {
+    bumpDeveloperDiagnosticsVersion,
+    bumpDeveloperTraceVersion,
+    clearDeveloperTraceEntries,
+    listDeveloperTraceEntries,
+    logDeveloperTrace,
+    setDeveloperDiagnosticsEnabled,
+    toOptionalIsoTimestampFromUnix
+  } = createDeveloperTraceRuntime({
+    developerDiagnosticsEnabled,
+    developerDiagnosticsStorageKey: DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
+    developerDiagnosticsVersion,
+    developerTraceState,
+    developerTraceVersion
+  });
+  const {
+    buildFreshPrivatePreferences,
+    clearPrivateMessagesBackfillState,
+    clearPrivatePreferencesStorage,
+    clearStoredPrivateMessagesLastReceivedCreatedAt,
+    decryptContactCursorContent,
+    decryptGroupIdentitySecretContent,
+    decryptPrivatePreferencesContent,
+    decryptPrivateStringContent,
+    encryptContactCursorContent,
+    encryptGroupIdentitySecretContent,
+    encryptPrivatePreferencesContent,
+    encryptPrivateStringContent,
+    ensureStoredEventSince,
+    flushPendingEventSinceUpdate,
+    getFilterSince,
+    getPrivateMessagesBackfillResumeState,
+    getPrivateMessagesEpochSwitchSince,
+    getPrivateMessagesStartupFloorSince,
+    getPrivateMessagesStartupLiveSince,
+    normalizeGroupIdentitySecretContent,
+    normalizeTimestamp,
+    readPrivateMessagesBackfillState,
+    readPrivatePreferencesFromStorage,
+    readStoredPrivateMessagesLastReceivedCreatedAt,
+    resetEventSinceForFreshLogin,
+    setStoredEventSince,
+    sha256Hex,
+    toComparableTimestamp,
+    updateStoredEventSinceFromCreatedAt,
+    updateStoredPrivateMessagesLastReceivedFromCreatedAt,
+    writePrivateMessagesBackfillState,
+    writePrivatePreferencesToStorage
+  } = createStorageSessionRuntime({
+    eventSince,
+    getDefaultEventSince,
+    getLoggedInSignerUser,
+    isRestoringStartupState,
+    ndk,
+    normalizeEventId,
+    pendingEventSinceState
+  });
 
   relayStore.init();
   ensurePrivateMessagesWatchdog();
@@ -625,158 +444,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   );
 
-  function clearStartupDisplayTimer(): void {
-    if (startupDisplayTimer !== null) {
-      globalThis.clearTimeout(startupDisplayTimer);
-      startupDisplayTimer = null;
-    }
-  }
-
-  function getStartupStepSnapshot(stepId: StartupStepId): StartupStepSnapshot {
-    const step = startupSteps.value.find((entry) => entry.id === stepId);
-    if (!step) {
-      throw new Error(`Unknown startup step: ${stepId}`);
-    }
-
-    return step;
-  }
-
-  function showStartupStepProgress(stepId: StartupStepId): void {
-    const step = getStartupStepSnapshot(stepId);
-    startupDisplayToken += 1;
-    startupDisplayShownAt = Date.now();
-    clearStartupDisplayTimer();
-    startupDisplay.value = {
-      stepId,
-      label: step.label,
-      status: 'in_progress',
-      showProgress: true
-    };
-  }
-
-  function finalizeStartupStepDisplay(stepId: StartupStepId, status: 'success' | 'error'): void {
-    const step = getStartupStepSnapshot(stepId);
-    if (startupDisplay.value.stepId !== stepId) {
-      return;
-    }
-
-    const displayToken = ++startupDisplayToken;
-    const applyFinalState = () => {
-      if (displayToken !== startupDisplayToken) {
-        return;
-      }
-
-      startupDisplay.value = {
-        stepId,
-        label: step.label,
-        status,
-        showProgress: false
-      };
-      startupDisplayTimer = null;
-    };
-
-    const elapsedMs = startupDisplayShownAt > 0 ? Date.now() - startupDisplayShownAt : 0;
-    const remainingProgressMs = Math.max(STARTUP_STEP_MIN_PROGRESS_MS - elapsedMs, 0);
-    clearStartupDisplayTimer();
-
-    if (remainingProgressMs > 0) {
-      startupDisplayTimer = globalThis.setTimeout(applyFinalState, remainingProgressMs);
-      return;
-    }
-
-    applyFinalState();
-  }
-
-  function beginStartupStep(stepId: StartupStepId): void {
-    const step = getStartupStepSnapshot(stepId);
-    const nextStep = beginStartupStepSnapshotValue(step, Date.now());
-    if (nextStep === step) {
-      return;
-    }
-    Object.assign(step, nextStep);
-    showStartupStepProgress(stepId);
-  }
-
-  function completeStartupStep(stepId: StartupStepId): void {
-    const step = getStartupStepSnapshot(stepId);
-    Object.assign(step, completeStartupStepSnapshotValue(step, Date.now()));
-    finalizeStartupStepDisplay(stepId, 'success');
-  }
-
-  function failStartupStep(stepId: StartupStepId, error: unknown): void {
-    const step = getStartupStepSnapshot(stepId);
-    Object.assign(step, failStartupStepSnapshotValue(step, error, Date.now()));
-    finalizeStartupStepDisplay(stepId, 'error');
-  }
-
-  function resetStartupStepTracking(): void {
-    clearStartupDisplayTimer();
-    startupDisplayToken += 1;
-    startupDisplayShownAt = 0;
-    startupSteps.value = resetStartupStepSnapshotsValue();
-    startupDisplay.value = {
-      stepId: null,
-      label: null,
-      status: null,
-      showProgress: false
-    };
-  }
-
-  function createStartupBatchTracker(stepId: StartupStepId): {
-    beginItem: () => void;
-    finishItem: (error?: unknown) => void;
-    seal: () => void;
-  } {
-    let started = false;
-    let sealed = false;
-    let inFlightCount = 0;
-
-    const maybeComplete = () => {
-      if (!sealed || inFlightCount > 0) {
-        return;
-      }
-
-      const step = getStartupStepSnapshot(stepId);
-      if (step.status === 'in_progress') {
-        completeStartupStep(stepId);
-      }
-    };
-
-    return {
-      beginItem() {
-        if (!started) {
-          beginStartupStep(stepId);
-          started = true;
-        }
-        inFlightCount += 1;
-      },
-      finishItem(error?: unknown) {
-        if (!started) {
-          beginStartupStep(stepId);
-          started = true;
-        }
-
-        inFlightCount = Math.max(0, inFlightCount - 1);
-        if (error) {
-          failStartupStep(stepId, error);
-          return;
-        }
-
-        maybeComplete();
-      },
-      seal() {
-        sealed = true;
-        if (!started) {
-          beginStartupStep(stepId);
-          completeStartupStep(stepId);
-          return;
-        }
-
-        maybeComplete();
-      }
-    };
-  }
-
   function normalizeThrottleMs(value: number | undefined): number {
     if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
       return 0;
@@ -787,725 +454,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function getDefaultEventSince(): number {
     return Math.max(0, Math.floor(Date.now() / 1000) - DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS);
-  }
-
-  function readDeveloperDiagnosticsEnabled(): boolean {
-    if (!hasStorage()) {
-      return true;
-    }
-
-    return window.localStorage.getItem(DEVELOPER_DIAGNOSTICS_STORAGE_KEY) !== '0';
-  }
-
-  function setDeveloperDiagnosticsEnabled(enabled: boolean): void {
-    developerDiagnosticsEnabled.value = enabled;
-
-    if (hasStorage()) {
-      window.localStorage.setItem(DEVELOPER_DIAGNOSTICS_STORAGE_KEY, enabled ? '1' : '0');
-    }
-
-    if (!enabled) {
-      void clearDeveloperTraceEntries().catch((error) => {
-        console.error('Failed to clear developer trace entries.', error);
-      });
-    }
-
-    developerDiagnosticsVersion.value += 1;
-  }
-
-  function bumpDeveloperDiagnosticsVersion(): void {
-    developerDiagnosticsVersion.value += 1;
-  }
-
-  function bumpDeveloperTraceVersion(): void {
-    developerTraceVersion.value += 1;
-  }
-
-  function toOptionalIsoTimestampFromUnix(value: number | null | undefined): string | null {
-    if (!Number.isInteger(value) || Number(value) <= 0) {
-      return null;
-    }
-
-    return new Date(Number(value) * 1000).toISOString();
-  }
-
-  function serializeDeveloperTraceValue(value: unknown, depth = 0): unknown {
-    if (depth > 4) {
-      return '[max-depth]';
-    }
-
-    if (
-      value === null ||
-      value === undefined ||
-      typeof value === 'string' ||
-      typeof value === 'number' ||
-      typeof value === 'boolean'
-    ) {
-      return value ?? null;
-    }
-
-    if (value instanceof Date) {
-      return value.toISOString();
-    }
-
-    if (value instanceof Error) {
-      return {
-        name: value.name,
-        message: value.message,
-        stack: value.stack ?? null
-      };
-    }
-
-    if (Array.isArray(value)) {
-      return value.slice(0, 30).map((entry) => serializeDeveloperTraceValue(entry, depth + 1));
-    }
-
-    if (typeof value === 'object') {
-      const result: Record<string, unknown> = {};
-
-      for (const [key, entryValue] of Object.entries(value as Record<string, unknown>).slice(0, 50)) {
-        result[key] = serializeDeveloperTraceValue(entryValue, depth + 1);
-      }
-
-      return result;
-    }
-
-    return String(value);
-  }
-
-  function normalizeDeveloperTraceDetails(details: Record<string, unknown>): Record<string, unknown> {
-    const normalized: Record<string, unknown> = {};
-
-    for (const [key, value] of Object.entries(details)) {
-      normalized[key] = serializeDeveloperTraceValue(value);
-    }
-
-    return normalized;
-  }
-
-  function shouldEchoDeveloperTraceToConsole(scope: string, phase: string): boolean {
-    if (scope.startsWith('subscription:')) {
-      return (
-        phase === 'start' ||
-        phase === 'backfill-window-subscribe' ||
-        phase === 'epoch-history-subscribe'
-      );
-    }
-
-    return (
-      scope === 'inbound' &&
-      (phase === 'epoch-ticket-received' ||
-        phase === 'group-message-received' ||
-        phase === 'private-message-received')
-    );
-  }
-
-  function echoDeveloperTraceToConsole(
-    level: DeveloperTraceLevel,
-    scope: string,
-    phase: string,
-    details: Record<string, unknown>
-  ): void {
-    const label = `[${scope}] ${phase}`;
-    if (level === 'error') {
-      console.error(label, details);
-      return;
-    }
-
-    if (level === 'warn') {
-      console.warn(label, details);
-      return;
-    }
-
-    console.info(label, details);
-  }
-
-  function logDeveloperTrace(
-    level: DeveloperTraceLevel,
-    scope: string,
-    phase: string,
-    details: Record<string, unknown> = {}
-  ): void {
-    const normalizedDetails = normalizeDeveloperTraceDetails(details);
-    if (shouldEchoDeveloperTraceToConsole(scope, phase)) {
-      echoDeveloperTraceToConsole(level, scope, phase, normalizedDetails);
-    }
-
-    if (!developerDiagnosticsEnabled.value) {
-      return;
-    }
-
-    developerTraceCounter += 1;
-    const entry: DeveloperTraceEntry = {
-      id: `${Date.now()}-${developerTraceCounter}`,
-      timestamp: new Date().toISOString(),
-      level,
-      scope,
-      phase,
-      details: normalizedDetails
-    };
-
-    void developerTraceDataService
-      .appendEntry(entry)
-      .then(() => {
-        bumpDeveloperTraceVersion();
-      })
-      .catch((error) => {
-        console.error('Failed to persist developer trace entry.', error);
-      });
-  }
-
-  async function listDeveloperTraceEntries(): Promise<DeveloperTraceEntry[]> {
-    return developerTraceDataService.listEntries();
-  }
-
-  async function clearDeveloperTraceEntries(): Promise<void> {
-    await developerTraceDataService.clearEntries();
-    bumpDeveloperTraceVersion();
-  }
-
-  function setStoredEventSince(value: number): number {
-    const normalizedValue =
-      Number.isInteger(value) && Number(value) > 0 ? Math.floor(Number(value)) : getDefaultEventSince();
-    eventSince.value = normalizedValue;
-
-    if (hasStorage()) {
-      window.localStorage.setItem(EVENT_SINCE_STORAGE_KEY, String(normalizedValue));
-    }
-
-    return normalizedValue;
-  }
-
-  function ensureStoredEventSince(): number {
-    if (eventSince.value > 0) {
-      return eventSince.value;
-    }
-
-    if (hasStorage()) {
-      const storedValue = Number.parseInt(
-        window.localStorage.getItem(EVENT_SINCE_STORAGE_KEY) ?? '',
-        10
-      );
-      if (Number.isInteger(storedValue) && storedValue > 0) {
-        eventSince.value = storedValue;
-        return storedValue;
-      }
-    }
-
-    const defaultSince = getDefaultEventSince();
-    eventSince.value = defaultSince;
-    return defaultSince;
-  }
-
-  function getFilterSince(): number {
-    return Math.max(0, ensureStoredEventSince() - EVENT_FILTER_LOOKBACK_SECONDS);
-  }
-
-  function readStoredPrivateMessagesLastReceivedCreatedAt(): number | null {
-    if (!hasStorage()) {
-      return null;
-    }
-
-    const storedValue = Number.parseInt(
-      window.localStorage.getItem(PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY) ?? '',
-      10
-    );
-    return Number.isInteger(storedValue) && storedValue > 0 ? storedValue : null;
-  }
-
-  function updateStoredPrivateMessagesLastReceivedFromCreatedAt(value: unknown): void {
-    const createdAt = Number(value);
-    if (!Number.isInteger(createdAt) || createdAt <= 0) {
-      return;
-    }
-
-    const normalizedCreatedAt = Math.floor(createdAt);
-    const existingCreatedAt = readStoredPrivateMessagesLastReceivedCreatedAt();
-    if (existingCreatedAt !== null && normalizedCreatedAt <= existingCreatedAt) {
-      return;
-    }
-
-    if (hasStorage()) {
-      window.localStorage.setItem(
-        PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY,
-        String(normalizedCreatedAt)
-      );
-    }
-  }
-
-  function clearStoredPrivateMessagesLastReceivedCreatedAt(): void {
-    if (hasStorage()) {
-      window.localStorage.removeItem(PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY);
-    }
-  }
-
-  function normalizePrivateMessagesBackfillState(
-    value: unknown
-  ): PrivateMessagesBackfillState | null {
-    if (!isPlainRecord(value)) {
-      return null;
-    }
-
-    const pubkey = inputSanitizerService.normalizeHexKey(
-      typeof value.pubkey === 'string' ? value.pubkey : ''
-    );
-    const nextSince = Number(value.nextSince);
-    const nextUntil = Number(value.nextUntil);
-    const floorSince = Number(value.floorSince);
-    const delayMs = Number(value.delayMs);
-    const completed = value.completed === true;
-
-    if (
-      !pubkey ||
-      !Number.isInteger(nextSince) ||
-      nextSince < 0 ||
-      !Number.isInteger(nextUntil) ||
-      nextUntil < 0 ||
-      !Number.isInteger(floorSince) ||
-      floorSince < 0 ||
-      !Number.isFinite(delayMs)
-    ) {
-      return null;
-    }
-
-    return {
-      pubkey,
-      nextSince: Math.floor(nextSince),
-      nextUntil: Math.floor(nextUntil),
-      floorSince: Math.floor(floorSince),
-      delayMs: Math.min(
-        PRIVATE_MESSAGES_BACKFILL_MAX_DELAY_MS,
-        Math.max(PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS, Math.floor(delayMs))
-      ),
-      completed
-    };
-  }
-
-  function readPrivateMessagesBackfillState(): PrivateMessagesBackfillState | null {
-    if (!hasStorage()) {
-      return null;
-    }
-
-    const stored = window.localStorage.getItem(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY)?.trim();
-    if (!stored) {
-      return null;
-    }
-
-    try {
-      return normalizePrivateMessagesBackfillState(JSON.parse(stored));
-    } catch {
-      return null;
-    }
-  }
-
-  function writePrivateMessagesBackfillState(state: PrivateMessagesBackfillState): void {
-    if (!hasStorage()) {
-      return;
-    }
-
-    window.localStorage.setItem(
-      PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY,
-      JSON.stringify(state)
-    );
-  }
-
-  function clearPrivateMessagesBackfillState(): void {
-    if (hasStorage()) {
-      window.localStorage.removeItem(PRIVATE_MESSAGES_BACKFILL_STATE_STORAGE_KEY);
-    }
-  }
-
-  function getPrivateMessagesStartupFloorSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
-    return Math.max(0, Math.floor(baseUnixTime) - PRIVATE_MESSAGES_BACKFILL_MAX_AGE_SECONDS);
-  }
-
-  function getPrivateMessagesStartupLiveSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
-    const normalizedNow = Math.max(0, Math.floor(baseUnixTime));
-    const lastReceivedCreatedAt = readStoredPrivateMessagesLastReceivedCreatedAt();
-    const anchorCreatedAt = lastReceivedCreatedAt ?? normalizedNow;
-
-    return Math.max(
-      getPrivateMessagesStartupFloorSince(normalizedNow),
-      anchorCreatedAt - PRIVATE_MESSAGES_STARTUP_LIVE_LOOKBACK_SECONDS
-    );
-  }
-
-  function getPrivateMessagesEpochSwitchSince(
-    baseUnixTime = Math.floor(Date.now() / 1000)
-  ): number {
-    return Math.min(getFilterSince(), getPrivateMessagesStartupLiveSince(baseUnixTime));
-  }
-
-  function createInitialPrivateMessagesBackfillState(
-    pubkeyHex: string,
-    liveSince: number,
-    floorSince: number
-  ): PrivateMessagesBackfillState | null {
-    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
-    const normalizedLiveSince = Math.max(0, Math.floor(liveSince));
-    const normalizedFloorSince = Math.max(0, Math.floor(floorSince));
-    if (!normalizedPubkey || normalizedLiveSince <= normalizedFloorSince) {
-      return null;
-    }
-
-    const nextUntil = normalizedLiveSince;
-    const nextSince = Math.max(
-      normalizedFloorSince,
-      nextUntil - PRIVATE_MESSAGES_BACKFILL_WINDOW_SECONDS
-    );
-    if (nextSince >= nextUntil) {
-      return null;
-    }
-
-    return {
-      pubkey: normalizedPubkey,
-      nextSince,
-      nextUntil,
-      floorSince: normalizedFloorSince,
-      delayMs: PRIVATE_MESSAGES_BACKFILL_INITIAL_DELAY_MS,
-      completed: false
-    };
-  }
-
-  function getPrivateMessagesBackfillResumeState(
-    pubkeyHex: string,
-    liveSince: number,
-    floorSince: number
-  ): PrivateMessagesBackfillState | null {
-    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
-    if (!normalizedPubkey) {
-      return null;
-    }
-
-    const storedState = readPrivateMessagesBackfillState();
-    if (storedState && storedState.pubkey === normalizedPubkey) {
-      const normalizedFloorSince = Math.max(floorSince, storedState.floorSince);
-      if (storedState.completed && storedState.floorSince <= normalizedFloorSince) {
-        return null;
-      }
-
-      const nextSince = Math.max(normalizedFloorSince, storedState.nextSince);
-      const nextUntil = Math.max(nextSince, storedState.nextUntil);
-      if (nextSince < nextUntil) {
-        return {
-          ...storedState,
-          nextSince,
-          nextUntil,
-          floorSince: normalizedFloorSince,
-          completed: false
-        };
-      }
-    }
-
-    return createInitialPrivateMessagesBackfillState(normalizedPubkey, liveSince, floorSince);
-  }
-
-  function updateStoredEventSinceFromCreatedAt(value: unknown): void {
-    const createdAt = Number(value);
-    if (!Number.isInteger(createdAt) || createdAt <= 0) {
-      return;
-    }
-
-    if (createdAt <= ensureStoredEventSince()) {
-      return;
-    }
-
-    if (isRestoringStartupState.value) {
-      pendingEventSinceUpdate = Math.max(pendingEventSinceUpdate, createdAt);
-      return;
-    }
-
-    setStoredEventSince(createdAt);
-  }
-
-  function flushPendingEventSinceUpdate(): void {
-    const nextSince = Math.max(ensureStoredEventSince(), pendingEventSinceUpdate);
-    pendingEventSinceUpdate = 0;
-    setStoredEventSince(nextSince);
-  }
-
-  function resetEventSinceForFreshLogin(): void {
-    eventSince.value = getDefaultEventSince();
-    pendingEventSinceUpdate = 0;
-
-    if (hasStorage()) {
-      window.localStorage.removeItem(EVENT_SINCE_STORAGE_KEY);
-    }
-
-    clearStoredPrivateMessagesLastReceivedCreatedAt();
-    clearPrivateMessagesBackfillState();
-  }
-
-  function toComparableTimestamp(value: string | null | undefined): number {
-    if (typeof value !== 'string' || !value.trim()) {
-      return 0;
-    }
-
-    const parsed = new Date(value).getTime();
-    return Number.isNaN(parsed) ? 0 : parsed;
-  }
-
-  function normalizeTimestamp(value: unknown): string | null {
-    if (typeof value !== 'string') {
-      return null;
-    }
-
-    const normalized = value.trim();
-    return normalized || null;
-  }
-
-  function normalizePrivatePreferences(value: unknown): PrivatePreferences | null {
-    if (!isPlainRecord(value)) {
-      return null;
-    }
-
-    const normalizedContactSecret = inputSanitizerService.normalizeHexKey(
-      typeof value.contactSecret === 'string' ? value.contactSecret : ''
-    );
-    if (!normalizedContactSecret) {
-      return null;
-    }
-
-    return {
-      ...value,
-      contactSecret: normalizedContactSecret
-    };
-  }
-
-  function readPrivatePreferencesFromStorage(): PrivatePreferences | null {
-    if (!hasStorage()) {
-      return null;
-    }
-
-    const stored = window.localStorage.getItem(PRIVATE_PREFERENCES_STORAGE_KEY)?.trim();
-    if (!stored) {
-      return null;
-    }
-
-    try {
-      return normalizePrivatePreferences(JSON.parse(stored));
-    } catch {
-      return null;
-    }
-  }
-
-  function writePrivatePreferencesToStorage(preferences: PrivatePreferences): void {
-    if (!hasStorage()) {
-      return;
-    }
-
-    window.localStorage.setItem(
-      PRIVATE_PREFERENCES_STORAGE_KEY,
-      JSON.stringify(preferences)
-    );
-  }
-
-  function clearPrivatePreferencesStorage(): void {
-    if (!hasStorage()) {
-      return;
-    }
-
-    window.localStorage.removeItem(PRIVATE_PREFERENCES_STORAGE_KEY);
-  }
-
-  async function sha256Hex(value: string): Promise<string> {
-    const digest = await globalThis.crypto.subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(value)
-    );
-    return Array.from(new Uint8Array(digest))
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  function buildFreshPrivatePreferences(existing: Record<string, unknown> = {}): PrivatePreferences {
-    return {
-      ...existing,
-      contactSecret: NDKPrivateKeySigner.generate().privateKey
-    };
-  }
-
-  function normalizeContactCursorContent(value: unknown): ContactCursorContent | null {
-    if (!isPlainRecord(value)) {
-      return null;
-    }
-
-    const version = typeof value.version === 'string' ? value.version.trim() : '';
-    const lastSeenIncomingActivityAt = normalizeTimestamp(value.last_seen_incoming_activity_at);
-    const lastSeenIncomingActivityEventId = normalizeEventId(
-      value.last_seen_incoming_activity_event_id
-    );
-
-    if (!version || !lastSeenIncomingActivityAt) {
-      return null;
-    }
-
-    return {
-      version,
-      last_seen_incoming_activity_at: lastSeenIncomingActivityAt,
-      last_seen_incoming_activity_event_id: lastSeenIncomingActivityEventId
-    };
-  }
-
-  async function encryptPrivatePreferencesContent(preferences: PrivatePreferences): Promise<string> {
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    return ndk.signer.encrypt(user, JSON.stringify(preferences), 'nip44');
-  }
-
-  async function decryptPrivatePreferencesContent(content: string): Promise<PrivatePreferences | null> {
-    const normalizedContent = content.trim();
-    if (!normalizedContent) {
-      return null;
-    }
-
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
-
-    try {
-      return normalizePrivatePreferences(JSON.parse(decryptedContent));
-    } catch {
-      return null;
-    }
-  }
-
-  async function encryptContactCursorContent(cursor: ContactCursorState): Promise<string> {
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    return ndk.signer.encrypt(
-      user,
-      JSON.stringify({
-        version: CONTACT_CURSOR_VERSION,
-        last_seen_incoming_activity_at: cursor.at,
-        last_seen_incoming_activity_event_id: cursor.eventId
-      }),
-      'nip44'
-    );
-  }
-
-  async function decryptContactCursorContent(content: string): Promise<ContactCursorContent | null> {
-    const normalizedContent = content.trim();
-    if (!normalizedContent) {
-      return null;
-    }
-
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
-
-    try {
-      return normalizeContactCursorContent(JSON.parse(decryptedContent));
-    } catch {
-      return null;
-    }
-  }
-
-  function normalizeGroupIdentitySecretContent(value: unknown): GroupIdentitySecretContent | null {
-    if (!isPlainRecord(value)) {
-      return null;
-    }
-
-    const version = Number(value.version);
-    const groupPubkey = inputSanitizerService.normalizeHexKey(
-      typeof value.group_pubkey === 'string' ? value.group_pubkey : ''
-    );
-    const groupPrivkey = inputSanitizerService.normalizeHexKey(
-      typeof value.group_privkey === 'string' ? value.group_privkey : ''
-    );
-    const epochNumber = Number(value.epoch_number);
-    const epochPrivkey = inputSanitizerService.normalizeHexKey(
-      typeof value.epoch_privkey === 'string' ? value.epoch_privkey : ''
-    );
-    const name = typeof value.name === 'string' ? value.name.trim() : '';
-    const about = typeof value.about === 'string' ? value.about.trim() : '';
-
-    if (
-      !Number.isInteger(version) ||
-      version < 1 ||
-      !groupPubkey ||
-      !groupPrivkey
-    ) {
-      return null;
-    }
-
-    try {
-      const signer = new NDKPrivateKeySigner(groupPrivkey);
-      if (inputSanitizerService.normalizeHexKey(signer.pubkey) !== groupPubkey) {
-        return null;
-      }
-    } catch {
-      return null;
-    }
-
-    return {
-      version,
-      group_pubkey: groupPubkey,
-      group_privkey: groupPrivkey,
-      ...(
-        Number.isInteger(epochNumber) &&
-        epochNumber >= 0 &&
-        epochPrivkey
-          ? {
-              epoch_number: Math.floor(epochNumber),
-              epoch_privkey: epochPrivkey
-            }
-          : {}
-      ),
-      ...(name ? { name } : {}),
-      ...(about ? { about } : {})
-    };
-  }
-
-  async function encryptGroupIdentitySecretContent(
-    content: GroupIdentitySecretContent
-  ): Promise<string> {
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    return ndk.signer.encrypt(user, JSON.stringify(content), 'nip44');
-  }
-
-  async function decryptGroupIdentitySecretContent(
-    content: string
-  ): Promise<GroupIdentitySecretContent | null> {
-    const normalizedContent = content.trim();
-    if (!normalizedContent) {
-      return null;
-    }
-
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
-
-    try {
-      return normalizeGroupIdentitySecretContent(JSON.parse(decryptedContent));
-    } catch {
-      return null;
-    }
-  }
-
-  async function encryptPrivateStringContent(content: string): Promise<string> {
-    const normalizedContent = content.trim();
-    if (!normalizedContent) {
-      throw new Error('Private content is required.');
-    }
-
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    return ndk.signer.encrypt(user, normalizedContent, 'nip44');
-  }
-
-  async function decryptPrivateStringContent(content: string): Promise<string | null> {
-    const normalizedContent = content.trim();
-    if (!normalizedContent) {
-      return null;
-    }
-
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
-    const normalizedPrivateKey = inputSanitizerService.normalizeHexKey(decryptedContent);
-    return normalizedPrivateKey ?? null;
   }
 
   function createInitialGroupEpochSecretState(): Pick<
@@ -3981,6 +2929,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return normalizeRelayStatusUrlsValue(relayUrls);
   }
 
+  async function getLoggedInSignerUser(): Promise<NDKUser> {
+    const signer = await getOrCreateSigner();
+    const user = await signer.user();
+    user.ndk = ndk;
+    return user;
+  }
+
   function normalizeEventId(value: unknown): string | null {
     if (typeof value !== 'string') {
       return null;
@@ -5457,391 +4412,42 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ): boolean {
     return shouldPreserveExistingGroupRelaysValue(contact, nextRelayEntries);
   }
-
-  async function fetchContactRelayList(
-    pubkeyHex: string,
-    seedRelayUrls: string[] = []
-  ): Promise<ContactRelayListFetchResult | null> {
-    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
-    if (!normalizedPubkey) {
-      return null;
-    }
-
-    const relayUrls = await resolveContactRelayListReadRelayUrls(normalizedPubkey, seedRelayUrls);
-    if (relayUrls.length === 0) {
-      return null;
-    }
-
-    await ensureRelayConnections(relayUrls);
-
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
-    const relayListEvent = await ndk.fetchEvent(
-      {
-        kinds: [NDKKind.RelayList],
-        authors: [normalizedPubkey],
-        since: getFilterSince()
-      },
-      {
-        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-      },
-      relaySet
-    );
-    if (!relayListEvent) {
-      return null;
-    }
-
-    updateStoredEventSinceFromCreatedAt(relayListEvent.created_at);
-
-    const relayList = NDKRelayList.from(
-      relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent)
-    );
-
-    return {
-      createdAt: Number(relayList.created_at ?? 0),
-      eventId: relayList.id?.trim() ?? '',
-      relayEntries: relayEntriesFromRelayList(relayList)
-    };
-  }
-
-  async function refreshContactRelayList(pubkeyHex: string): Promise<ContactRelay[] | null> {
-    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
-    if (!normalizedPubkey) {
-      return null;
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
-    if (!existingContact) {
-      return null;
-    }
-
-    const relayList = await fetchContactRelayList(normalizedPubkey);
-    if (!relayList) {
-      return existingContact.relays ?? [];
-    }
-
-    const nextRelayEntries = relayList.relayEntries;
-    if (shouldPreserveExistingGroupRelays(existingContact, nextRelayEntries)) {
-      console.warn('Preserving existing group relays after empty relay list refresh', {
-        pubkey: normalizedPubkey,
-        existingRelayCount: existingContact.relays.length
-      });
-      return existingContact.relays ?? [];
-    }
-
-    if (contactRelayListsEqual(existingContact.relays, nextRelayEntries)) {
-      return nextRelayEntries;
-    }
-
-    const updatedContact = await contactsService.updateContact(existingContact.id, {
-      relays: nextRelayEntries
-    });
-    if (!updatedContact) {
-      throw new Error('Failed to persist refreshed contact relay list.');
-    }
-
-    bumpContactListVersion();
-    return updatedContact.relays ?? [];
-  }
-
-  async function refreshGroupRelayListsOnStartup(seedRelayUrls: string[] = []): Promise<void> {
-    await contactsService.init();
-
-    const groupContacts = (await contactsService.listContacts()).filter(
-      (contact) => contact.type === 'group'
-    );
-    if (groupContacts.length === 0) {
-      return;
-    }
-
-    const knownGroupRelayUrls = groupContacts.flatMap((contact) =>
-      inputSanitizerService.normalizeReadableRelayUrls(contact.relays)
-    );
-    const relayUrls = normalizeRelayStatusUrls([
-      ...(await resolveLoggedInReadRelayUrls(seedRelayUrls)),
-      ...knownGroupRelayUrls
-    ]);
-    if (relayUrls.length > 0) {
-      await ensureRelayConnections(relayUrls);
-    }
-
-    for (const groupContact of groupContacts) {
-      const groupPublicKey = inputSanitizerService.normalizeHexKey(groupContact.public_key);
-      if (!groupPublicKey) {
-        continue;
-      }
-
-      try {
-        await refreshContactRelayList(groupPublicKey);
-      } catch (error) {
-        console.warn('Failed to refresh group relay list on startup', groupPublicKey, error);
-      }
-    }
-  }
-
-  async function listTrackedContactPubkeys(): Promise<string[]> {
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    await contactsService.init();
-
-    const trackedPubkeys = new Set<string>();
-    for (const contact of await contactsService.listContacts()) {
-      const normalizedPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
-      if (!normalizedPubkey || normalizedPubkey === loggedInPubkeyHex) {
-        continue;
-      }
-
-      trackedPubkeys.add(normalizedPubkey);
-    }
-
-    return Array.from(trackedPubkeys).sort((first, second) => first.localeCompare(second));
-  }
-
-  function normalizeWritableRelayUrls(relays: ContactRelay[] | undefined): string[] {
-    return normalizeWritableRelayUrlsValue(relays);
-  }
-
-  function getAppRelayUrls(): string[] {
-    relayStore.init();
-    return normalizeRelayStatusUrls(relayStore.relays);
-  }
-
-  async function resolveLoggedInReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    const appRelayUrls = getAppRelayUrls();
-    const relayUrls = normalizeRelayStatusUrls([
-      ...appRelayUrls,
-      ...inputSanitizerService.normalizeStringArray(seedRelayUrls)
-    ]);
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      return relayUrls;
-    }
-
-    await contactsService.init();
-    const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
-
-    return normalizeRelayStatusUrls([
-      ...relayUrls,
-      ...inputSanitizerService.normalizeReadableRelayUrls(loggedInContact?.relays)
-    ]);
-  }
-
-  async function resolvePrivateMessageReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
-
-    await Promise.all([contactsService.init(), chatDataService.init()]);
-    const contactsByPubkey = new Map(
-      (await contactsService.listContacts())
-        .map((contact) => {
-          const normalizedPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
-          return normalizedPubkey ? ([normalizedPubkey, contact] as const) : null;
-        })
-        .filter((entry): entry is readonly [string, ContactRecord] => Boolean(entry))
-    );
-    const groupRelayUrls = (await chatDataService.listChats())
-      .filter((chat) => chat.type === 'group')
-      .flatMap((chat) => {
-        const normalizedChatPublicKey = inputSanitizerService.normalizeHexKey(chat.public_key);
-        if (!normalizedChatPublicKey) {
-          return [];
-        }
-
-        return inputSanitizerService.normalizeReadableRelayUrls(
-          contactsByPubkey.get(normalizedChatPublicKey)?.relays
-        );
-      });
-
-    return normalizeRelayStatusUrls([...relayUrls, ...groupRelayUrls]);
-  }
-
-  async function resolveTrackedContactReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    return resolvePrivateMessageReadRelayUrls(seedRelayUrls);
-  }
-
-  async function resolveContactRelayListReadRelayUrls(
-    pubkeyHex: string,
-    seedRelayUrls: string[] = []
-  ): Promise<string[]> {
-    const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
-    if (!normalizedPubkey) {
-      return [];
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
-
-    return normalizeRelayStatusUrls([
-      ...(await resolveLoggedInReadRelayUrls(seedRelayUrls)),
-      ...(existingContact?.type === 'group'
-        ? inputSanitizerService.normalizeReadableRelayUrls(existingContact.relays)
-        : [])
-    ]);
-  }
-
-  function resolveGroupPublishRelayUrls(
-    relays: ContactRelay[] | undefined,
-    seedRelayUrls: string[] = []
-  ): string[] {
-    return resolveGroupPublishRelayUrlsValue(relays, seedRelayUrls);
-  }
-
-  async function resolveLoggedInPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    const relayUrls = normalizeRelayStatusUrls([
-      ...getAppRelayUrls(),
-      ...inputSanitizerService.normalizeStringArray(seedRelayUrls)
-    ]);
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      return relayUrls;
-    }
-
-    await contactsService.init();
-    const loggedInContact = await contactsService.getContactByPublicKey(loggedInPubkeyHex);
-
-    return normalizeRelayStatusUrls([
-      ...relayUrls,
-      ...normalizeWritableRelayUrls(loggedInContact?.relays)
-    ]);
-  }
-
-  async function resolvePrivateContactListReadRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    return resolveLoggedInReadRelayUrls(seedRelayUrls);
-  }
-
-  async function resolvePrivateContactListPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {
-    return resolveLoggedInPublishRelayUrls(seedRelayUrls);
-  }
-
-  async function getLoggedInSignerUser(): Promise<NDKUser> {
-    const signer = await getOrCreateSigner();
-    const user = await signer.user();
-    user.ndk = ndk;
-    return user;
-  }
-
-  function buildPrivateContactListTags(pubkeys: string[]): string[][] {
-    return pubkeys
-      .map((pubkey) => inputSanitizerService.normalizeHexKey(pubkey))
-      .filter((pubkey): pubkey is string => Boolean(pubkey))
-      .filter((pubkey, index, list) => list.indexOf(pubkey) === index)
-      .map((pubkey) => ['p', pubkey]);
-  }
-
-  function parsePrivateContactListPubkeys(value: unknown): string[] {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-
-    const pubkeys = value
-      .map((entry) => {
-        if (!Array.isArray(entry) || entry[0] !== 'p') {
-          return null;
-        }
-
-        return inputSanitizerService.normalizeHexKey(String(entry[1] ?? ''));
-      })
-      .filter((pubkey): pubkey is string => Boolean(pubkey));
-
-    return pubkeys.filter((pubkey, index, list) => list.indexOf(pubkey) === index);
-  }
-
-  async function encryptPrivateContactListTags(tags: string[][]): Promise<string> {
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-
-    return ndk.signer.encrypt(user, JSON.stringify(tags), 'nip44');
-  }
-
-  async function decryptPrivateContactListContent(content: string): Promise<string[]> {
-    const normalizedContent = content.trim();
-    if (!normalizedContent) {
-      return [];
-    }
-
-    const user = await getLoggedInSignerUser();
-    ndk.assertSigner();
-
-    const decryptedContent = await ndk.signer.decrypt(user, normalizedContent, 'nip44');
-    let parsed: unknown;
-
-    try {
-      parsed = JSON.parse(decryptedContent);
-    } catch {
-      return [];
-    }
-
-    return parsePrivateContactListPubkeys(parsed);
-  }
-
-  function shouldApplyPrivateContactListEvent(event: NDKEvent): boolean {
-    const createdAt = Number(event.created_at ?? 0);
-    if (createdAt > lastPrivateContactListCreatedAt) {
-      return true;
-    }
-
-    if (createdAt < lastPrivateContactListCreatedAt) {
-      return false;
-    }
-
-    const eventId = event.id?.trim() ?? '';
-    if (!eventId) {
-      return lastPrivateContactListEventId.length === 0;
-    }
-
-    return eventId !== lastPrivateContactListEventId;
-  }
-
-  function markPrivateContactListEventApplied(event: Pick<NDKEvent, 'created_at' | 'id'>): void {
-    lastPrivateContactListCreatedAt = Number(event.created_at ?? 0);
-    lastPrivateContactListEventId = event.id?.trim() ?? '';
-  }
-
-  function buildContactRelayListEventState(
-    event: Pick<NDKEvent, 'created_at' | 'id'>
-  ): ContactRelayListEventState {
-    return {
-      createdAt: Number(event.created_at ?? 0),
-      eventId: event.id?.trim() ?? ''
-    };
-  }
-
-  function pruneTrackedContactRelayListEventState(activePubkeys: string[]): void {
-    const activePubkeySet = new Set(activePubkeys);
-    for (const pubkey of lastContactRelayListEventStateByPubkey.keys()) {
-      if (!activePubkeySet.has(pubkey)) {
-        lastContactRelayListEventStateByPubkey.delete(pubkey);
-      }
-    }
-  }
-
-  function shouldApplyContactRelayListEvent(event: Pick<NDKEvent, 'created_at' | 'id' | 'pubkey'>): boolean {
-    const normalizedPubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
-    if (!normalizedPubkey) {
-      return false;
-    }
-
-    const nextState = buildContactRelayListEventState(event);
-    const previousState = lastContactRelayListEventStateByPubkey.get(normalizedPubkey);
-    if (!previousState) {
-      return true;
-    }
-
-    if (nextState.createdAt > previousState.createdAt) {
-      return true;
-    }
-
-    if (nextState.createdAt < previousState.createdAt) {
-      return false;
-    }
-
-    return nextState.eventId !== previousState.eventId;
-  }
-
-  function markContactRelayListEventApplied(
-    pubkeyHex: string,
-    eventState: ContactRelayListEventState
-  ): void {
-    lastContactRelayListEventStateByPubkey.set(pubkeyHex, eventState);
-  }
+  const {
+    buildPrivateContactListTags,
+    decryptPrivateContactListContent,
+    encryptPrivateContactListTags,
+    extractContactProfileEventStateFromProfile,
+    fetchContactRelayList,
+    getAppRelayUrls,
+    listTrackedContactPubkeys,
+    normalizeWritableRelayUrls,
+    parseContactProfileEvent,
+    refreshContactRelayList,
+    refreshGroupRelayListsOnStartup,
+    resolveContactRelayListReadRelayUrls,
+    resolveGroupPublishRelayUrls,
+    resolveLoggedInPublishRelayUrls,
+    resolveLoggedInReadRelayUrls,
+    resolvePrivateContactListPublishRelayUrls,
+    resolvePrivateContactListReadRelayUrls,
+    resolvePrivateMessageReadRelayUrls,
+    resolveTrackedContactReadRelayUrls
+  } = createContactRelayRuntime({
+    bumpContactListVersion,
+    contactRelayListsEqual,
+    ensureRelayConnections,
+    getFilterSince,
+    getLoggedInPublicKeyHex,
+    getLoggedInSignerUser,
+    ndk,
+    normalizeRelayStatusUrls,
+    normalizeWritableRelayUrlsValue,
+    relayEntriesFromRelayList,
+    relayStore,
+    resolveGroupPublishRelayUrlsValue,
+    shouldPreserveExistingGroupRelays,
+    updateStoredEventSinceFromCreatedAt
+  });
 
   function queueContactRelayListSubscriptionRefresh(
     seedRelayUrls: string[] = [],
@@ -5850,94 +4456,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     void subscribeContactRelayListUpdates(seedRelayUrls, force).catch((error) => {
       console.warn('Failed to refresh contact relay list subscription', error);
     });
-  }
-
-  function buildContactProfileEventState(
-    event: Pick<NDKEvent, 'created_at' | 'id'>
-  ): ContactProfileEventState {
-    return {
-      createdAt: Number(event.created_at ?? 0),
-      eventId: event.id?.trim() ?? ''
-    };
-  }
-
-  function pruneTrackedContactProfileEventState(activePubkeys: string[]): void {
-    const activePubkeySet = new Set(activePubkeys);
-    for (const pubkey of lastContactProfileEventStateByPubkey.keys()) {
-      if (!activePubkeySet.has(pubkey)) {
-        lastContactProfileEventStateByPubkey.delete(pubkey);
-      }
-    }
-  }
-
-  function shouldApplyContactProfileEvent(event: Pick<NDKEvent, 'created_at' | 'id' | 'pubkey'>): boolean {
-    const normalizedPubkey = inputSanitizerService.normalizeHexKey(event.pubkey);
-    if (!normalizedPubkey) {
-      return false;
-    }
-
-    const nextState = buildContactProfileEventState(event);
-    const previousState = lastContactProfileEventStateByPubkey.get(normalizedPubkey);
-    if (!previousState) {
-      return true;
-    }
-
-    if (nextState.createdAt > previousState.createdAt) {
-      return true;
-    }
-
-    if (nextState.createdAt < previousState.createdAt) {
-      return false;
-    }
-
-    return nextState.eventId !== previousState.eventId;
-  }
-
-  function markContactProfileEventApplied(
-    pubkeyHex: string,
-    eventState: ContactProfileEventState
-  ): void {
-    lastContactProfileEventStateByPubkey.set(pubkeyHex, eventState);
-  }
-
-  function parseContactProfileEvent(event: Pick<NDKEvent, 'content'>): NDKUserProfile | null {
-    const content = event.content?.trim() ?? '';
-    if (!content) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(content);
-      return isPlainRecord(parsed) ? (parsed as NDKUserProfile) : null;
-    } catch {
-      return null;
-    }
-  }
-
-  function extractContactProfileEventStateFromProfile(
-    profile: NDKUserProfile | null
-  ): ContactProfileEventState | null {
-    const rawProfileEvent = profile?.profileEvent;
-    if (typeof rawProfileEvent !== 'string' || !rawProfileEvent.trim()) {
-      return null;
-    }
-
-    try {
-      const parsed = JSON.parse(rawProfileEvent);
-      if (!isPlainRecord(parsed)) {
-        return null;
-      }
-
-      return {
-        createdAt:
-          Number.isInteger(parsed.created_at) || typeof parsed.created_at === 'number'
-            ? Number(parsed.created_at)
-            : 0,
-        eventId: typeof parsed.id === 'string' ? parsed.id.trim() : ''
-      };
-    } catch {
-      return null;
-    }
   }
 
   function queueContactProfileSubscriptionRefresh(
@@ -6322,784 +4840,104 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
   }
 
-  function compareContactCursorState(
-    first: ContactCursorState | ContactCursorContent | null | undefined,
-    second: ContactCursorState | ContactCursorContent | null | undefined
-  ): number {
-    const firstTimestamp =
-      first && 'last_seen_incoming_activity_at' in first
-        ? first.last_seen_incoming_activity_at
-        : first?.at;
-    const secondTimestamp =
-      second && 'last_seen_incoming_activity_at' in second
-        ? second.last_seen_incoming_activity_at
-        : second?.at;
-    const byTimestamp =
-      toComparableTimestamp(firstTimestamp) - toComparableTimestamp(secondTimestamp);
-    if (byTimestamp !== 0) {
-      return byTimestamp;
-    }
-
-    const firstEventId = normalizeEventId(
-      first && 'last_seen_incoming_activity_event_id' in first
-        ? first.last_seen_incoming_activity_event_id
-        : first?.eventId
-    ) ?? '';
-    const secondEventId = normalizeEventId(
-      second && 'last_seen_incoming_activity_event_id' in second
-        ? second.last_seen_incoming_activity_event_id
-        : second?.eventId
-    ) ?? '';
-
-    return firstEventId.localeCompare(secondEventId);
-  }
-
-  function buildChatMetaWithUnseenReactionCount(
-    meta: Record<string, unknown>,
-    unseenReactionCount: number
-  ): Record<string, unknown> {
-    const normalizedCount = Math.max(0, Math.floor(Number(unseenReactionCount) || 0));
-    const nextMeta = { ...meta };
-
-    if (normalizedCount > 0) {
-      nextMeta.unseen_reaction_count = normalizedCount;
-    } else {
-      delete nextMeta.unseen_reaction_count;
-    }
-
-    return nextMeta;
-  }
-
-  async function publishPrivatePreferences(
-    preferences: PrivatePreferences,
-    seedRelayUrls: string[] = []
-  ): Promise<void> {
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      throw new Error('Missing public key in localStorage. Login is required.');
-    }
-
-    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
-    if (relayUrls.length === 0) {
-      throw new Error('Cannot publish private preferences without at least one relay.');
-    }
-
-    await ensureRelayConnections(relayUrls);
-    const user = await getLoggedInSignerUser();
-
-    const preferencesEvent = new NDKEvent(ndk, {
-      kind: PRIVATE_PREFERENCES_KIND,
-      created_at: Math.floor(Date.now() / 1000),
-      pubkey: user.pubkey,
-      content: await encryptPrivatePreferencesContent(preferences),
-      tags: [['d', PRIVATE_PREFERENCES_D_TAG]]
-    });
-
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    await preferencesEvent.publishReplaceable(relaySet);
-    updateStoredEventSinceFromCreatedAt(preferencesEvent.created_at);
-  }
-
-  async function restorePrivatePreferences(seedRelayUrls: string[] = []): Promise<void> {
-    if (restorePrivatePreferencesPromise) {
-      return restorePrivatePreferencesPromise;
-    }
-
-    beginStartupStep('private-preferences');
-    restorePrivatePreferencesPromise = (async () => {
-      try {
-        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-        if (!loggedInPubkeyHex) {
-          completeStartupStep('private-preferences');
-          return;
-        }
-
-        const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
-        if (relayUrls.length === 0) {
-          completeStartupStep('private-preferences');
-          return;
-        }
-
-        await ensureRelayConnections(relayUrls);
-        await getLoggedInSignerUser();
-
-        const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-        const preferencesEvent = await ndk.fetchEvent(
-          {
-            kinds: [PRIVATE_PREFERENCES_KIND],
-            authors: [loggedInPubkeyHex],
-            '#d': [PRIVATE_PREFERENCES_D_TAG]
-          },
-          {
-            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-          },
-          relaySet
-        );
-        if (!preferencesEvent) {
-          completeStartupStep('private-preferences');
-          return;
-        }
-
-        updateStoredEventSinceFromCreatedAt(preferencesEvent.created_at);
-        let decryptedPreferences: PrivatePreferences | null = null;
-        try {
-          decryptedPreferences = await decryptPrivatePreferencesContent(preferencesEvent.content);
-        } catch (error) {
-          console.warn('Failed to decrypt private preferences event', error);
-          failStartupStep('private-preferences', error);
-          return;
-        }
-        if (!decryptedPreferences) {
-          completeStartupStep('private-preferences');
-          return;
-        }
-
-        writePrivatePreferencesToStorage(decryptedPreferences);
-        completeStartupStep('private-preferences');
-      } catch (error) {
-        failStartupStep('private-preferences', error);
-        throw error;
-      }
-    })().finally(() => {
-      restorePrivatePreferencesPromise = null;
-    });
-
-    return restorePrivatePreferencesPromise;
-  }
-
-  async function publishGroupIdentitySecret(
-    groupPublicKey: string,
-    encryptedPrivateKey: string,
-    seedRelayUrls: string[] = []
-  ): Promise<RelaySaveStatus> {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
-    const normalizedEncryptedPrivateKey = encryptedPrivateKey.trim();
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      throw new Error('Missing public key in localStorage. Login is required.');
-    }
-
-    if (!normalizedGroupPublicKey || !normalizedEncryptedPrivateKey) {
-      throw new Error('A valid group identity is required.');
-    }
-
-    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
-    if (relayUrls.length === 0) {
-      throw new Error('Cannot publish group identity secret without at least one relay.');
-    }
-
-    await ensureRelayConnections(relayUrls);
-    const user = await getLoggedInSignerUser();
-
-    const groupSecretEvent = new NDKEvent(ndk, {
-      kind: PRIVATE_PREFERENCES_KIND,
-      created_at: Math.floor(Date.now() / 1000),
-      pubkey: user.pubkey,
-      content: normalizedEncryptedPrivateKey,
-      tags: [
-        ['d', normalizedGroupPublicKey],
-        ['t', GROUP_IDENTITY_SECRET_TAG]
-      ]
-    });
-
-    const publishResult = await publishReplaceableEventWithRelayStatuses(
-      groupSecretEvent,
-      relayUrls,
-      'self'
-    );
-    if (
-      publishResult.relayStatuses.some(
-        (entry) => entry.direction === 'outbound' && entry.status === 'published'
-      )
-    ) {
-      updateStoredEventSinceFromCreatedAt(groupSecretEvent.created_at);
-    }
-
-    const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
-    if (publishResult.error && !relaySaveStatus.errorMessage) {
-      relaySaveStatus.errorMessage = publishResult.error.message;
-    }
-
-    return relaySaveStatus;
-  }
-
-  async function fetchGroupIdentitySecretEvents(
-    seedRelayUrls: string[] = []
-  ): Promise<Map<string, NDKEvent>> {
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      return new Map<string, NDKEvent>();
-    }
-
-    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
-    if (relayUrls.length === 0) {
-      return new Map<string, NDKEvent>();
-    }
-
-    await ensureRelayConnections(relayUrls);
-    await getLoggedInSignerUser();
-
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    const events = await ndk.fetchEvents(
-      {
-        kinds: [PRIVATE_PREFERENCES_KIND],
-        authors: [loggedInPubkeyHex],
-        '#t': [GROUP_IDENTITY_SECRET_TAG]
-      },
-      {
-        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-      },
-      relaySet
-    );
-
-    const eventsByGroupPubkey = new Map<string, NDKEvent>();
-
-    for (const event of events) {
-      updateStoredEventSinceFromCreatedAt(event.created_at);
-      const dTag = inputSanitizerService.normalizeHexKey(
-        event.getMatchingTags('d')[0]?.[1]?.trim() ?? ''
-      );
-      if (!dTag) {
-        continue;
-      }
-
-      const existingEvent = eventsByGroupPubkey.get(dTag);
-      if (existingEvent && compareReplaceableEventState(existingEvent, event) >= 0) {
-        continue;
-      }
-
-      eventsByGroupPubkey.set(dTag, event);
-    }
-
-    return eventsByGroupPubkey;
-  }
-
-  async function restoreGroupIdentitySecrets(seedRelayUrls: string[] = []): Promise<void> {
-    if (restoreGroupIdentitySecretsPromise) {
-      return restoreGroupIdentitySecretsPromise;
-    }
-
-    beginStartupStep('group-identity-secrets');
-    restoreGroupIdentitySecretsPromise = (async () => {
-      try {
-        const eventsByGroupPubkey = await fetchGroupIdentitySecretEvents(seedRelayUrls);
-        if (eventsByGroupPubkey.size === 0) {
-          completeStartupStep('group-identity-secrets');
-          return;
-        }
-
-        let didChange = false;
-        for (const [groupPublicKey, event] of eventsByGroupPubkey.entries()) {
-          let decryptedSecret: GroupIdentitySecretContent | null = null;
-          try {
-            decryptedSecret = await decryptGroupIdentitySecretContent(event.content);
-          } catch (error) {
-            console.warn('Failed to decrypt group identity secret event', groupPublicKey, error);
-            continue;
-          }
-
-          if (!decryptedSecret || decryptedSecret.group_pubkey !== groupPublicKey) {
-            continue;
-          }
-
-          didChange =
-            (await ensureGroupContactAndChat(groupPublicKey, event.content, {
-              name: decryptedSecret.name,
-              about: decryptedSecret.about
-            })) || didChange;
-          if (
-            Number.isInteger(decryptedSecret.epoch_number) &&
-            Number(decryptedSecret.epoch_number) >= 0 &&
-            decryptedSecret.epoch_privkey
-          ) {
-            await persistIncomingGroupEpochTicket(
-              groupPublicKey,
-              Math.floor(Number(decryptedSecret.epoch_number)),
-              decryptedSecret.epoch_privkey,
-              {
-                fallbackName: decryptedSecret.name,
-                accepted: true,
-                invitationCreatedAt: toIsoTimestampFromUnix(event.created_at)
-              }
-            );
-          }
-        }
-
-        if (didChange) {
-          bumpContactListVersion();
-          await chatStore.reload();
-        }
-
-        completeStartupStep('group-identity-secrets');
-      } catch (error) {
-        failStartupStep('group-identity-secrets', error);
-        throw error;
-      }
-    })().finally(() => {
-      restoreGroupIdentitySecretsPromise = null;
-    });
-
-    return restoreGroupIdentitySecretsPromise;
-  }
-
-  async function createGroupChat(options: CreateGroupChatInput = {}): Promise<CreateGroupChatResult> {
-    const relayUrls = Array.isArray(options.relayUrls) ? options.relayUrls : [];
-    const relayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(relayUrls);
-    const groupSigner = NDKPrivateKeySigner.generate();
-    const initialEpochState = createInitialGroupEpochSecretState();
-    const groupPublicKey = inputSanitizerService.normalizeHexKey(groupSigner.pubkey);
-    if (!groupPublicKey) {
-      throw new Error('Failed to generate a valid group identity.');
-    }
-
-    const encryptedPrivateKey = await encryptGroupIdentitySecretContent({
-      version: GROUP_IDENTITY_SECRET_VERSION,
-      group_pubkey: groupPublicKey,
-      group_privkey: groupSigner.privateKey,
-      ...initialEpochState,
-      ...(typeof options.name === 'string' && options.name.trim()
-        ? { name: options.name.trim() }
-        : {}),
-      ...(typeof options.about === 'string' && options.about.trim()
-        ? { about: options.about.trim() }
-        : {})
-    });
-
-    const didChange = await ensureGroupContactAndChat(groupPublicKey, encryptedPrivateKey, {
-      name: options.name,
-      about: options.about
-    });
-    await persistIncomingGroupEpochTicket(
-      groupPublicKey,
-      initialEpochState.epoch_number,
-      initialEpochState.epoch_privkey,
-      {
-        fallbackName: options.name,
-        accepted: true,
-        invitationCreatedAt: new Date().toISOString()
-      }
-    );
-    if (didChange) {
-      bumpContactListVersion();
-      await chatStore.reload();
-    }
-
-    if (relayEntries.length > 0) {
-      await contactsService.init();
-      const groupContact = await contactsService.getContactByPublicKey(groupPublicKey);
-      if (groupContact && !contactRelayListsEqual(groupContact.relays, relayEntries)) {
-        const updatedGroupContact = await contactsService.updateContact(groupContact.id, {
-          relays: relayEntries
-        });
-        if (updatedGroupContact) {
-          bumpContactListVersion();
-        }
-      }
-    }
-
-    let groupSecretSave: RelaySaveStatus;
-    try {
-      groupSecretSave = await publishGroupIdentitySecret(
-        groupPublicKey,
-        encryptedPrivateKey,
-        relayUrls
-      );
-    } catch (error) {
-      groupSecretSave = {
-        relayUrls: [],
-        publishedRelayUrls: [],
-        failedRelayUrls: [],
-        errorMessage: error instanceof Error ? error.message : 'Failed to publish group identity secret.'
-      };
-    }
-
-    if (relayEntries.length > 0) {
-      try {
-        await publishGroupRelayList(groupPublicKey, relayEntries, relayUrls);
-      } catch (error) {
-        console.warn('Failed to publish group relay list during group creation', error);
-      }
-    }
-
-    let contactListSyncError: string | null = null;
-    try {
-      await publishPrivateContactList(relayUrls);
-    } catch (error) {
-      contactListSyncError =
-        error instanceof Error ? error.message : 'Failed to publish private contact list.';
-    }
-
-    return {
-      groupPublicKey,
-      encryptedPrivateKey,
-      groupSecretSave,
-      contactListSyncError
-    };
-  }
-
-  async function fetchContactCursorEvents(
-    contacts: ContactRecord[],
-    seedRelayUrls: string[] = []
-  ): Promise<Map<string, ContactCursorContent>> {
-    const contactDTagEntries = await Promise.all(
-      contacts.map(async (contact) => {
-        const dTag = await deriveContactCursorDTag(contact.public_key);
-        return dTag ? ([dTag, contact.public_key] as const) : null;
-      })
-    );
-
-    const normalizedContactDTags = contactDTagEntries
-      .filter((entry): entry is readonly [string, string] => Boolean(entry))
-      .map(([dTag]) => dTag);
-    if (normalizedContactDTags.length === 0) {
-      return new Map<string, ContactCursorContent>();
-    }
-
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      return new Map<string, ContactCursorContent>();
-    }
-
-    const relayUrls = await resolveLoggedInReadRelayUrls(seedRelayUrls);
-    if (relayUrls.length === 0) {
-      return new Map<string, ContactCursorContent>();
-    }
-
-    await ensureRelayConnections(relayUrls);
-    await getLoggedInSignerUser();
-
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    const eventsByDTag = new Map<string, ContactCursorContent>();
-
-    for (const dTagBatch of chunkValues(normalizedContactDTags, CONTACT_CURSOR_FETCH_BATCH_SIZE)) {
-      const events = await ndk.fetchEvents(
-        {
-          kinds: [PRIVATE_PREFERENCES_KIND],
-          authors: [loggedInPubkeyHex],
-          '#d': dTagBatch
-        },
-        {
-          cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY
-        },
-        relaySet
-      );
-
-      for (const event of events) {
-        updateStoredEventSinceFromCreatedAt(event.created_at);
-        const eventDTag = event.getMatchingTags('d')[0]?.[1]?.trim();
-        if (!eventDTag) {
-          continue;
-        }
-
-        let cursorContent: ContactCursorContent | null = null;
-        try {
-          cursorContent = await decryptContactCursorContent(event.content);
-        } catch (error) {
-          console.warn('Failed to decrypt contact cursor event', eventDTag, error);
-          continue;
-        }
-        if (!cursorContent) {
-          continue;
-        }
-
-        const existingCursor = eventsByDTag.get(eventDTag);
-        if (existingCursor && compareContactCursorState(existingCursor, cursorContent) >= 0) {
-          continue;
-        }
-
-        eventsByDTag.set(eventDTag, cursorContent);
-      }
-    }
-
-    return eventsByDTag;
-  }
-
-  async function applyContactCursorStateToContact(
-    contact: ContactRecord,
-    cursor: ContactCursorContent
-  ): Promise<boolean> {
-    const normalizedContactPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!normalizedContactPubkey || !loggedInPubkeyHex) {
-      return false;
-    }
-
-    let didChange = false;
-    const nextContactMeta: ContactMetadata = {
-      ...(contact.meta ?? {}),
-      last_seen_incoming_activity_at: cursor.last_seen_incoming_activity_at
-    };
-    if (cursor.last_seen_incoming_activity_event_id) {
-      nextContactMeta.last_seen_incoming_activity_event_id =
-        cursor.last_seen_incoming_activity_event_id;
-    } else {
-      delete nextContactMeta.last_seen_incoming_activity_event_id;
-    }
-
-    const didChangeLastSeenIncomingActivityAt =
-      contact.meta.last_seen_incoming_activity_at !== nextContactMeta.last_seen_incoming_activity_at ||
-      (contact.meta.last_seen_incoming_activity_event_id ?? null) !==
-        (nextContactMeta.last_seen_incoming_activity_event_id ?? null);
-
-    if (
-      contact.meta.last_seen_incoming_activity_at !== nextContactMeta.last_seen_incoming_activity_at ||
-      (contact.meta.last_seen_incoming_activity_event_id ?? null) !==
-        (nextContactMeta.last_seen_incoming_activity_event_id ?? null)
-    ) {
-      await contactsService.updateContact(contact.id, {
-        meta: nextContactMeta
-      });
-      didChange = true;
-    }
-
-    const chatRow = await chatDataService.getChatByPublicKey(normalizedContactPubkey);
-    if (!chatRow) {
-      return didChange;
-    }
-
-    const messageRows = await chatDataService.listMessages(normalizedContactPubkey);
-    const cursorTimestamp = toComparableTimestamp(cursor.last_seen_incoming_activity_at);
-    const nextUnreadMessageCount = messageRows.reduce((count, messageRow) => {
-      if (
-        inputSanitizerService.normalizeHexKey(messageRow.author_public_key) === loggedInPubkeyHex
-      ) {
-        return count;
-      }
-
-      return count + (toComparableTimestamp(messageRow.created_at) > cursorTimestamp ? 1 : 0);
-    }, 0);
-
-    let nextUnseenReactionCount = 0;
-    for (const messageRow of messageRows) {
-      if (
-        inputSanitizerService.normalizeHexKey(messageRow.author_public_key) !== loggedInPubkeyHex
-      ) {
-        continue;
-      }
-
-      const currentReactions = normalizeMessageReactions(messageRow.meta.reactions);
-      const nextReactions = currentReactions.map((reaction) => {
-        const normalizedReactionAt = normalizeTimestamp(reaction.createdAt);
-        if (
-          !normalizedReactionAt ||
-          inputSanitizerService.normalizeHexKey(reaction.reactorPublicKey) === loggedInPubkeyHex
-        ) {
-          return reaction;
-        }
-
-        if (toComparableTimestamp(normalizedReactionAt) <= cursorTimestamp) {
-          if (reaction.viewedByAuthorAt) {
-            return reaction;
-          }
-
-          return {
-            ...reaction,
-            viewedByAuthorAt: cursor.last_seen_incoming_activity_at
-          };
-        }
-
-        if (!reaction.viewedByAuthorAt) {
-          return reaction;
-        }
-
-        const { viewedByAuthorAt: _viewedByAuthorAt, ...reactionWithoutViewedAt } = reaction;
-        return reactionWithoutViewedAt;
-      });
-
-      nextUnseenReactionCount += countUnseenReactionsForAuthor(nextReactions, loggedInPubkeyHex);
-
-      const didChangeReactions =
-        currentReactions.length !== nextReactions.length ||
-        currentReactions.some((reaction, index) => {
-          const nextReaction = nextReactions[index];
-          return nextReaction ? !areMessageReactionsEqual(reaction, nextReaction) : true;
-        });
-      if (!didChangeReactions) {
-        continue;
-      }
-
-      await chatDataService.updateMessageMeta(
-        messageRow.id,
-        buildMetaWithReactions(messageRow.meta, nextReactions)
-      );
-      didChange = true;
-    }
-
-    const nextChatMeta = buildChatMetaWithUnseenReactionCount(
-      {
-        ...chatRow.meta,
-        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: cursor.last_seen_incoming_activity_at
-      },
-      nextUnseenReactionCount
-    );
-
-    if (
-      JSON.stringify(chatRow.meta) !== JSON.stringify(nextChatMeta)
-    ) {
-      await chatDataService.updateChatMeta(normalizedContactPubkey, nextChatMeta);
-      didChange = true;
-    }
-
-    if (Number(chatRow.unread_count ?? 0) !== nextUnreadMessageCount) {
-      await chatDataService.updateChatUnreadCount(normalizedContactPubkey, nextUnreadMessageCount);
-      didChange = true;
-    }
-
-    if (didChangeLastSeenIncomingActivityAt) {
-      scheduleChatChecks([normalizedContactPubkey]);
-    }
-
-    return didChange;
-  }
-
-  async function restoreContactCursorState(seedRelayUrls: string[] = []): Promise<void> {
-    if (restoreContactCursorStatePromise) {
-      return restoreContactCursorStatePromise;
-    }
-
-    beginStartupStep('contact-cursor-data');
-    restoreContactCursorStatePromise = (async () => {
-      try {
-        if (!readPrivatePreferencesFromStorage()) {
-          const privatePreferencesStep = getStartupStepSnapshot('private-preferences');
-          if (privatePreferencesStep.status === 'pending') {
-            await restorePrivatePreferences(seedRelayUrls);
-          }
-        }
-
-        if (!readPrivatePreferencesFromStorage()) {
-          completeStartupStep('contact-cursor-data');
-          return;
-        }
-
-        await contactsService.init();
-        const contacts = await contactsService.listContacts();
-        if (contacts.length === 0) {
-          completeStartupStep('contact-cursor-data');
-          return;
-        }
-
-        const cursorsByDTag = await fetchContactCursorEvents(contacts, seedRelayUrls);
-        if (cursorsByDTag.size === 0) {
-          completeStartupStep('contact-cursor-data');
-          return;
-        }
-
-        let didApplyCursorState = false;
-        for (const contact of contacts) {
-          const contactDTag = await deriveContactCursorDTag(contact.public_key);
-          if (!contactDTag) {
-            continue;
-          }
-
-          const cursor = cursorsByDTag.get(contactDTag);
-          if (!cursor) {
-            continue;
-          }
-
-          didApplyCursorState =
-            (await applyContactCursorStateToContact(contact, cursor)) || didApplyCursorState;
-        }
-
-        if (!didApplyCursorState) {
-          completeStartupStep('contact-cursor-data');
-          return;
-        }
-
-        await Promise.all([
-          chatStore.reload(),
-          import('src/stores/messageStore').then(({ useMessageStore }) =>
-            useMessageStore().reloadLoadedMessages()
-          )
-        ]);
-        completeStartupStep('contact-cursor-data');
-      } catch (error) {
-        failStartupStep('contact-cursor-data', error);
-        throw error;
-      }
-    })().finally(() => {
-      restoreContactCursorStatePromise = null;
-    });
-
-    return restoreContactCursorStatePromise;
-  }
-
-  async function publishContactCursor(
-    contactPublicKey: string,
-    cursor: ContactCursorState,
-    seedRelayUrls: string[] = []
-  ): Promise<void> {
-    const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(contactPublicKey);
-    if (!normalizedContactPublicKey || !normalizeTimestamp(cursor.at)) {
-      return;
-    }
-
-    const preferences = await ensurePrivatePreferences({
-      publishIfCreated: true
-    });
-    const dTag = await sha256Hex(`${preferences.contactSecret}${normalizedContactPublicKey}`);
-    const relayUrls = await resolveLoggedInPublishRelayUrls(seedRelayUrls);
-    if (relayUrls.length === 0) {
-      throw new Error('Cannot publish contact cursor without at least one relay.');
-    }
-
-    await ensureRelayConnections(relayUrls);
-    const user = await getLoggedInSignerUser();
-
-    const cursorEvent = new NDKEvent(ndk, {
-      kind: PRIVATE_PREFERENCES_KIND,
-      created_at: Math.floor(Date.now() / 1000),
-      pubkey: user.pubkey,
-      content: await encryptContactCursorContent(cursor),
-      tags: [['d', dTag]]
-    });
-
-    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
-    await cursorEvent.publishReplaceable(relaySet);
-    updateStoredEventSinceFromCreatedAt(cursorEvent.created_at);
-  }
-
-  function scheduleContactCursorPublish(
-    contactPublicKey: string,
-    cursor: ContactCursorState
-  ): void {
-    const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(contactPublicKey);
-    const normalizedCursorAt = normalizeTimestamp(cursor.at);
-    if (!normalizedContactPublicKey || !normalizedCursorAt) {
-      return;
-    }
-
-    const nextCursorState: ContactCursorState = {
-      at: normalizedCursorAt,
-      eventId: normalizeEventId(cursor.eventId)
-    };
-    const pendingCursor = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
-    if (pendingCursor && compareContactCursorState(pendingCursor, nextCursorState) >= 0) {
-      return;
-    }
-
-    pendingContactCursorPublishStates.set(normalizedContactPublicKey, nextCursorState);
-
-    const existingTimer = pendingContactCursorPublishTimers.get(normalizedContactPublicKey);
-    if (existingTimer) {
-      globalThis.clearTimeout(existingTimer);
-    }
-
-    const nextTimer = globalThis.setTimeout(() => {
-      pendingContactCursorPublishTimers.delete(normalizedContactPublicKey);
-      const cursorToPublish = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
-      pendingContactCursorPublishStates.delete(normalizedContactPublicKey);
-      if (!cursorToPublish) {
-        return;
-      }
-
-      void publishContactCursor(normalizedContactPublicKey, cursorToPublish).catch((error) => {
-        console.error('Failed to publish contact cursor event', normalizedContactPublicKey, error);
-      });
-    }, CONTACT_CURSOR_PUBLISH_DELAY_MS);
-
-    pendingContactCursorPublishTimers.set(normalizedContactPublicKey, nextTimer);
-  }
+  const {
+    ensureContactStoredAsGroup,
+    ensureRespondedPubkeyIsContact,
+    fetchContactPreviewByPublicKey,
+    queueBackgroundGroupContactRefresh,
+    refreshContactByPublicKey,
+    refreshGroupContactByPublicKey,
+    resolveUserByIdentifiers
+  } = createContactProfileRuntime({
+    backgroundGroupContactRefreshStartedAt,
+    buildIdentifierFallbacks,
+    buildUpdatedContactMeta,
+    bumpContactListVersion,
+    chatStore,
+    contactMetadataEqual,
+    contactRelayListsEqual,
+    ensureContactListedInPrivateContactList,
+    extractContactProfileEventStateFromProfile,
+    fetchContactRelayList,
+    getAppRelayUrls,
+    getLoggedInPublicKeyHex,
+    groupContactRefreshPromises,
+    isContactListedInPrivateContactList,
+    markContactProfileEventApplied,
+    markContactRelayListEventApplied,
+    ndk,
+    publishPrivateContactList,
+    refreshContactRelayList,
+    resolveGroupDisplayName,
+    shouldPreserveExistingGroupRelays
+  });
+
+  const {
+    applyContactCursorStateToContact,
+    buildChatMetaWithUnseenReactionCount,
+    compareContactCursorState,
+    createGroupChat,
+    fetchContactCursorEvents,
+    fetchGroupIdentitySecretEvents,
+    publishContactCursor,
+    publishGroupIdentitySecret,
+    publishPrivatePreferences,
+    restoreContactCursorState,
+    restoreGroupIdentitySecrets,
+    restorePrivatePreferences,
+    scheduleContactCursorPublish
+  } = createPrivateStateRuntime({
+    beginStartupStep,
+    buildFreshPrivatePreferences,
+    buildRelaySaveStatus,
+    bumpContactListVersion,
+    chatStore,
+    chunkValues,
+    compareReplaceableEventState,
+    completeStartupStep,
+    contactRelayListsEqual,
+    createInitialGroupEpochSecretState,
+    createStartupBatchTracker,
+    decryptContactCursorContent,
+    decryptGroupIdentitySecretContent,
+    decryptPrivatePreferencesContent,
+    deriveContactCursorDTag,
+    encryptContactCursorContent,
+    encryptGroupIdentitySecretContent,
+    encryptPrivatePreferencesContent,
+    ensureGroupContactAndChat,
+    ensureLoggedInSignerUser: getLoggedInSignerUser,
+    ensurePrivatePreferences,
+    ensureRelayConnections,
+    failStartupStep,
+    getFilterSince,
+    getLoggedInPublicKeyHex,
+    getStartupStepSnapshot,
+    isRestoringStartupState,
+    ndk,
+    normalizeEventId,
+    normalizeTimestamp,
+    pendingContactCursorPublishStates,
+    pendingContactCursorPublishTimers,
+    persistIncomingGroupEpochTicket,
+    publishGroupRelayList,
+    publishPrivateContactList,
+    publishReplaceableEventWithRelayStatuses,
+    queueTrackedContactSubscriptionsRefresh,
+    readPrivatePreferencesFromStorage,
+    refreshContactByPublicKey,
+    refreshContactRelayList,
+    resolveLoggedInPublishRelayUrls,
+    resolveLoggedInReadRelayUrls,
+    restoreState: restoreRuntimeState,
+    scheduleChatChecks,
+    sha256Hex,
+    shouldApplyPrivateContactListEvent,
+    toComparableTimestamp,
+    toIsoTimestampFromUnix,
+    updateStoredEventSinceFromCreatedAt,
+    writePrivatePreferencesToStorage
+  });
 
   async function applyPrivateContactListPubkeys(pubkeys: string[]): Promise<void> {
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
@@ -7190,360 +5028,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       });
   }
 
-  async function resolveUserByIdentifiers(
-    identifiers: string[],
-    expectedPubkeyHex: string
-  ): Promise<NDKUser | undefined> {
-    for (const identifier of identifiers) {
-      try {
-        const user = await ndk.fetchUser(identifier, true);
-        if (!user) {
-          continue;
-        }
-
-        const resolvedPubkey = inputSanitizerService.normalizeHexKey(user.pubkey);
-        if (!resolvedPubkey || resolvedPubkey !== expectedPubkeyHex) {
-          continue;
-        }
-
-        return user;
-      } catch {
-        continue;
-      }
-    }
-
-    return undefined;
-  }
-
-  async function refreshContactByPublicKey(
-    targetPubkeyHex: string,
-    fallbackName = '',
-    lifecycle: ContactRefreshLifecycle = {}
-  ): Promise<void> {
-    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
-    if (!normalizedTargetPubkey) {
-      return;
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
-    const identifiers = buildIdentifierFallbacks(normalizedTargetPubkey, existingContact?.meta);
-    const resolvedUser = await resolveUserByIdentifiers(identifiers, normalizedTargetPubkey);
-    if (!resolvedUser) {
-      return;
-    }
-
-    let fetchedProfile: NDKUserProfile | null = null;
-    let profileError: unknown | null = null;
-    lifecycle.onProfileFetchStart?.();
-    try {
-      fetchedProfile = await resolvedUser.fetchProfile();
-    } catch (error) {
-      profileError = error;
-      console.warn('Failed to fetch profile metadata for contact', normalizedTargetPubkey, error);
-    } finally {
-      lifecycle.onProfileFetchEnd?.(profileError);
-    }
-
-    let resolvedNpub = existingContact?.meta.npub?.trim() ?? '';
-    if (!resolvedNpub) {
-      try {
-        resolvedNpub = resolvedUser.npub;
-      } catch {
-        resolvedNpub = '';
-      }
-    }
-
-    let resolvedNprofile = existingContact?.meta.nprofile?.trim() ?? '';
-    if (!resolvedNprofile) {
-      try {
-        resolvedNprofile = resolvedUser.nprofile;
-      } catch {
-        resolvedNprofile = '';
-      }
-    }
-
-    const nextMeta = buildUpdatedContactMeta(
-      existingContact?.meta,
-      fetchedProfile,
-      resolvedNpub,
-      resolvedNprofile
-    );
-    const fetchedProfileEventState = extractContactProfileEventStateFromProfile(fetchedProfile);
-
-    const fallbackContactName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
-    const nextName =
-      nextMeta.display_name?.trim() ||
-      nextMeta.name?.trim() ||
-      existingContact?.name?.trim() ||
-      fallbackContactName;
-
-    let explicitRelayList: ContactRelayListFetchResult | null = null;
-    let relayError: unknown | null = null;
-    if (lifecycle.refreshRelayList) {
-      lifecycle.onRelayFetchStart?.();
-      try {
-        explicitRelayList = await fetchContactRelayList(normalizedTargetPubkey);
-      } catch (error) {
-        relayError = error;
-        console.warn('Failed to fetch relay list for contact', normalizedTargetPubkey, error);
-      } finally {
-        lifecycle.onRelayFetchEnd?.(relayError);
-      }
-    }
-    const fallbackRelayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(
-      resolvedUser.relayUrls ?? []
-    );
-    const nextRelays =
-      explicitRelayList !== null
-        ? explicitRelayList.relayEntries
-        : fallbackRelayEntries.length > 0
-          ? fallbackRelayEntries
-          : existingContact?.relays ?? [];
-    const effectiveNextRelays =
-      shouldPreserveExistingGroupRelays(existingContact, nextRelays)
-        ? existingContact?.relays ?? []
-        : nextRelays;
-
-    const didChangeContact =
-      !existingContact ||
-      existingContact.name !== nextName ||
-      !contactMetadataEqual(existingContact.meta, nextMeta) ||
-      !contactRelayListsEqual(existingContact.relays, effectiveNextRelays);
-
-    const chatStore = useChatStore();
-    if (existingContact) {
-      const updatedContact = await contactsService.updateContact(existingContact.id, {
-        name: nextName,
-        meta: nextMeta,
-        relays: effectiveNextRelays
-      });
-      if (!updatedContact) {
-        return;
-      }
-      await chatStore.syncContactProfile(normalizedTargetPubkey);
-      if (fetchedProfileEventState) {
-        markContactProfileEventApplied(normalizedTargetPubkey, fetchedProfileEventState);
-      }
-      if (explicitRelayList !== null) {
-        markContactRelayListEventApplied(normalizedTargetPubkey, {
-          createdAt: explicitRelayList.createdAt,
-          eventId: explicitRelayList.eventId
-        });
-      }
-      if (didChangeContact) {
-        bumpContactListVersion();
-      }
-      return;
-    }
-
-    const createdContact = await contactsService.createContact({
-      public_key: normalizedTargetPubkey,
-      name: nextName,
-      given_name: null,
-      meta: nextMeta,
-      relays: nextRelays
-    });
-    if (!createdContact) {
-      return;
-    }
-    await chatStore.syncContactProfile(normalizedTargetPubkey);
-    if (fetchedProfileEventState) {
-      markContactProfileEventApplied(normalizedTargetPubkey, fetchedProfileEventState);
-    }
-    if (explicitRelayList !== null) {
-      markContactRelayListEventApplied(normalizedTargetPubkey, {
-        createdAt: explicitRelayList.createdAt,
-        eventId: explicitRelayList.eventId
-      });
-    }
-    bumpContactListVersion();
-  }
-
-  async function ensureContactStoredAsGroup(
-    groupPublicKey: string,
-    options: {
-      fallbackName?: string;
-      relays?: ContactRelay[];
-    } = {}
-  ): Promise<ContactRecord | null> {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
-    if (!normalizedGroupPublicKey) {
-      return null;
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
-    const fallbackName =
-      options.fallbackName?.trim() ||
-      existingContact?.name?.trim() ||
-      resolveGroupDisplayName(normalizedGroupPublicKey);
-
-    if (!existingContact) {
-      const createdContact = await contactsService.createContact({
-        public_key: normalizedGroupPublicKey,
-        type: 'group',
-        name: fallbackName,
-        given_name: null,
-        ...(options.relays ? { relays: options.relays } : {})
-      });
-      if (createdContact) {
-        bumpContactListVersion();
-      }
-      return createdContact;
-    }
-
-    const shouldUpdateType = existingContact.type !== 'group';
-    const shouldUpdateName = existingContact.name !== fallbackName;
-    const shouldUpdateRelays =
-      options.relays !== undefined &&
-      !contactRelayListsEqual(existingContact.relays, options.relays);
-
-    if (!shouldUpdateType && !shouldUpdateName && !shouldUpdateRelays) {
-      return existingContact;
-    }
-
-    const updatedContact = await contactsService.updateContact(existingContact.id, {
-      ...(shouldUpdateType ? { type: 'group' as const } : {}),
-      ...(shouldUpdateName ? { name: fallbackName } : {}),
-      ...(shouldUpdateRelays ? { relays: options.relays } : {})
-    });
-    if (updatedContact) {
-      bumpContactListVersion();
-    }
-
-    return updatedContact ?? existingContact;
-  }
-
-  async function refreshGroupContactByPublicKey(
-    groupPublicKey: string,
-    fallbackName = ''
-  ): Promise<ContactRecord | null> {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
-    if (!normalizedGroupPublicKey) {
-      return null;
-    }
-
-    const pendingRefresh = groupContactRefreshPromises.get(normalizedGroupPublicKey);
-    if (pendingRefresh) {
-      return pendingRefresh;
-    }
-
-    const refreshPromise = (async (): Promise<ContactRecord | null> => {
-      try {
-        await refreshContactByPublicKey(normalizedGroupPublicKey, fallbackName);
-      } catch (error) {
-        console.warn('Failed to refresh group contact profile', normalizedGroupPublicKey, error);
-      }
-
-      const contact = await ensureContactStoredAsGroup(normalizedGroupPublicKey, {
-        fallbackName
-      });
-      try {
-        await refreshContactRelayList(normalizedGroupPublicKey);
-      } catch (error) {
-        console.warn('Failed to refresh group contact relay list', normalizedGroupPublicKey, error);
-      }
-      if (contact) {
-        await useChatStore().syncContactProfile(normalizedGroupPublicKey);
-      }
-
-      return contact;
-    })().finally(() => {
-      groupContactRefreshPromises.delete(normalizedGroupPublicKey);
-    });
-
-    groupContactRefreshPromises.set(normalizedGroupPublicKey, refreshPromise);
-    return refreshPromise;
-  }
-
-  function queueBackgroundGroupContactRefresh(groupPublicKey: string, fallbackName = ''): void {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
-    if (!normalizedGroupPublicKey) {
-      return;
-    }
-
-    if (groupContactRefreshPromises.has(normalizedGroupPublicKey)) {
-      return;
-    }
-
-    const now = Date.now();
-    const lastStartedAt = backgroundGroupContactRefreshStartedAt.get(normalizedGroupPublicKey) ?? 0;
-    if (now - lastStartedAt < BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS) {
-      return;
-    }
-
-    backgroundGroupContactRefreshStartedAt.set(normalizedGroupPublicKey, now);
-    void refreshGroupContactByPublicKey(normalizedGroupPublicKey, fallbackName).catch((error) => {
-      console.warn('Failed to refresh group contact after epoch ticket', normalizedGroupPublicKey, error);
-    });
-  }
-
-  async function fetchContactPreviewByPublicKey(
-    targetPubkeyHex: string,
-    fallbackName = ''
-  ): Promise<Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'> | null> {
-    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
-    if (!normalizedTargetPubkey) {
-      return null;
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
-    const identifiers = buildIdentifierFallbacks(normalizedTargetPubkey, existingContact?.meta);
-    const resolvedUser = await resolveUserByIdentifiers(identifiers, normalizedTargetPubkey);
-
-    let fetchedProfile: NDKUserProfile | null = null;
-    if (resolvedUser) {
-      try {
-        fetchedProfile = await resolvedUser.fetchProfile();
-      } catch (error) {
-        console.warn('Failed to fetch transient profile metadata for contact preview', normalizedTargetPubkey, error);
-      }
-    }
-
-    let resolvedNpub = existingContact?.meta.npub?.trim() ?? '';
-    if (!resolvedNpub && resolvedUser) {
-      try {
-        resolvedNpub = resolvedUser.npub;
-      } catch {
-        resolvedNpub = '';
-      }
-    }
-
-    let resolvedNprofile = existingContact?.meta.nprofile?.trim() ?? '';
-    if (!resolvedNprofile && resolvedUser) {
-      try {
-        resolvedNprofile = resolvedUser.nprofile;
-      } catch {
-        resolvedNprofile = '';
-      }
-    }
-
-    const nextMeta = buildUpdatedContactMeta(
-      existingContact?.meta,
-      fetchedProfile,
-      resolvedNpub,
-      resolvedNprofile
-    );
-    const fallbackContactName =
-      fallbackName.trim() ||
-      existingContact?.name?.trim() ||
-      normalizedTargetPubkey.slice(0, 16);
-    const nextName =
-      nextMeta.display_name?.trim() ||
-      nextMeta.name?.trim() ||
-      existingContact?.name?.trim() ||
-      fallbackContactName;
-
-    return {
-      public_key: normalizedTargetPubkey,
-      name: nextName,
-      given_name: existingContact?.given_name ?? null,
-      meta: nextMeta
-    };
-  }
-
   async function refreshAllStoredContacts(): Promise<{
     totalCount: number;
     refreshedCount: number;
@@ -7630,55 +5114,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       cursorAppliedCount,
       cursorUiReloaded
     };
-  }
-
-  async function ensureRespondedPubkeyIsContact(
-    targetPubkeyHex: string,
-    fallbackName = ''
-  ): Promise<void> {
-    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (
-      !normalizedTargetPubkey ||
-      !loggedInPubkeyHex ||
-      normalizedTargetPubkey === loggedInPubkeyHex
-    ) {
-      return;
-    }
-
-    await contactsService.init();
-    const existingContact = await contactsService.getContactByPublicKey(normalizedTargetPubkey);
-    if (existingContact && isContactListedInPrivateContactList(existingContact)) {
-      return;
-    }
-
-    const initialName = fallbackName.trim() || normalizedTargetPubkey.slice(0, 16);
-    const ensureResult = await ensureContactListedInPrivateContactList(normalizedTargetPubkey, {
-      fallbackName: initialName
-    });
-    if (!ensureResult.contact) {
-      return;
-    }
-
-    await useChatStore().syncContactProfile(normalizedTargetPubkey);
-
-    try {
-      await refreshContactByPublicKey(normalizedTargetPubkey, initialName);
-    } catch (error) {
-      console.warn('Failed to refresh responded contact profile', normalizedTargetPubkey, error);
-    }
-
-    if (ensureResult.didChange) {
-      try {
-        await publishPrivateContactList(getAppRelayUrls());
-      } catch (error) {
-        console.warn(
-          'Failed to publish private contact list after adding responded contact',
-          normalizedTargetPubkey,
-          error
-        );
-      }
-    }
   }
 
   function bumpRelayStatusVersion(): void {
@@ -10696,10 +8131,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
       globalThis.clearTimeout(timerId);
     });
     pendingContactCursorPublishTimers.clear();
-    lastContactProfileEventStateByPubkey.clear();
-    lastContactRelayListEventStateByPubkey.clear();
-    lastPrivateContactListCreatedAt = 0;
-    lastPrivateContactListEventId = '';
+    resetTrackedContactEventState();
     privateMessagesSubscriptionStartedAt.value = null;
     privateMessagesSubscriptionLastEventSeenAt.value = null;
     privateMessagesSubscriptionLastEventId.value = null;
@@ -10754,15 +8186,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
   async function logout(): Promise<void> {
     clearPrivateKey();
     eventSince.value = 0;
-    pendingEventSinceUpdate = 0;
+    pendingEventSinceState.pendingEventSinceUpdate = 0;
     isRestoringStartupState.value = false;
     restoreStartupStatePromise = null;
     restoreMyRelayListPromise = null;
     syncLoggedInContactProfilePromise = null;
     restorePrivateContactListPromise = null;
-    restorePrivatePreferencesPromise = null;
-    restoreGroupIdentitySecretsPromise = null;
-    restoreContactCursorStatePromise = null;
+    restoreRuntimeState.restorePrivatePreferencesPromise = null;
+    restoreRuntimeState.restoreGroupIdentitySecretsPromise = null;
+    restoreRuntimeState.restoreContactCursorStatePromise = null;
     syncRecentChatContactsPromise = null;
     contactProfileApplyQueue = Promise.resolve();
     contactRelayListApplyQueue = Promise.resolve();
@@ -10800,931 +8232,94 @@ export const useNostrStore = defineStore('nostrStore', () => {
       imageCacheService.clearAllData()
     ]);
   }
-
-  function validateNsec(input: string): NostrNsecValidationResult {
-    return inputSanitizerService.validateNsec(input);
-  }
-
-  function validatePrivateKey(input: string): NostrPrivateKeyValidationResult {
-    return inputSanitizerService.validatePrivateKey(input);
-  }
-
-  function savePrivateKeyFromNsec(input: string): NostrNsecValidationResult {
-    const validation = validateNsec(input);
-    if (!validation.isValid || !validation.hexPrivateKey) {
-      return validation;
-    }
-
-    savePrivateKeyHex(validation.hexPrivateKey);
-    return validation;
-  }
-
-  function savePrivateKey(input: string): NostrPrivateKeyValidationResult {
-    const validation = validatePrivateKey(input);
-    if (!validation.isValid || !validation.hexPrivateKey) {
-      return validation;
-    }
-
-    savePrivateKeyHex(validation.hexPrivateKey);
-    return validation;
-  }
-
-  function validateNpub(input: string): NostrNpubValidationResult {
-    return inputSanitizerService.validateNpub(input);
-  }
-
-  async function getNip05Data(identifier: string): Promise<NostrNip05DataResult> {
-    const value = identifier.trim();
-    if (!value || !isValidNip05(value)) {
-      return {
-        isValid: false,
-        normalizedPubkey: null,
-        name: null,
-        relays: [],
-        error: 'invalid'
-      };
-    }
-
-    try {
-      const user = await NDKUser.fromNip05(value, ndk, true);
-      const normalizedPubkey = user?.pubkey?.toLowerCase() ?? null;
-
-      if (!normalizedPubkey || !isValidPubkey(normalizedPubkey)) {
-        return {
-          isValid: false,
-          normalizedPubkey: null,
-          name: null,
-          relays: [],
-          error: 'nip05_unresolved'
-        };
-      }
-
-      const relays = inputSanitizerService.normalizeStringArray(user?.relayUrls ?? []);
-
-      return {
-        isValid: true,
-        normalizedPubkey,
-        name: user?.profile?.name?.trim() || inputSanitizerService.extractNip05Name(value),
-        relays,
-        error: null
-      };
-    } catch {
-      return {
-        isValid: false,
-        normalizedPubkey: null,
-        name: null,
-        relays: [],
-        error: 'nip05_unresolved'
-      };
-    }
-  }
-
-  async function resolveIdentifier(input: string): Promise<NostrIdentifierResolutionResult> {
-    const value = input.trim();
-    if (!value) {
-      return {
-        isValid: false,
-        normalizedPubkey: null,
-        resolvedName: null,
-        relays: [],
-        identifierType: null,
-        error: 'invalid'
-      };
-    }
-
-    if (value.includes('@')) {
-      const nip05Data = await getNip05Data(value);
-      return {
-        isValid: nip05Data.isValid,
-        normalizedPubkey: nip05Data.normalizedPubkey,
-        resolvedName: nip05Data.name,
-        relays: nip05Data.relays,
-        identifierType: 'nip05',
-        error: nip05Data.error
-      };
-    }
-
-    if (isValidPubkey(value)) {
-      return {
-        isValid: true,
-        normalizedPubkey: value.toLowerCase(),
-        resolvedName: null,
-        relays: [],
-        identifierType: 'pubkey',
-        error: null
-      };
-    }
-
-    const npubValidation = validateNpub(value);
-    return {
-      isValid: npubValidation.isValid,
-      normalizedPubkey: npubValidation.normalizedPubkey,
-      resolvedName: null,
-      relays: [],
-      identifierType: 'pubkey',
-      error: npubValidation.isValid ? null : 'invalid'
-    };
-  }
-
-  async function sendDirectMessage(
-    recipientPublicKey: string,
-    textMessage: string,
-    relays: string[],
-    options: SendDirectMessageOptions = {}
-  ): Promise<NostrEvent> {
-    const message = textMessage.trim();
-    if (!message) {
-      throw new Error('Message cannot be empty.');
-    }
-
-    const replyTargetEventId = normalizeEventId(options.replyToEventId);
-
-    const publishResult = await sendGiftWrappedRumor(
-      recipientPublicKey,
-      relays,
-      NDKKind.PrivateDirectMessage,
-      (senderPubkey, normalizedRecipientPubkey, createdAt) => {
-        return createDirectMessageRumorEvent(
-          senderPubkey,
-          normalizedRecipientPubkey,
-          message,
-          createdAt,
-          replyTargetEventId
-        );
-      },
-      options
-    );
-    return publishResult.giftWrapEvent;
-  }
-
-  async function sendDirectMessageReaction(
-    recipientPublicKey: string,
-    emoji: string,
-    targetEventId: string,
-    targetAuthorPublicKey: string,
-    relays: string[],
-    options: SendDirectMessageReactionOptions = {}
-  ): Promise<NostrEvent | null> {
-    const normalizedEmoji = emoji.trim();
-    const normalizedTargetEventId = normalizeEventId(targetEventId);
-    const normalizedTargetAuthorPublicKey = inputSanitizerService.normalizeHexKey(
-      targetAuthorPublicKey
-    );
-    if (!normalizedEmoji) {
-      throw new Error('Reaction emoji is required.');
-    }
-
-    if (!normalizedTargetEventId) {
-      throw new Error('Reaction target event id is required.');
-    }
-
-    if (!normalizedTargetAuthorPublicKey) {
-      throw new Error('Reaction target author public key is required.');
-    }
-
-    const targetKind =
-      Number.isInteger(options.targetKind) && Number(options.targetKind) > 0
-        ? Number(options.targetKind)
-        : NDKKind.PrivateDirectMessage;
-
-    const publishResult = await sendGiftWrappedRumor(
-      recipientPublicKey,
-      relays,
-      NDKKind.Reaction,
-      (senderPubkey, normalizedRecipientPubkey, createdAt) => {
-        return createReactionRumorEvent(
-          senderPubkey,
-          normalizedRecipientPubkey,
-          normalizedEmoji,
-          normalizedTargetEventId,
-          normalizedTargetAuthorPublicKey,
-          targetKind,
-          createdAt
-        );
-      },
-      {
-        createdAt: options.createdAt,
-        publishSelfCopy: options.publishSelfCopy
-      }
-    );
-    if (publishResult.rumorEvent) {
-      await nostrEventDataService.upsertEvent({
-        event: publishResult.rumorEvent,
-        direction: 'out',
-        relay_statuses: publishResult.relayStatuses
-      });
-    }
-
-    return publishResult.rumorEvent;
-  }
-
-  async function sendDirectMessageDeletion(
-    recipientPublicKey: string,
-    targetEventId: string,
-    targetKind: number,
-    relays: string[],
-    options: SendDirectMessageDeletionOptions = {}
-  ): Promise<NostrEvent | null> {
-    const normalizedTargetEventId = normalizeEventId(targetEventId);
-    if (!normalizedTargetEventId) {
-      throw new Error('Deletion target event id is required.');
-    }
-
-    if (!Number.isInteger(targetKind) || Number(targetKind) <= 0) {
-      throw new Error('Deletion target kind is required.');
-    }
-
-    const publishResult = await sendGiftWrappedRumor(
-      recipientPublicKey,
-      relays,
-      NDKKind.EventDeletion,
-      (senderPubkey, normalizedRecipientPubkey, createdAt) => {
-        return createEventDeletionRumorEvent(
-          senderPubkey,
-          normalizedRecipientPubkey,
-          normalizedTargetEventId,
-          Number(targetKind),
-          createdAt
-        );
-      },
-      {
-        createdAt: options.createdAt,
-        publishSelfCopy: options.publishSelfCopy
-      }
-    );
-
-    return publishResult.rumorEvent;
-  }
-
-  async function retryDirectMessageRelay(
-    messageId: number,
-    relayUrl: string,
-    scope: 'recipient' | 'self'
-  ): Promise<void> {
-    const normalizedMessageId = Number(messageId);
-    const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
-    if (
-      !Number.isInteger(normalizedMessageId) ||
-      normalizedMessageId <= 0 ||
-      !normalizedRelayUrl ||
-      (scope !== 'recipient' && scope !== 'self')
-    ) {
-      throw new Error('Invalid relay retry input.');
-    }
-
-    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
-
-    const message = await chatDataService.getMessageById(normalizedMessageId);
-    if (!message?.event_id) {
-      throw new Error('Message is missing a persisted event id.');
-    }
-
-    const storedEvent = await nostrEventDataService.getEventById(message.event_id);
-    if (!storedEvent || storedEvent.direction !== 'out') {
-      throw new Error('No outbound nostr event found for this message.');
-    }
-
-    const rumorEvent = createStoredDirectMessageRumorEvent(storedEvent.event);
-    if (!rumorEvent) {
-      throw new Error('Failed to rebuild the direct message event for retry.');
-    }
-
-    const signer = await getOrCreateSigner();
-    const recipientPubkey = readDirectMessageRecipientPubkey(storedEvent.event);
-    if (!recipientPubkey) {
-      throw new Error('Stored direct message event is missing a recipient.');
-    }
-
-    await appendRelayStatusesToMessageEvent(
-      normalizedMessageId,
-      buildPendingOutboundRelayStatuses([normalizedRelayUrl], scope),
-      {
-        event: storedEvent.event,
-        direction: 'out',
-        eventId: message.event_id
-      }
-    );
-
-    try {
-      await ensureRelayConnections([normalizedRelayUrl]);
-      const recipient =
-        scope === 'self'
-          ? new NDKUser({ pubkey: signer.pubkey })
-          : new NDKUser({ pubkey: recipientPubkey });
-      const giftWrapEvent = await giftWrap(rumorEvent, recipient, signer, {
-        rumorKind: NDKKind.PrivateDirectMessage
-      });
-      const publishResult = await publishEventWithRelayStatuses(
-        giftWrapEvent,
-        [normalizedRelayUrl],
-        scope
-      );
-
-      await appendRelayStatusesToMessageEvent(
-        normalizedMessageId,
-        publishResult.relayStatuses,
-        {
-          event: storedEvent.event,
-          direction: 'out',
-          eventId: message.event_id
-        }
-      );
-
-      if (publishResult.error) {
-        const failedRelayStatus = publishResult.relayStatuses.find(
-          (relayStatus) =>
-            relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
-        );
-        const detail = failedRelayStatus?.detail?.trim();
-        if (detail) {
-          throw new Error(detail);
-        }
-
-        throw publishResult.error;
-      }
-    } catch (error) {
-      const retryFailureDetail =
-        error instanceof Error && error.message.trim()
-          ? error.message.trim()
-          : 'Failed to publish event.';
-
-      await appendRelayStatusesToMessageEvent(
-        normalizedMessageId,
-        buildFailedOutboundRelayStatuses([normalizedRelayUrl], scope, retryFailureDetail),
-        {
-          event: storedEvent.event,
-          direction: 'out',
-          eventId: message.event_id
-        }
-      );
-
-      throw error;
-    }
-  }
-
-  async function retryGroupEpochTicketRelay(
-    eventId: string,
-    relayUrl: string
-  ): Promise<void> {
-    const normalizedEventId = normalizeEventId(eventId);
-    const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
-    if (!normalizedEventId || !normalizedRelayUrl) {
-      throw new Error('Invalid group ticket relay retry input.');
-    }
-
-    await Promise.all([contactsService.init(), chatDataService.init(), nostrEventDataService.init()]);
-
-    const storedEvent = await nostrEventDataService.getEventById(normalizedEventId);
-    if (!storedEvent || storedEvent.direction !== 'out') {
-      throw new Error('No outbound group ticket event found for retry.');
-    }
-
-    const signedEpochTicketEvent = createStoredSignedEvent(storedEvent.event);
-    if (!signedEpochTicketEvent || signedEpochTicketEvent.kind !== 1014) {
-      throw new Error('Failed to rebuild the group epoch ticket for retry.');
-    }
-
-    const groupPublicKey = inputSanitizerService.normalizeHexKey(storedEvent.event.pubkey);
-    const memberPublicKey = inputSanitizerService.normalizeHexKey(
-      readFirstTagValue(storedEvent.event.tags, 'p') ?? ''
-    );
-    const epochNumber = readEpochNumberTag(storedEvent.event.tags);
-    const createdAt = toIsoTimestampFromUnix(storedEvent.event.created_at);
-    if (!groupPublicKey || !memberPublicKey || epochNumber === null || !createdAt) {
-      throw new Error('Stored group epoch ticket is missing retry metadata.');
-    }
-
-    const groupContact = await contactsService.getContactByPublicKey(groupPublicKey);
-    if (!groupContact || groupContact.type !== 'group') {
-      throw new Error('Group contact not found for retry.');
-    }
-
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
-      groupContact.meta.owner_public_key ?? ''
-    );
-    if (!loggedInPubkeyHex || !normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
-      throw new Error('Only the owner can retry group epoch ticket delivery.');
-    }
-
-    const { secret } = await ensureGroupIdentitySecretEpochState(groupContact, []);
-    const groupSigner = new NDKPrivateKeySigner(secret.group_privkey, ndk);
-    const signerUser = await groupSigner.user();
-    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== groupPublicKey) {
-      throw new Error('Decrypted group private key does not match the group public key.');
-    }
-
-    await appendRelayStatusesToGroupMemberTicketEvent(
-      groupPublicKey,
-      memberPublicKey,
-      epochNumber,
-      buildPendingOutboundRelayStatuses([normalizedRelayUrl], 'recipient'),
-      {
-        event: storedEvent.event,
-        direction: 'out',
-        eventId: normalizedEventId,
-        createdAt
-      }
-    );
-
-    try {
-      await ensureRelayConnections([normalizedRelayUrl]);
-      const recipient = new NDKUser({ pubkey: memberPublicKey });
-      const giftWrapEvent = await giftWrapSignedEvent(
-        signedEpochTicketEvent,
-        recipient,
-        groupSigner
-      );
-      const publishResult = await publishEventWithRelayStatuses(
-        giftWrapEvent,
-        [normalizedRelayUrl],
-        'recipient'
-      );
-
-      await appendRelayStatusesToGroupMemberTicketEvent(
-        groupPublicKey,
-        memberPublicKey,
-        epochNumber,
-        publishResult.relayStatuses,
-        {
-          event: storedEvent.event,
-          direction: 'out',
-          eventId: normalizedEventId,
-          createdAt
-        }
-      );
-
-      if (publishResult.error) {
-        const failedRelayStatus = publishResult.relayStatuses.find(
-          (relayStatus) =>
-            relayStatus.relay_url === normalizedRelayUrl && relayStatus.status === 'failed'
-        );
-        const detail = failedRelayStatus?.detail?.trim();
-        if (detail) {
-          throw new Error(detail);
-        }
-
-        throw publishResult.error;
-      }
-    } catch (error) {
-      const retryFailureDetail =
-        error instanceof Error && error.message.trim()
-          ? error.message.trim()
-          : 'Failed to publish epoch ticket.';
-
-      await appendRelayStatusesToGroupMemberTicketEvent(
-        groupPublicKey,
-        memberPublicKey,
-        epochNumber,
-        buildFailedOutboundRelayStatuses([normalizedRelayUrl], 'recipient', retryFailureDetail),
-        {
-          event: storedEvent.event,
-          direction: 'out',
-          eventId: normalizedEventId,
-          createdAt
-        }
-      );
-
-      throw error;
-    }
-  }
-
-  function buildPendingReactionDiagnostics(): DeveloperPendingReactionSnapshot[] {
-    return Array.from(pendingIncomingReactions.entries())
-      .map(([targetEventId, entries]) => ({
-        targetEventId,
-        count: entries.length,
-        entries: entries.map((entry) => ({
-          chatPublicKey: entry.chatPublicKey,
-          targetAuthorPublicKey: entry.targetAuthorPublicKey,
-          emoji: entry.reaction.emoji,
-          reactorPublicKey: entry.reaction.reactorPublicKey,
-          createdAt: entry.reaction.createdAt,
-          eventId: normalizeEventId(entry.reaction.eventId) ?? null
-        }))
-      }))
-      .sort((first, second) => second.count - first.count);
-  }
-
-  function buildPendingDeletionDiagnostics(): DeveloperPendingDeletionSnapshot[] {
-    return Array.from(pendingIncomingDeletions.entries())
-      .map(([targetEventId, entries]) => ({
-        targetEventId,
-        count: entries.length,
-        entries: entries.map((entry) => ({
-          deletionAuthorPublicKey: entry.deletionAuthorPublicKey,
-          deleteEventId: normalizeEventId(entry.deleteEventId) ?? null,
-          deletedAt: entry.deletedAt,
-          targetKind: entry.targetKind
-        }))
-      }))
-      .sort((first, second) => second.count - first.count);
-  }
-
-  function buildDeveloperGroupSubscriptionContactMeta(
-    meta: ContactMetadata | undefined
-  ): Record<string, unknown> {
-    if (!meta || typeof meta !== 'object') {
-      return {};
-    }
-
-    return {
-      ...meta,
-      ...(meta.group_private_key_encrypted
-        ? { group_private_key_encrypted: '[redacted]' }
-        : {}),
-      ...(Array.isArray(meta.group_members)
-        ? {
-            group_members: meta.group_members.map((member) => ({ ...member }))
-          }
-        : {})
-    };
-  }
-
-  function buildDeveloperGroupSubscriptionChatMeta(
-    meta: Record<string, unknown> | undefined
-  ): Record<string, unknown> {
-    const normalizedEpochKeys = normalizeChatGroupEpochKeys(meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]);
-
-    return {
-      ...(meta && typeof meta === 'object' ? { ...meta } : {}),
-      ...(normalizedEpochKeys.length > 0
-        ? {
-            [GROUP_EPOCH_KEYS_CHAT_META_KEY]: normalizedEpochKeys.map((entry) => ({
-              epoch_number: entry.epoch_number,
-              epoch_public_key: entry.epoch_public_key,
-              epoch_private_key_encrypted: '[redacted]',
-              ...(entry.invitation_created_at
-                ? { invitation_created_at: entry.invitation_created_at }
-                : {})
-            }))
-          }
-        : {}),
-      ...(typeof meta?.[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY] === 'string' &&
-      String(meta[GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]).trim()
-        ? {
-            [GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY]: '[redacted]'
-          }
-        : {})
-    };
-  }
-
-  async function buildDeveloperGroupMessageSubscriptionSnapshot(): Promise<
-    DeveloperGroupMessageSubscriptionSnapshot[]
-  > {
-    await Promise.all([contactsService.init(), chatDataService.init()]);
-
-    const recipientPubkeys = new Set(await listPrivateMessageRecipientPubkeys());
-    const groupContacts = (await contactsService.listContacts()).filter(
-      (contact) => contact.type === 'group'
-    );
-    if (groupContacts.length === 0) {
-      return [];
-    }
-
-    const chatsByPubkey = new Map(
-      (await chatDataService.listChats()).map((chat) => [chat.public_key, chat] as const)
-    );
-
-    return groupContacts
-      .map((contact) => {
-        const normalizedGroupPubkey = inputSanitizerService.normalizeHexKey(contact.public_key);
-        if (!normalizedGroupPubkey) {
-          return null;
-        }
-
-        const groupChat = chatsByPubkey.get(normalizedGroupPubkey) ?? null;
-        const epochKeys = normalizeChatGroupEpochKeys(groupChat?.meta?.[GROUP_EPOCH_KEYS_CHAT_META_KEY]);
-        const currentEpochPubkey = inputSanitizerService.normalizeHexKey(
-          typeof groupChat?.meta?.[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY] === 'string'
-            ? String(groupChat.meta[GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY])
-            : epochKeys[0]?.epoch_public_key ?? ''
-        );
-        if (!currentEpochPubkey || !recipientPubkeys.has(currentEpochPubkey)) {
-          return null;
-        }
-
-        const currentEpochEntry =
-          epochKeys.find((entry) => entry.epoch_public_key === currentEpochPubkey) ??
-          epochKeys[0] ??
-          null;
-        const name = contact.name.trim() || groupChat?.name?.trim() || normalizedGroupPubkey;
-
-        return {
-          name,
-          pubkey: normalizedGroupPubkey,
-          epochPubkey: currentEpochPubkey,
-          epochNumber: currentEpochEntry?.epoch_number ?? null,
-          details: {
-            contactId: contact.id,
-            contactType: contact.type,
-            contactRelays: Array.isArray(contact.relays)
-              ? contact.relays.map((relay) => ({ ...relay }))
-              : [],
-            contactMeta: buildDeveloperGroupSubscriptionContactMeta(contact.meta),
-            chatId: groupChat?.id ?? null,
-            chatType: groupChat?.type ?? null,
-            unreadCount: groupChat?.unread_count ?? null,
-            lastMessageAt: groupChat?.last_message_at ?? null,
-            lastMessage: groupChat?.last_message ?? null,
-            epochCount: epochKeys.length,
-            chatMeta: buildDeveloperGroupSubscriptionChatMeta(groupChat?.meta)
-          }
-        };
-      })
-      .filter(
-        (entry): entry is DeveloperGroupMessageSubscriptionSnapshot => Boolean(entry)
-      )
-      .sort((first, second) => first.name.localeCompare(second.name));
-  }
-
-  function getPendingDeveloperQueueTargetEventIds(): string[] {
-    return Array.from(
-      new Set([
-        ...pendingIncomingReactions.keys(),
-        ...pendingIncomingDeletions.keys()
-      ])
-    );
-  }
-
-  function getPendingDeveloperQueueEntryCount(): number {
-    let total = 0;
-
-    for (const entries of pendingIncomingReactions.values()) {
-      total += entries.length;
-    }
-
-    for (const entries of pendingIncomingDeletions.values()) {
-      total += entries.length;
-    }
-
-    return total;
-  }
-
-  async function applyPendingReactionDeletionTarget(
-    targetEventId: string,
-    options: {
-      uiThrottleMs?: number;
-    } = {}
-  ): Promise<boolean> {
-    const normalizedTargetEventId = normalizeEventId(targetEventId);
-    if (!normalizedTargetEventId) {
-      return false;
-    }
-
-    const pendingEntries = pendingIncomingDeletions.get(normalizedTargetEventId) ?? [];
-    if (pendingEntries.length === 0) {
-      return false;
-    }
-
-    const remainingEntries: PendingIncomingDeletion[] = [];
-    let didApply = false;
-
-    for (const pendingDeletion of pendingEntries) {
-      const shouldTryReactionDeletion =
-        pendingDeletion.targetKind === null || pendingDeletion.targetKind === NDKKind.Reaction;
-      if (!shouldTryReactionDeletion) {
-        remainingEntries.push(pendingDeletion);
-        continue;
-      }
-
-      const handled = await processIncomingReactionDeletion(
-        normalizedTargetEventId,
-        pendingDeletion.deletionAuthorPublicKey,
-        options
-      );
-      if (!handled) {
-        remainingEntries.push(pendingDeletion);
-        continue;
-      }
-
-      didApply = true;
-    }
-
-    if (!didApply) {
-      return false;
-    }
-
-    if (remainingEntries.length > 0) {
-      pendingIncomingDeletions.set(normalizedTargetEventId, remainingEntries);
-    } else {
-      pendingIncomingDeletions.delete(normalizedTargetEventId);
-    }
-
-    return true;
-  }
-
-  async function applyPendingQueuesForStoredTargets(
-    targetEventIds: string[],
-    options: {
-      uiThrottleMs?: number;
-    } = {}
-  ): Promise<boolean> {
-    let didChange = false;
-
-    for (const targetEventId of targetEventIds) {
-      const normalizedTargetEventId = normalizeEventId(targetEventId);
-      if (!normalizedTargetEventId) {
-        continue;
-      }
-
-      const targetMessage = await chatDataService.getMessageByEventId(normalizedTargetEventId);
-      if (targetMessage) {
-        const previousReactionCount =
-          pendingIncomingReactions.get(normalizedTargetEventId)?.length ?? 0;
-        const previousDeletionCount =
-          pendingIncomingDeletions.get(normalizedTargetEventId)?.length ?? 0;
-
-        let nextMessage = await applyPendingIncomingReactionsForMessage(targetMessage, options);
-        nextMessage = await applyPendingIncomingDeletionsForMessage(nextMessage, options);
-
-        const nextReactionCount =
-          pendingIncomingReactions.get(normalizedTargetEventId)?.length ?? 0;
-        const nextDeletionCount =
-          pendingIncomingDeletions.get(normalizedTargetEventId)?.length ?? 0;
-
-        if (
-          nextReactionCount !== previousReactionCount ||
-          nextDeletionCount !== previousDeletionCount
-        ) {
-          didChange = true;
-        }
-        continue;
-      }
-
-      if (await applyPendingReactionDeletionTarget(normalizedTargetEventId, options)) {
-        didChange = true;
-      }
-    }
-
-    return didChange;
-  }
-
-  async function refreshDeveloperPendingQueues(): Promise<DeveloperPendingQueueRefreshSummary> {
-    await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
-
-    const initialTargetCount = getPendingDeveloperQueueTargetEventIds().length;
-    const initialEntryCount = getPendingDeveloperQueueEntryCount();
-    if (initialEntryCount === 0) {
-      return {
-        initialTargetCount,
-        initialEntryCount,
-        remainingTargetCount: 0,
-        remainingEntryCount: 0
-      };
-    }
-
-    const didChange = await applyPendingQueuesForStoredTargets(
-      getPendingDeveloperQueueTargetEventIds(),
-      {
-        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS
-      }
-    );
-
-    if (didChange) {
-      flushPrivateMessagesUiRefreshNow();
-      bumpDeveloperDiagnosticsVersion();
-    }
-
-    return {
-      initialTargetCount,
-      initialEntryCount,
-      remainingTargetCount: getPendingDeveloperQueueTargetEventIds().length,
-      remainingEntryCount: getPendingDeveloperQueueEntryCount()
-    };
-  }
-
-  async function getDeveloperDiagnosticsSnapshot(): Promise<DeveloperDiagnosticsSnapshot> {
-    const relayStore = useRelayStore();
-    const nip65RelayStore = useNip65RelayStore();
-    relayStore.init();
-    nip65RelayStore.init();
-
-    const loggedInPubkey = getLoggedInPublicKeyHex();
-    const authMethod = getStoredAuthMethod();
-    const storedEventSince = ensureStoredEventSince();
-    const filterSince = getFilterSince();
-    const appRelayUrls = getAppRelayUrls();
-    const effectiveReadRelayUrls = await resolveLoggedInReadRelayUrls();
-    const effectivePublishRelayUrls = await resolveLoggedInPublishRelayUrls();
-    const configuredRelayList = Array.from(configuredRelayUrls);
-    const privateMessagesRelayUrls = normalizeRelayStatusUrls(privateMessagesSubscriptionRelayUrls.value);
-    const groupMessagesSubscription = await buildDeveloperGroupMessageSubscriptionSnapshot();
-    const relayRows = normalizeRelayStatusUrls([
-      ...appRelayUrls,
-      ...effectiveReadRelayUrls,
-      ...effectivePublishRelayUrls,
-      ...privateMessagesRelayUrls,
-      ...configuredRelayList
-    ]).map((relayUrl) => {
-      const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
-      const snapshot = buildRelaySnapshot(ndk.pool.getRelay(normalizedRelayUrl, false));
-
-      return {
-        ...snapshot,
-        url: normalizedRelayUrl,
-        inReadSet: effectiveReadRelayUrls.includes(normalizedRelayUrl),
-        inPublishSet: effectivePublishRelayUrls.includes(normalizedRelayUrl),
-        inPrivateMessagesSubscription: privateMessagesRelayUrls.includes(normalizedRelayUrl),
-        isConfigured: configuredRelayUrls.has(normalizedRelayUrl)
-      };
-    });
-
-    return {
-      session: {
-        loggedInPubkey,
-        authMethod,
-        eventSince: storedEventSince,
-        eventSinceIso: toOptionalIsoTimestampFromUnix(storedEventSince),
-        filterSince,
-        filterSinceIso: toOptionalIsoTimestampFromUnix(filterSince),
-        isRestoringStartupState: isRestoringStartupState.value,
-        hasNip07Extension: hasNip07Extension(),
-        appRelayUrls,
-        myRelayEntries: nip65RelayStore.relayEntries.map((entry) => ({ ...entry })),
-        effectiveReadRelayUrls,
-        effectivePublishRelayUrls,
-        configuredRelayUrls: configuredRelayList
-      },
-      privateMessagesSubscription: {
-        active: Boolean(privateMessagesSubscription),
-        signature: privateMessagesSubscriptionSignature || null,
-        relayUrls: privateMessagesRelayUrls,
-        relaySnapshots: getRelaySnapshots(privateMessagesRelayUrls),
-        since: privateMessagesSubscriptionSince.value,
-        sinceIso: toOptionalIsoTimestampFromUnix(privateMessagesSubscriptionSince.value),
-        restoreThrottleMs: privateMessagesRestoreThrottleMs,
-        startedAt: privateMessagesSubscriptionStartedAt.value,
-        lastEventSeenAt: privateMessagesSubscriptionLastEventSeenAt.value,
-        lastEventId: privateMessagesSubscriptionLastEventId.value,
-        lastEventCreatedAt: privateMessagesSubscriptionLastEventCreatedAt.value,
-        lastEventCreatedAtIso: toOptionalIsoTimestampFromUnix(
-          privateMessagesSubscriptionLastEventCreatedAt.value
-        ),
-        lastEoseAt: privateMessagesSubscriptionLastEoseAt.value
-      },
-      groupMessagesSubscription,
-      relayRows,
-      pendingReactions: buildPendingReactionDiagnostics(),
-      pendingDeletions: buildPendingDeletionDiagnostics()
-    };
-  }
-
-  async function reconnectDeveloperRelay(relayUrl: string): Promise<void> {
-    const normalizedRelayUrl = normalizeRelayStatusUrl(relayUrl);
-    if (!normalizedRelayUrl) {
-      throw new Error('Relay URL is required.');
-    }
-
-    await ensureRelayConnections([normalizedRelayUrl]);
-    bumpDeveloperDiagnosticsVersion();
-  }
-
-  async function reconnectAllDeveloperRelays(): Promise<void> {
-    const snapshot = await getDeveloperDiagnosticsSnapshot();
-    const relayUrls = snapshot.relayRows.map((entry) => entry.url).filter((value): value is string => Boolean(value));
-    if (relayUrls.length === 0) {
-      return;
-    }
-
-    await ensureRelayConnections(relayUrls);
-    bumpDeveloperDiagnosticsVersion();
-  }
-
-  async function refreshPrivateMessages(
-    options: {
-      lookbackMinutes?: number;
-    } = {}
-  ): Promise<void> {
-    const lookbackMinutes =
-      typeof options.lookbackMinutes === 'number' && Number.isFinite(options.lookbackMinutes)
-        ? Math.max(1, Math.floor(options.lookbackMinutes))
-        : 0;
-    const sinceOverride =
-      lookbackMinutes > 0
-        ? Math.max(0, Math.floor(Date.now() / 1000) - lookbackMinutes * 60)
-        : undefined;
-
-    console.log('Refreshing private messages', {
-      lookbackMinutes,
-      sinceOverride: sinceOverride ?? null,
-      sinceOverrideIso: toOptionalIsoTimestampFromUnix(sinceOverride ?? null)
-    });
-
-    await subscribePrivateMessagesForLoggedInUser(true, {
-      restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-      sinceOverride
-    });
-    bumpDeveloperDiagnosticsVersion();
-  }
-
-  async function restartPrivateMessagesDiagnosticsSubscription(
-    options: {
-      lookbackMinutes?: number;
-    } = {}
-  ): Promise<void> {
-    await refreshPrivateMessages(options);
-  }
+  const {
+    getNip05Data,
+    resolveIdentifier,
+    retryDirectMessageRelay,
+    retryGroupEpochTicketRelay,
+    savePrivateKey,
+    savePrivateKeyFromNsec,
+    sendDirectMessage,
+    sendDirectMessageDeletion,
+    sendDirectMessageReaction,
+    validateNpub,
+    validateNsec,
+    validatePrivateKey
+  } = createUserActions({
+    appendRelayStatusesToGroupMemberTicketEvent,
+    appendRelayStatusesToMessageEvent,
+    buildFailedOutboundRelayStatuses,
+    buildPendingOutboundRelayStatuses,
+    createDirectMessageRumorEvent,
+    createEventDeletionRumorEvent,
+    createReactionRumorEvent,
+    createStoredDirectMessageRumorEvent,
+    createStoredSignedEvent,
+    ensureGroupIdentitySecretEpochState,
+    ensureRelayConnections,
+    getLoggedInPublicKeyHex,
+    getOrCreateSigner,
+    giftWrapSignedEvent,
+    ndk,
+    normalizeEventId,
+    normalizeRelayStatusUrl,
+    publishEventWithRelayStatuses,
+    readDirectMessageRecipientPubkey,
+    readEpochNumberTag,
+    readFirstTagValue,
+    savePrivateKeyHex,
+    sendGiftWrappedRumor,
+    toIsoTimestampFromUnix
+  });
+
+  const {
+    getDeveloperDiagnosticsSnapshot,
+    reconnectAllDeveloperRelays,
+    reconnectDeveloperRelay,
+    refreshDeveloperPendingQueues,
+    refreshPrivateMessages,
+    restartPrivateMessagesDiagnosticsSubscription
+  } = createDeveloperDiagnosticsRuntime({
+    applyPendingIncomingDeletionsForMessage,
+    applyPendingIncomingReactionsForMessage,
+    buildRelaySnapshot,
+    bumpDeveloperDiagnosticsVersion,
+    configuredRelayUrls,
+    ensureRelayConnections,
+    ensureStoredEventSince,
+    flushPrivateMessagesUiRefreshNow,
+    getAppRelayUrls,
+    getFilterSince,
+    getLoggedInPublicKeyHex,
+    getPrivateMessagesRestoreThrottleMs: () => privateMessagesRestoreThrottleMs,
+    getPrivateMessagesSubscription: () => privateMessagesSubscription,
+    getPrivateMessagesSubscriptionSignature: () => privateMessagesSubscriptionSignature,
+    getRelayConnectionState,
+    getRelaySnapshots,
+    getStoredAuthMethod,
+    hasNip07Extension,
+    isRestoringStartupState,
+    listPrivateMessageRecipientPubkeys,
+    ndk,
+    normalizeChatGroupEpochKeys,
+    normalizeEventId,
+    normalizeRelayStatusUrl,
+    normalizeRelayStatusUrls,
+    pendingIncomingDeletions,
+    pendingIncomingReactions,
+    privateMessagesSubscriptionLastEoseAt,
+    privateMessagesSubscriptionLastEventCreatedAt,
+    privateMessagesSubscriptionLastEventId,
+    privateMessagesSubscriptionLastEventSeenAt,
+    privateMessagesSubscriptionRelayUrls,
+    privateMessagesSubscriptionSince,
+    privateMessagesSubscriptionStartedAt,
+    processIncomingReactionDeletion,
+    resolveLoggedInPublishRelayUrls,
+    resolveLoggedInReadRelayUrls,
+    subscribePrivateMessagesForLoggedInUser,
+    toOptionalIsoTimestampFromUnix
+  });
 
   return {
     clearPrivateKey,
