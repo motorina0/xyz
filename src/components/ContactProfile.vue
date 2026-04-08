@@ -906,12 +906,13 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { isValidPubkey, normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
+import { isValidPubkey, normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
+import { useRelayDecorations } from 'src/composables/useRelayDecorations';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
 import { chatDataService, type ChatRow } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
@@ -933,7 +934,10 @@ import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
+import { buildAvatarText } from 'src/utils/avatarText';
 import { normalizeGroupMemberTicketDeliveries } from 'src/utils/groupMemberTicketDelivery';
+import { formatCompactPublicKey } from 'src/utils/publicKeyText';
+import { buildRelayLookupKey, uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 type ProfileTab = 'profile' | 'members' | 'epochs' | 'relays';
@@ -1008,10 +1012,6 @@ const isRefreshingContact = ref(false);
 const displayedPubkeyFormat = ref<PubkeyDisplayFormat>('hex');
 const pubkeyError = ref('');
 const pubkeyInfo = ref('');
-const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
-const relayInfoErrorByUrl = ref<Record<string, string>>({});
-const relayInfoLoadingByUrl = ref<Record<string, boolean>>({});
-const relayIconErrorByUrl = ref<Record<string, boolean>>({});
 const newMemberIdentifier = ref('');
 const newMemberIdentifierError = ref('');
 const isAddingMember = ref(false);
@@ -1026,11 +1026,22 @@ const refreshingMemberPubkeys = ref<Record<string, boolean>>({});
 const groupMemberTicketEventsById = ref<Record<string, NostrEventEntry | null>>({});
 const selectedGroupMemberTicketStatus = ref<SelectedGroupMemberTicketStatus | null>(null);
 const retryingGroupMemberTicketRelayKeys = ref<string[]>([]);
+const {
+  isRelayConnected,
+  isRelayInfoLoading,
+  loadRelayInfo,
+  prepareRelayDecorations,
+  pruneRelayInfoCache,
+  relayIconUrl,
+  relayInfo,
+  relayInfoError,
+  setRelayIconError
+} = useRelayDecorations(nostrStore);
 let lookupRequestId = 0;
 let groupOwnerLookupRequestId = 0;
 let groupMemberTicketEventsRequestId = 0;
 
-const relayList = computed(() => uniqueRelays(localProfile.relays));
+const relayList = computed(() => uniqueRelayUrls(localProfile.relays));
 const normalizedDisplayPubkey = computed(() => normalizePubkeyInput(localPubkey.value));
 const displayHexPubkey = computed(() => {
   return normalizedDisplayPubkey.value ?? localPubkey.value.trim();
@@ -1143,7 +1154,7 @@ const nextPublishedGroupMembers = computed(() => {
 
   return [...remainingMembers, ...pendingAddedMembers];
 });
-const allKnownRelays = computed(() => uniqueRelays([...relayList.value, ...groupRelayUrls.value]));
+const allKnownRelays = computed(() => uniqueRelayUrls([...relayList.value, ...groupRelayUrls.value]));
 const groupEpochRows = computed(() => normalizeGroupEpochRows(currentGroupChat.value?.meta?.group_epoch_keys));
 const currentEpochPublicKey = computed(() => {
   const fromChat = currentGroupChat.value?.meta?.current_epoch_public_key;
@@ -1214,16 +1225,16 @@ const headerName = computed(() => {
     return name;
   }
 
-  return shortPubkey(normalizedHeaderPubkey.value) || 'Contact';
+  return formatCompactPublicKey(normalizedHeaderPubkey.value) || 'Contact';
 });
 
 const headerSubtitle = computed(() => {
   const pubkey = normalizedHeaderPubkey.value;
-  return pubkey ? `Pubkey ${shortPubkey(pubkey)}` : 'Contact profile';
+  return pubkey ? `Pubkey ${formatCompactPublicKey(pubkey)}` : 'Contact profile';
 });
 
 const headerAvatar = computed(() => {
-  return buildAvatar(headerName.value || normalizedHeaderPubkey.value || 'NA');
+  return buildAvatarText(headerName.value || normalizedHeaderPubkey.value || 'NA');
 });
 
 const headerPictureUrl = computed(() => {
@@ -1635,135 +1646,8 @@ function normalizePubkeyInput(input: string): string | null {
   return npubValidation.isValid ? npubValidation.normalizedPubkey : null;
 }
 
-function shortPubkey(value: string): string {
-  const compact = value.trim();
-  if (compact.length <= 16) {
-    return compact;
-  }
-
-  return `${compact.slice(0, 8)}...${compact.slice(-8)}`;
-}
-
-function buildAvatar(value: string): string {
-  const compactValue = value.replace(/\s+/g, ' ').trim();
-  if (!compactValue) {
-    return 'NA';
-  }
-
-  const parts = compactValue.split(' ');
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  }
-
-  return compactValue.slice(0, 2).toUpperCase();
-}
-
 function toggleDisplayedPubkeyFormat(): void {
   displayedPubkeyFormat.value = displayedPubkeyFormat.value === 'npub' ? 'hex' : 'npub';
-}
-
-function relayKey(relay: string): string {
-  try {
-    return normalizeRelayUrl(relay);
-  } catch {
-    return relay.trim().toLowerCase();
-  }
-}
-
-function uniqueRelays(relays: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const relay of relays) {
-    const normalized = relay.trim();
-    if (!normalized) {
-      continue;
-    }
-
-    const key = relayKey(normalized);
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(normalized);
-  }
-
-  return result;
-}
-
-function pruneRelayInfoCache(relays: string[]): void {
-  const activeRelayKeys = new Set(relays.map((relay) => relayKey(relay)));
-
-  for (const key of Object.keys(relayInfoByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayInfoByUrl.value[key];
-    }
-  }
-
-  for (const key of Object.keys(relayInfoErrorByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayInfoErrorByUrl.value[key];
-    }
-  }
-
-  for (const key of Object.keys(relayInfoLoadingByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayInfoLoadingByUrl.value[key];
-    }
-  }
-
-  for (const key of Object.keys(relayIconErrorByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayIconErrorByUrl.value[key];
-    }
-  }
-}
-
-async function prepareRelayDecorations(relays: string[]): Promise<void> {
-  if (relays.length === 0) {
-    return;
-  }
-
-  await nostrStore.ensureRelayConnections(relays).catch((error) => {
-    console.warn('Failed to connect relays for status checks', error);
-  });
-
-  for (const relay of relays) {
-    void loadRelayInfo(relay);
-  }
-}
-
-function isRelayConnected(relay: string): boolean {
-  void nostrStore.relayStatusVersion;
-  return nostrStore.getRelayConnectionState(relay) === 'connected';
-}
-
-async function loadRelayInfo(relay: string, force = false): Promise<void> {
-  const key = relayKey(relay);
-
-  if (!force && relayInfoByUrl.value[key]) {
-    return;
-  }
-
-  if (relayInfoLoadingByUrl.value[key]) {
-    return;
-  }
-
-  relayInfoLoadingByUrl.value[key] = true;
-  relayInfoErrorByUrl.value[key] = '';
-
-  try {
-    const nextRelayInfo = await nostrStore.fetchRelayNip11Info(relay, force);
-    relayInfoByUrl.value[key] = nextRelayInfo;
-    relayIconErrorByUrl.value[key] = false;
-  } catch (error) {
-    relayInfoByUrl.value[key] = null;
-    relayInfoErrorByUrl.value[key] =
-      error instanceof Error ? error.message : 'Failed to load relay NIP-11 data.';
-  } finally {
-    relayInfoLoadingByUrl.value[key] = false;
-  }
 }
 
 function handleRelayExpand(relay: string): void {
@@ -1774,18 +1658,6 @@ function handleRelayExpand(relay: string): void {
   }
 }
 
-function relayInfo(relay: string): NDKRelayInformation | null {
-  return relayInfoByUrl.value[relayKey(relay)] ?? null;
-}
-
-function relayInfoError(relay: string): string {
-  return relayInfoErrorByUrl.value[relayKey(relay)] ?? '';
-}
-
-function isRelayInfoLoading(relay: string): boolean {
-  return relayInfoLoadingByUrl.value[relayKey(relay)] === true;
-}
-
 function retryRelayInfo(relay: string): void {
   try {
     void loadRelayInfo(relay, true);
@@ -1794,24 +1666,9 @@ function retryRelayInfo(relay: string): void {
   }
 }
 
-function relayIconUrl(relay: string): string | null {
-  const key = relayKey(relay);
-  if (relayIconErrorByUrl.value[key]) {
-    return null;
-  }
-
-  const icon = relayInfo(relay)?.icon;
-  if (typeof icon !== 'string') {
-    return null;
-  }
-
-  const trimmed = icon.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function handleRelayIconError(relay: string): void {
   try {
-    relayIconErrorByUrl.value[relayKey(relay)] = true;
+    setRelayIconError(relay);
   } catch (error) {
     reportUiError('Failed to handle relay icon error in contact profile', error);
   }
@@ -1842,7 +1699,11 @@ function validateGroupRelayUrl(value: string): string {
 
   try {
     const normalizedRelay = normalizeRelayUrl(value);
-    if (groupRelayEntries.value.some((entry) => relayKey(entry.url) === relayKey(normalizedRelay))) {
+    if (
+      groupRelayEntries.value.some(
+        (entry) => buildRelayLookupKey(entry.url) === buildRelayLookupKey(normalizedRelay)
+      )
+    ) {
       return 'Relay already added.';
     }
 
@@ -2494,7 +2355,7 @@ function memberDisplayName(member: GroupMemberDraft): string {
 }
 
 function memberAvatar(member: GroupMemberDraft): string {
-  return buildAvatar(memberDisplayName(member) || member.public_key);
+  return buildAvatarText(memberDisplayName(member) || member.public_key);
 }
 
 function memberPictureUrl(member: GroupMemberDraft): string {

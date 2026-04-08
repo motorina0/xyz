@@ -5,6 +5,7 @@ import { contactsService } from 'src/services/contactsService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import type { Chat, ChatInboxState, ChatMetadata } from 'src/types/chat';
 import type { ContactRecord } from 'src/types/contact';
+import { buildAvatarText } from 'src/utils/avatarText';
 
 interface ChatContactContext {
   picture: string;
@@ -45,20 +46,6 @@ function sortByLatest(chats: Chat[]): Chat[] {
   return [...chats].sort(
     (first, second) => toTimestamp(second.lastMessageAt) - toTimestamp(first.lastMessageAt)
   );
-}
-
-function buildAvatar(identifier: string): string {
-  const parts = identifier
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  }
-
-  const compact = identifier.replace(/\s+/g, '').toUpperCase();
-  return compact.slice(0, 2) || 'NA';
 }
 
 function normalizeChatIdentifier(value: string | null | undefined): string | null {
@@ -413,7 +400,7 @@ function syncChatMeta(
     }
   }
 
-  const nextAvatar = buildAvatar(avatarSeed);
+  const nextAvatar = buildAvatarText(avatarSeed);
   const currentAvatar = readMetaString(nextMeta, 'avatar');
   if (currentAvatar !== nextAvatar) {
     ensureWritableMeta().avatar = nextAvatar;
@@ -433,7 +420,7 @@ function mapChatRowToChat(
     contactContext?.givenName || nextName || row.public_key
   );
   const avatarFromMeta = readMetaString(nextMeta, 'avatar');
-  const avatar = avatarFromMeta || buildAvatar(nextName || row.public_key);
+  const avatar = avatarFromMeta || buildAvatarText(nextName || row.public_key);
 
   return {
     id: row.public_key,
@@ -1202,7 +1189,7 @@ export const useChatStore = defineStore('chatStore', () => {
     const nextAvatar =
       readMetaString(nextMeta, 'avatar') ||
       existingChat?.avatar ||
-      buildAvatar(nextName || nextPublicKey);
+      buildAvatarText(nextName || nextPublicKey);
     const nextChat: Chat = {
       id: nextChatId,
       publicKey: existingChat?.publicKey || nextPublicKey,
@@ -1291,7 +1278,9 @@ export const useChatStore = defineStore('chatStore', () => {
       last_message_at: now,
       unread_count: 0,
       meta: {
-        avatar: buildAvatar(contactContext?.givenName || contactContext?.contactName || cleanName),
+        avatar: buildAvatarText(
+          contactContext?.givenName || contactContext?.contactName || cleanName
+        ),
         ...(contactContext?.picture ? { picture: contactContext.picture } : {}),
         ...(contactContext?.givenName ? { given_name: contactContext.givenName } : {}),
         ...(contactContext?.contactName ? { contact_name: contactContext.contactName } : {}),
@@ -1341,7 +1330,8 @@ export const useChatStore = defineStore('chatStore', () => {
       contactContext,
       contactContext.givenName || nextName || normalizedPublicKey
     );
-    const nextAvatar = readMetaString(nextMeta, 'avatar') || buildAvatar(nextName || normalizedPublicKey);
+    const nextAvatar =
+      readMetaString(nextMeta, 'avatar') || buildAvatarText(nextName || normalizedPublicKey);
 
     if (existingChatRow) {
       await chatDataService.updateChat(existingChatRow.id, {

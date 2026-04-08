@@ -40,12 +40,12 @@
                 v-if="contactPicture(contact)"
                 :src="contactPicture(contact)"
                 :alt="contactDisplayName(contact)"
-                :fallback="buildAvatar(contactDisplayName(contact) || contact.public_key)"
+                :fallback="buildAvatarText(contactDisplayName(contact) || contact.public_key)"
                 size="36px"
                 bordered
               />
               <q-avatar v-else size="36px" color="primary" text-color="white">
-                {{ buildAvatar(contactDisplayName(contact) || contact.public_key) }}
+                {{ buildAvatarText(contactDisplayName(contact) || contact.public_key) }}
               </q-avatar>
             </q-item-section>
             <q-item-section>
@@ -106,6 +106,7 @@ import { contactsService } from 'src/services/contactsService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import type { ContactMetadata, ContactRecord, ContactType } from 'src/types/contact';
+import { buildAvatarText } from 'src/utils/avatarText';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 interface Props {
@@ -190,20 +191,6 @@ watch(
     void loadContacts(identifierInput.value);
   }
 );
-
-function buildAvatar(value: string): string {
-  const compactValue = value.replace(/\s+/g, ' ').trim();
-  if (!compactValue) {
-    return 'NA';
-  }
-
-  const parts = compactValue.split(' ');
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  }
-
-  return compactValue.slice(0, 2).toUpperCase();
-}
 
 function contactDisplayName(contact: ContactRecord): string {
   return (

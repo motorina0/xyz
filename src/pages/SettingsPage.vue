@@ -110,28 +110,31 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { useQuasar } from 'quasar';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
-import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
+import { useSectionShell } from 'src/composables/useSectionShell';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
-const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
 const nostrStore = useNostrStore();
 
-const isMobile = computed(() => $q.screen.lt.md);
 const {
+  isMobile,
   shellRef,
   shellStyle,
   sidebarWidth,
   minSidebarWidth,
   maxSidebarWidth,
   startSidebarResize,
-  handleSidebarResizeKeydown
-} = useDesktopSidebarWidth(isMobile);
+  handleSidebarResizeKeydown,
+  buildPageStyle: settingsPageStyleFn,
+  handleRailSelect
+} = useSectionShell({
+  activeSection: 'settings',
+  errorContext: 'Failed to navigate from settings rail'
+});
 const isSettingsListView = computed(() => route.name === 'settings');
 const isLogoutDialogOpen = ref(false);
 const isLoggingOut = ref(false);
@@ -188,31 +191,6 @@ watch(
   },
   { immediate: true }
 );
-
-function settingsPageStyleFn(offset: number, height: number): Record<string, string> {
-  const effectiveOffset = isMobile.value ? 0 : offset;
-  const pageHeight = Math.max(height - effectiveOffset, 0);
-
-  return {
-    height: `${pageHeight}px`,
-    minHeight: `${pageHeight}px`
-  };
-}
-
-function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
-  try {
-    if (section === 'chats') {
-      void router.push({ name: 'chats' });
-      return;
-    }
-
-    if (section === 'contacts') {
-      void router.push({ name: 'contacts' });
-    }
-  } catch (error) {
-    reportUiError('Failed to navigate from settings rail', error);
-  }
-}
 
 function goToSetting(routeName: SettingsRouteName): void {
   try {

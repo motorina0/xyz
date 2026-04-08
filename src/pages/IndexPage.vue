@@ -227,11 +227,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useQuasar } from 'quasar';
 import ChatList from 'src/components/ChatList.vue';
-import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
+import { useSectionShell } from 'src/composables/useSectionShell';
+import { useVisibleViewportHeight } from 'src/composables/useVisibleViewportHeight';
 import { useChatStore } from 'src/stores/chatStore';
 import {
   isMissingContactRelaysError,
@@ -257,23 +258,28 @@ const route = useRoute();
 const router = useRouter();
 const chatStore = useChatStore();
 const messageStore = useMessageStore();
-
-const isMobile = computed(() => $q.screen.lt.md);
+const { visibleViewportHeight } = useVisibleViewportHeight(() => $q.screen.height);
 const {
+  isMobile,
   shellRef,
   shellStyle,
   sidebarWidth,
   minSidebarWidth,
   maxSidebarWidth,
   startSidebarResize,
-  handleSidebarResizeKeydown
-} = useDesktopSidebarWidth(isMobile);
+  handleSidebarResizeKeydown,
+  buildPageStyle: homePageStyleFn,
+  handleRailSelect
+} = useSectionShell({
+  activeSection: 'chats',
+  errorContext: 'Failed to navigate from chats rail',
+  resolveHeight: (height) => visibleViewportHeight.value ?? height
+});
 const isNewChatDialogOpen = ref(false);
 const isCreateGroupDialogOpen = ref(false);
 const isCreatingGroup = ref(false);
 const newGroupName = ref('');
 const newGroupAbout = ref('');
-const visibleViewportHeight = ref<number | null>(null);
 type ChatRefreshRangeId = 'last-24-hours' | 'last-2-days' | 'last-week' | 'last-month' | 'custom';
 
 interface ChatRefreshRangeOption {
@@ -356,18 +362,6 @@ const searchQuery = computed({
 let nostrStorePromise: Promise<NostrStore> | null = null;
 let relayStorePromise: Promise<RelayStore> | null = null;
 
-function getVisibleViewportHeight(fallbackHeight: number): number {
-  if (typeof window === 'undefined') {
-    return fallbackHeight;
-  }
-
-  return Math.round(window.visualViewport?.height ?? window.innerHeight ?? fallbackHeight);
-}
-
-function updateVisibleViewportHeight(): void {
-  visibleViewportHeight.value = getVisibleViewportHeight($q.screen.height);
-}
-
 async function getNostrStore(): Promise<NostrStore> {
   if (!nostrStorePromise) {
     nostrStorePromise = import('src/stores/nostrStore').then(({ useNostrStore }) => useNostrStore());
@@ -386,31 +380,6 @@ async function getRelayStore(): Promise<RelayStore> {
   }
 
   return relayStorePromise;
-}
-
-function homePageStyleFn(offset: number, height: number): Record<string, string> {
-  const effectiveOffset = isMobile.value ? 0 : offset;
-  const pageHeight = Math.max((visibleViewportHeight.value ?? height) - effectiveOffset, 0);
-
-  return {
-    height: `${pageHeight}px`,
-    minHeight: `${pageHeight}px`
-  };
-}
-
-function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
-  try {
-    if (section === 'contacts') {
-      void router.push({ name: 'contacts' });
-      return;
-    }
-
-    if (section === 'settings') {
-      void router.push({ name: 'settings' });
-    }
-  } catch (error) {
-    reportUiError('Failed to navigate from chats rail', error);
-  }
 }
 
 function handleSelectChat(chatId: string): void {
@@ -934,28 +903,6 @@ async function syncChatRoute(): Promise<void> {
 watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   void syncChatRoute();
 }, { immediate: true });
-
-onMounted(() => {
-  updateVisibleViewportHeight();
-
-  const visualViewport = window.visualViewport;
-  window.addEventListener('resize', updateVisibleViewportHeight);
-  window.addEventListener('orientationchange', updateVisibleViewportHeight);
-  visualViewport?.addEventListener('resize', updateVisibleViewportHeight);
-  visualViewport?.addEventListener('scroll', updateVisibleViewportHeight);
-});
-
-onBeforeUnmount(() => {
-  if (typeof window === 'undefined') {
-    return;
-  }
-
-  const visualViewport = window.visualViewport;
-  window.removeEventListener('resize', updateVisibleViewportHeight);
-  window.removeEventListener('orientationchange', updateVisibleViewportHeight);
-  visualViewport?.removeEventListener('resize', updateVisibleViewportHeight);
-  visualViewport?.removeEventListener('scroll', updateVisibleViewportHeight);
-});
 </script>
 
 <style scoped>

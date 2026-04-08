@@ -120,7 +120,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { normalizeRelayUrl, type NDKRelayInformation } from '@nostr-dev-kit/ndk';
+import { normalizeRelayUrl } from '@nostr-dev-kit/ndk';
+import { useRelayDecorations } from 'src/composables/useRelayDecorations';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
@@ -128,6 +129,7 @@ import { relaysService } from 'src/services/relaysService';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
+import { uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 type RelayTab = 'my' | 'app' | 'contacts';
@@ -142,16 +144,23 @@ const nostrStore = useNostrStore();
 const activeTab = ref<RelayTab>('my');
 const appNewRelay = ref('');
 const myNewRelay = ref('');
-const relayInfoByUrl = ref<Record<string, NDKRelayInformation | null>>({});
-const relayInfoErrorByUrl = ref<Record<string, string>>({});
-const relayInfoLoadingByUrl = ref<Record<string, boolean>>({});
-const relayIconErrorByUrl = ref<Record<string, boolean>>({});
 const contactsRelays = ref<string[]>([]);
 const isLoadingContactsRelays = ref(false);
 const contactsRelaysError = ref('');
 const hasLoadedContactsRelays = ref(false);
 let myRelaysSyncPromise: Promise<void> | null = null;
 let hasPendingMyRelaysSync = false;
+const {
+  isRelayConnected,
+  isRelayInfoLoading,
+  loadRelayInfo,
+  prepareRelayDecorations: prepareRelayDecorationState,
+  pruneRelayInfoCache,
+  relayIconUrl,
+  relayInfo,
+  relayInfoError,
+  setRelayIconError
+} = useRelayDecorations(nostrStore);
 const appRelayValidationError = computed(() => validateRelayUrl(appNewRelay.value.trim()));
 const myRelayValidationError = computed(() => validateRelayUrl(myNewRelay.value.trim()));
 const canAddAppRelay = computed(() => {
@@ -185,7 +194,7 @@ const canUseDefaultMyRelays = computed(() => {
   return nip65RelayStore.relayEntries.some((entry) => entry.read !== true || entry.write !== true);
 });
 const allKnownRelays = computed(() =>
-  uniqueRelays([...relayStore.relays, ...nip65RelayStore.relays, ...contactsRelays.value])
+  uniqueRelayUrls([...relayStore.relays, ...nip65RelayStore.relays, ...contactsRelays.value])
 );
 
 relayStore.init();
@@ -195,7 +204,7 @@ watch(
   allKnownRelays,
   (relays) => {
     pruneRelayInfoCache(relays);
-    void prepareRelayDecorations(relays);
+    void prepareRelayDecorationState(relays);
   },
   { immediate: true }
 );
@@ -223,37 +232,6 @@ watch(
     void loadContactsRelays(true);
   }
 );
-
-function uniqueRelays(relays: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const relay of relays) {
-    const key = relayKey(relay);
-    if (seen.has(key)) {
-      continue;
-    }
-
-    seen.add(key);
-    result.push(relay);
-  }
-
-  return result;
-}
-
-async function prepareRelayDecorations(relays: string[]): Promise<void> {
-  if (relays.length === 0) {
-    return;
-  }
-
-  await nostrStore.ensureRelayConnections(relays).catch((error) => {
-    console.warn('Failed to connect relays for status checks', error);
-  });
-
-  for (const relay of relays) {
-    void loadRelayInfo(relay);
-  }
-}
 
 async function loadContactsRelays(force = false): Promise<void> {
   if (isLoadingContactsRelays.value || (!force && hasLoadedContactsRelays.value)) {
@@ -304,92 +282,12 @@ function reloadTab(tab: RelayTab): void {
   }
 }
 
-function isRelayConnected(relay: string): boolean {
-  void nostrStore.relayStatusVersion;
-  return nostrStore.getRelayConnectionState(relay) === 'connected';
-}
-
-function relayKey(relay: string): string {
-  try {
-    return normalizeRelayUrl(relay);
-  } catch {
-    return relay.trim().toLowerCase();
-  }
-}
-
-function pruneRelayInfoCache(relays: string[]): void {
-  const activeRelayKeys = new Set(relays.map((relay) => relayKey(relay)));
-
-  for (const key of Object.keys(relayInfoByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayInfoByUrl.value[key];
-    }
-  }
-
-  for (const key of Object.keys(relayInfoErrorByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayInfoErrorByUrl.value[key];
-    }
-  }
-
-  for (const key of Object.keys(relayInfoLoadingByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayInfoLoadingByUrl.value[key];
-    }
-  }
-
-  for (const key of Object.keys(relayIconErrorByUrl.value)) {
-    if (!activeRelayKeys.has(key)) {
-      delete relayIconErrorByUrl.value[key];
-    }
-  }
-}
-
-async function loadRelayInfo(relay: string, force = false): Promise<void> {
-  const key = relayKey(relay);
-
-  if (!force && relayInfoByUrl.value[key]) {
-    return;
-  }
-
-  if (relayInfoLoadingByUrl.value[key]) {
-    return;
-  }
-
-  relayInfoLoadingByUrl.value[key] = true;
-  relayInfoErrorByUrl.value[key] = '';
-
-  try {
-    const relayInfo = await nostrStore.fetchRelayNip11Info(relay, force);
-    relayInfoByUrl.value[key] = relayInfo;
-    relayIconErrorByUrl.value[key] = false;
-  } catch (error) {
-    relayInfoByUrl.value[key] = null;
-    relayInfoErrorByUrl.value[key] =
-      error instanceof Error ? error.message : 'Failed to load relay NIP-11 data.';
-  } finally {
-    relayInfoLoadingByUrl.value[key] = false;
-  }
-}
-
 function handleRelayExpand(relay: string): void {
   try {
     void loadRelayInfo(relay);
   } catch (error) {
     reportUiError('Failed to expand relay details', error);
   }
-}
-
-function relayInfo(relay: string): NDKRelayInformation | null {
-  return relayInfoByUrl.value[relayKey(relay)] ?? null;
-}
-
-function relayInfoError(relay: string): string {
-  return relayInfoErrorByUrl.value[relayKey(relay)] ?? '';
-}
-
-function isRelayInfoLoading(relay: string): boolean {
-  return relayInfoLoadingByUrl.value[relayKey(relay)] === true;
 }
 
 function retryRelayInfo(relay: string): void {
@@ -400,24 +298,9 @@ function retryRelayInfo(relay: string): void {
   }
 }
 
-function relayIconUrl(relay: string): string | null {
-  const key = relayKey(relay);
-  if (relayIconErrorByUrl.value[key]) {
-    return null;
-  }
-
-  const icon = relayInfo(relay)?.icon;
-  if (typeof icon !== 'string') {
-    return null;
-  }
-
-  const trimmed = icon.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
 function handleRelayIconError(relay: string): void {
   try {
-    relayIconErrorByUrl.value[relayKey(relay)] = true;
+    setRelayIconError(relay);
   } catch (error) {
     reportUiError('Failed to handle relay icon error', error);
   }

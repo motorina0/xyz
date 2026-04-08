@@ -200,7 +200,7 @@ import AppTooltip from 'src/components/AppTooltip.vue';
 import ContactProfile from 'src/components/ContactProfile.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import ContactLookupDialog from 'src/components/ContactLookupDialog.vue';
-import { useDesktopSidebarWidth } from 'src/composables/useDesktopSidebarWidth';
+import { useSectionShell } from 'src/composables/useSectionShell';
 import { contactsService } from 'src/services/contactsService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -210,6 +210,7 @@ import {
   createEmptyContactProfileForm,
   type ContactProfileForm
 } from 'src/types/contactProfile';
+import { buildAvatarText } from 'src/utils/avatarText';
 import { buildContactProfilePublishPayload } from 'src/utils/contactProfilePublish';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -222,16 +223,21 @@ const relayStore = useRelayStore();
 
 relayStore.init();
 
-const isMobile = computed(() => $q.screen.lt.md);
 const {
+  isMobile,
   shellRef,
   shellStyle,
   sidebarWidth,
   minSidebarWidth,
   maxSidebarWidth,
   startSidebarResize,
-  handleSidebarResizeKeydown
-} = useDesktopSidebarWidth(isMobile);
+  handleSidebarResizeKeydown,
+  buildPageStyle: contactsPageStyleFn,
+  handleRailSelect
+} = useSectionShell({
+  activeSection: 'contacts',
+  errorContext: 'Failed to navigate from contacts rail'
+});
 const isMobileProfileOpen = computed(() => isMobile.value && Boolean(selectedContactPubkey.value.trim()));
 const contactQuery = ref('');
 const contactQueryModel = computed({
@@ -309,52 +315,13 @@ watch(
   }
 );
 
-function contactsPageStyleFn(offset: number, height: number): Record<string, string> {
-  const effectiveOffset = isMobile.value ? 0 : offset;
-  const pageHeight = Math.max(height - effectiveOffset, 0);
-
-  return {
-    height: `${pageHeight}px`,
-    minHeight: `${pageHeight}px`
-  };
-}
-
-function handleRailSelect(section: 'chats' | 'contacts' | 'settings'): void {
-  try {
-    if (section === 'chats') {
-      void router.push({ name: 'chats' });
-      return;
-    }
-
-    if (section === 'settings') {
-      void router.push({ name: 'settings' });
-    }
-  } catch (error) {
-    reportUiError('Failed to navigate from contacts rail', error);
-  }
-}
-
-function buildAvatar(value: string): string {
-  const compactValue = value.replace(/\s+/g, ' ').trim();
-  if (!compactValue) {
-    return 'NA';
-  }
-
-  const parts = compactValue.split(' ');
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  }
-
-  return compactValue.slice(0, 2).toUpperCase();
-}
-
 function contactAvatar(contact: ContactRecord): string {
   const meta = contact.meta;
   if (meta.avatar?.trim()) {
     return meta.avatar.trim().slice(0, 2).toUpperCase();
   }
 
-  return buildAvatar(contactDisplayName(contact) || contact.public_key);
+  return buildAvatarText(contactDisplayName(contact) || contact.public_key);
 }
 
 function contactPictureUrl(contact: ContactRecord): string {

@@ -203,11 +203,13 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useMessageStore } from 'src/stores/messageStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type { Chat, Message, MessageReaction, MessageReplyPreview } from 'src/types/chat';
+import { buildAvatarText } from 'src/utils/avatarText';
 import { resolvePreferredContactRelayUrls } from 'src/utils/contactRelayUrls';
 import {
   countUnseenReactionsForAuthor,
   normalizeMessageReactions
 } from 'src/utils/messageReactions';
+import { formatCompactPublicKey } from 'src/utils/publicKeyText';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const props = withDefaults(
@@ -286,29 +288,6 @@ function logThreadScrollTrace(label: string, extra: Record<string, unknown> = {}
   void extra;
 }
 
-function buildAvatar(identifier: string): string {
-  const parts = identifier
-    .split(/\s+/)
-    .map((part) => part.trim())
-    .filter(Boolean);
-
-  if (parts.length >= 2) {
-    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
-  }
-
-  const compact = identifier.replace(/\s+/g, '').toUpperCase();
-  return compact.slice(0, 2) || 'NA';
-}
-
-function shortPubkey(value: string): string {
-  const compact = value.trim();
-  if (compact.length <= 16) {
-    return compact;
-  }
-
-  return `${compact.slice(0, 8)}...${compact.slice(-8)}`;
-}
-
 function readMetaString(meta: Record<string, unknown> | null | undefined, key: string): string {
   const value = meta?.[key];
   return typeof value === 'string' ? value.trim() : '';
@@ -373,7 +352,7 @@ const contactAuthorLabel = computed(() => {
 });
 
 const contactAvatarFallback = computed(() => {
-  return props.chat?.avatar?.trim() || buildAvatar(contactAuthorLabel.value);
+  return props.chat?.avatar?.trim() || buildAvatarText(contactAuthorLabel.value);
 });
 
 const loggedInPublicKey = computed(() => {
@@ -656,7 +635,7 @@ async function refreshSelfAuthorIdentity(loggedInPublicKeyValue: string | null):
   const refreshToken = ++selfAuthorIdentityRefreshToken;
   if (!loggedInPublicKeyValue) {
     selfAvatarImageUrl.value = '';
-    selfAvatarFallback.value = buildAvatar('You');
+    selfAvatarFallback.value = buildAvatarText('You');
     return;
   }
 
@@ -679,14 +658,14 @@ async function refreshSelfAuthorIdentity(loggedInPublicKeyValue: string | null):
       'You';
 
     selfAvatarImageUrl.value = readMetaString(meta, 'picture');
-    selfAvatarFallback.value = readMetaString(meta, 'avatar') || buildAvatar(preferredName);
+    selfAvatarFallback.value = readMetaString(meta, 'avatar') || buildAvatarText(preferredName);
   } catch (error) {
     if (refreshToken !== selfAuthorIdentityRefreshToken) {
       return;
     }
 
     selfAvatarImageUrl.value = '';
-    selfAvatarFallback.value = buildAvatar('You');
+    selfAvatarFallback.value = buildAvatarText('You');
     console.error(
       'Failed to load logged-in user avatar for chat thread',
       loggedInPublicKeyValue,
@@ -745,7 +724,10 @@ async function refreshMessageAuthorIdentities(): Promise<void> {
         const existingContact = await contactsService.getContactByPublicKey(authorPublicKey);
         const preview =
           existingContact ??
-          (await nostrStore.fetchContactPreviewByPublicKey(authorPublicKey, shortPubkey(authorPublicKey)));
+          (await nostrStore.fetchContactPreviewByPublicKey(
+            authorPublicKey,
+            formatCompactPublicKey(authorPublicKey)
+          ));
         const meta =
           preview?.meta && typeof preview.meta === 'object'
             ? preview.meta
@@ -755,14 +737,14 @@ async function refreshMessageAuthorIdentities(): Promise<void> {
           readMetaString(meta, 'name') ||
           preview?.name?.trim() ||
           preview?.given_name?.trim() ||
-          shortPubkey(authorPublicKey);
+          formatCompactPublicKey(authorPublicKey);
 
         return [
           authorPublicKey,
           {
             label,
             avatarSrc: readMetaString(meta, 'picture'),
-            avatarFallback: readMetaString(meta, 'avatar') || buildAvatar(label)
+            avatarFallback: readMetaString(meta, 'avatar') || buildAvatarText(label)
           }
         ] as const;
       })
@@ -783,9 +765,9 @@ async function refreshMessageAuthorIdentities(): Promise<void> {
       authorPubkeys.map((authorPublicKey) => [
         authorPublicKey,
         {
-          label: shortPubkey(authorPublicKey),
+          label: formatCompactPublicKey(authorPublicKey),
           avatarSrc: '',
-          avatarFallback: buildAvatar(shortPubkey(authorPublicKey))
+          avatarFallback: buildAvatarText(formatCompactPublicKey(authorPublicKey))
         }
       ])
     );
