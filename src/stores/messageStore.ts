@@ -252,6 +252,30 @@ function compareMessagesBySentAt(first: Message, second: Message): number {
   return first.id.localeCompare(second.id);
 }
 
+function countOwnUnseenReactions(
+  rows: Array<Pick<MessageRow, 'author_public_key' | 'meta'>>,
+  loggedInPublicKey: string | null | undefined
+): number {
+  const normalizedLoggedInPublicKey = normalizeChatIdentifier(loggedInPublicKey);
+  if (!normalizedLoggedInPublicKey) {
+    return 0;
+  }
+
+  return rows.reduce((count, row) => {
+    if (normalizeChatIdentifier(row.author_public_key) !== normalizedLoggedInPublicKey) {
+      return count;
+    }
+
+    return (
+      count +
+      countUnseenReactionsForAuthor(
+        normalizeMessageReactions(row.meta.reactions),
+        normalizedLoggedInPublicKey
+      )
+    );
+  }, 0);
+}
+
 function mergeMessagesById(currentMessages: Message[], incomingMessages: Message[]): Message[] {
   if (incomingMessages.length === 0) {
     return currentMessages;
@@ -294,6 +318,24 @@ function buildChatMetaWithUnseenReactionCountValue(
   return nextMeta;
 }
 
+function buildInitialMessageWindowFromUnreadAnchor(
+  olderRows: MessageRow[],
+  firstUnreadRow: MessageRow,
+  newerRows: MessageRow[],
+  hasOlder: boolean,
+  hasNewer: boolean
+): {
+  rows: MessageRow[];
+  hasOlder: boolean;
+  hasNewer: boolean;
+} {
+  return {
+    rows: [...olderRows, firstUnreadRow, ...newerRows],
+    hasOlder,
+    hasNewer
+  };
+}
+
 function resolveChatRecipientPublicKeyFromRow(
   chat: Pick<ChatRow, 'public_key' | 'type' | 'meta'>
 ): string {
@@ -304,11 +346,102 @@ function resolveChatRecipientPublicKeyFromRow(
     : chat.public_key;
 }
 
+function applyMessageUpsert(
+  currentMessages: Message[],
+  paginationState: ChatMessagePaginationState | null | undefined,
+  message: Message,
+  options: {
+    allowOutsideLoadedWindow?: boolean;
+  } = {}
+): {
+  ignored: boolean;
+  messages: Message[];
+  paginationState: ChatMessagePaginationState;
+} {
+  const existingIndex = currentMessages.findIndex((entry) => entry.id === message.id);
+  if (existingIndex >= 0) {
+    const nextMessages = [...currentMessages];
+    nextMessages[existingIndex] = message;
+    return {
+      ignored: false,
+      messages: nextMessages,
+      paginationState: paginationState ?? buildDefaultChatMessagePaginationState()
+    };
+  }
+
+  const nextPaginationState = paginationState ?? buildDefaultChatMessagePaginationState();
+  const incomingCursor = buildMessageCursorFromMessage(message);
+  const firstLoadedCursor = buildMessageCursorFromMessage(currentMessages[0] ?? null);
+  const lastLoadedCursor = buildMessageCursorFromMessage(
+    currentMessages[currentMessages.length - 1] ?? null
+  );
+  const isBeforeLoadedRange =
+    incomingCursor !== null &&
+    firstLoadedCursor !== null &&
+    compareMessageCursors(incomingCursor, firstLoadedCursor) < 0;
+  const isAfterLoadedRange =
+    incomingCursor !== null &&
+    lastLoadedCursor !== null &&
+    compareMessageCursors(incomingCursor, lastLoadedCursor) > 0;
+
+  if (
+    !options.allowOutsideLoadedWindow &&
+    paginationState &&
+    ((isBeforeLoadedRange && paginationState.hasOlder) ||
+      (isAfterLoadedRange && paginationState.hasNewer))
+  ) {
+    return {
+      ignored: true,
+      messages: currentMessages,
+      paginationState: nextPaginationState
+    };
+  }
+
+  const nextMessages = mergeMessagesById(currentMessages, [message]);
+  if (!incomingCursor) {
+    return {
+      ignored: false,
+      messages: nextMessages,
+      paginationState: nextPaginationState
+    };
+  }
+
+  const paginationPatch: Partial<ChatMessagePaginationState> = {};
+
+  if (
+    !nextPaginationState.oldestCursor ||
+    (!nextPaginationState.hasOlder &&
+      compareMessageCursors(incomingCursor, nextPaginationState.oldestCursor) < 0)
+  ) {
+    paginationPatch.oldestCursor = incomingCursor;
+  }
+
+  if (
+    !nextPaginationState.newestCursor ||
+    (!nextPaginationState.hasNewer &&
+      compareMessageCursors(incomingCursor, nextPaginationState.newestCursor) > 0)
+  ) {
+    paginationPatch.newestCursor = incomingCursor;
+  }
+
+  return {
+    ignored: false,
+    messages: nextMessages,
+    paginationState: {
+      ...nextPaginationState,
+      ...paginationPatch
+    }
+  };
+}
+
 export const __messageStoreTestUtils = {
+  applyMessageUpsert,
   buildChatMetaWithUnseenReactionCount: buildChatMetaWithUnseenReactionCountValue,
   buildDeletedMessageMeta,
+  buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
   compareMessageCursors,
+  countOwnUnseenReactions,
   mergeMessagesById,
   readUnseenReactionCountFromMeta: readUnseenReactionCountFromMetaValue,
   resolveChatRecipientPublicKey: resolveChatRecipientPublicKeyFromRow,
@@ -474,21 +607,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       chatDataService.listMessages(normalizedChatId)
     ]);
     const loggedInPublicKey = getLoggedInPublicKey();
-    const nextUnseenReactionCount = loggedInPublicKey
-      ? messageRows.reduce((count, row) => {
-          if (normalizeChatIdentifier(row.author_public_key) !== loggedInPublicKey) {
-            return count;
-          }
-
-          return (
-            count +
-            countUnseenReactionsForAuthor(
-              normalizeMessageReactions(row.meta.reactions),
-              loggedInPublicKey
-            )
-          );
-        }, 0)
-      : 0;
+    const nextUnseenReactionCount = countOwnUnseenReactions(messageRows, loggedInPublicKey);
 
     if (chatRow) {
       const currentCount = readUnseenReactionCountFromMetaValue(chatRow.meta);
@@ -616,67 +735,19 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const existingMessages = messagesByChat.value[normalizedChatId] ?? [];
-    const existingIndex = existingMessages.findIndex((entry) => entry.id === message.id);
-    if (existingIndex >= 0) {
-      const nextMessages = [...existingMessages];
-      nextMessages[existingIndex] = message;
-      messagesByChat.value[normalizedChatId] = nextMessages;
-      return;
-    }
-
-    const paginationState = paginationStateByChat.value[normalizedChatId];
-    const incomingCursor = buildMessageCursorFromMessage(message);
-    const firstLoadedCursor = buildMessageCursorFromMessage(existingMessages[0] ?? null);
-    const lastLoadedCursor = buildMessageCursorFromMessage(
-      existingMessages[existingMessages.length - 1] ?? null
+    const computedUpsert = applyMessageUpsert(
+      existingMessages,
+      paginationStateByChat.value[normalizedChatId],
+      message,
+      options
     );
-    const isBeforeLoadedRange =
-      incomingCursor !== null &&
-      firstLoadedCursor !== null &&
-      compareMessageCursors(incomingCursor, firstLoadedCursor) < 0;
-    const isAfterLoadedRange =
-      incomingCursor !== null &&
-      lastLoadedCursor !== null &&
-      compareMessageCursors(incomingCursor, lastLoadedCursor) > 0;
 
-    if (
-      !options.allowOutsideLoadedWindow &&
-      paginationState &&
-      ((isBeforeLoadedRange && paginationState.hasOlder) ||
-        (isAfterLoadedRange && paginationState.hasNewer))
-    ) {
+    if (computedUpsert.ignored) {
       return;
     }
 
-    const nextMessages = mergeMessagesById(existingMessages, [message]);
-    messagesByChat.value[normalizedChatId] = nextMessages;
-
-    if (!incomingCursor) {
-      return;
-    }
-
-    const nextPaginationState = paginationState ?? buildDefaultChatMessagePaginationState();
-    const paginationPatch: Partial<ChatMessagePaginationState> = {};
-
-    if (
-      !nextPaginationState.oldestCursor ||
-      (!nextPaginationState.hasOlder &&
-        compareMessageCursors(incomingCursor, nextPaginationState.oldestCursor) < 0)
-    ) {
-      paginationPatch.oldestCursor = incomingCursor;
-    }
-
-    if (
-      !nextPaginationState.newestCursor ||
-      (!nextPaginationState.hasNewer &&
-        compareMessageCursors(incomingCursor, nextPaginationState.newestCursor) > 0)
-    ) {
-      paginationPatch.newestCursor = incomingCursor;
-    }
-
-    if (Object.keys(paginationPatch).length > 0) {
-      setPaginationState(normalizedChatId, paginationPatch);
-    }
+    messagesByChat.value[normalizedChatId] = computedUpsert.messages;
+    paginationStateByChat.value[normalizedChatId] = computedUpsert.paginationState;
   }
 
   function upsertPersistedMessage(
@@ -872,11 +943,13 @@ export const useMessageStore = defineStore('messageStore', () => {
             )
           ]);
 
-          return {
-            rows: [...olderBatch.rows, ...unreadBatch.rows],
-            hasOlder: olderBatch.hasMore,
-            hasNewer: unreadBatch.hasMore
-          };
+          return buildInitialMessageWindowFromUnreadAnchor(
+            olderBatch.rows,
+            firstUnreadRow,
+            unreadBatch.rows.slice(1),
+            olderBatch.hasMore,
+            unreadBatch.hasMore
+          );
         }
       }
     }
@@ -991,7 +1064,7 @@ export const useMessageStore = defineStore('messageStore', () => {
         }
 
         const hydratedMessages = await hydrateMessageRows(batch.rows, normalizedChatId);
-        messagesByChat.value[normalizedChatId] = mergeMessages(
+        messagesByChat.value[normalizedChatId] = mergeMessagesById(
           messagesByChat.value[normalizedChatId] ?? [],
           hydratedMessages
         );
@@ -1053,7 +1126,7 @@ export const useMessageStore = defineStore('messageStore', () => {
         }
 
         const hydratedMessages = await hydrateMessageRows(batch.rows, normalizedChatId);
-        messagesByChat.value[normalizedChatId] = mergeMessages(
+        messagesByChat.value[normalizedChatId] = mergeMessagesById(
           messagesByChat.value[normalizedChatId] ?? [],
           hydratedMessages
         );
@@ -1097,7 +1170,7 @@ export const useMessageStore = defineStore('messageStore', () => {
       return null;
     }
 
-    const recipientPublicKey = resolveChatRecipientPublicKey(chat);
+    const recipientPublicKey = resolveChatRecipientPublicKeyFromRow(chat);
     if (!recipientPublicKey) {
       throw new Error('Group chat is missing the current epoch public key.');
     }

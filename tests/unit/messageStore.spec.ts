@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { __messageStoreTestUtils } from 'src/stores/messageStore';
 
 const {
+  applyMessageUpsert,
   buildChatMetaWithUnseenReactionCount,
   buildDeletedMessageMeta,
+  buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
   compareMessageCursors,
+  countOwnUnseenReactions,
   mergeMessagesById,
   readUnseenReactionCountFromMeta,
   resolveChatRecipientPublicKey,
@@ -161,6 +164,176 @@ describe('messageStore logic', () => {
     ).toEqual({
       id: 12,
       created_at: '2026-01-02T00:00:00.000Z'
+    });
+  });
+
+  it('counts unseen reactions only on messages authored by the logged-in user', () => {
+    expect(
+      countOwnUnseenReactions(
+        [
+          {
+            author_public_key: 'me',
+            meta: {
+              reactions: [
+                {
+                  emoji: '👍',
+                  name: 'thumbs up',
+                  reactorPublicKey: 'other-user'
+                },
+                {
+                  emoji: '🔥',
+                  name: 'fire',
+                  reactorPublicKey: 'me'
+                }
+              ]
+            }
+          },
+          {
+            author_public_key: 'them',
+            meta: {
+              reactions: [
+                {
+                  emoji: '👍',
+                  name: 'thumbs up',
+                  reactorPublicKey: 'another-user'
+                }
+              ]
+            }
+          }
+        ] as never,
+        'me'
+      )
+    ).toBe(1);
+  });
+
+  it('builds the initial unread message window around the first unread anchor', () => {
+    expect(
+      buildInitialMessageWindowFromUnreadAnchor(
+        [
+          { id: 1, message: 'older-1' },
+          { id: 2, message: 'older-2' }
+        ] as never,
+        { id: 3, message: 'first-unread' } as never,
+        [
+          { id: 4, message: 'newer-1' },
+          { id: 5, message: 'newer-2' }
+        ] as never,
+        true,
+        false
+      )
+    ).toMatchObject({
+      hasOlder: true,
+      hasNewer: false,
+      rows: [
+        { id: 1, message: 'older-1' },
+        { id: 2, message: 'older-2' },
+        { id: 3, message: 'first-unread' },
+        { id: 4, message: 'newer-1' },
+        { id: 5, message: 'newer-2' }
+      ]
+    });
+  });
+
+  it('ignores out-of-window inserts when pagination says older history is still hidden', () => {
+    const existingMessages = [
+      {
+        id: '2',
+        chatId: 'chat',
+        text: 'middle',
+        sender: 'them',
+        sentAt: '2026-01-02T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      },
+      {
+        id: '3',
+        chatId: 'chat',
+        text: 'newer',
+        sender: 'them',
+        sentAt: '2026-01-03T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      }
+    ];
+
+    const result = applyMessageUpsert(
+      existingMessages as never,
+      {
+        oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        newestCursor: { id: 3, created_at: '2026-01-03T00:00:00.000Z' },
+        hasOlder: true,
+        hasNewer: false,
+        isLoadingOlder: false,
+        isLoadingNewer: false
+      },
+      {
+        id: '1',
+        chatId: 'chat',
+        text: 'older',
+        sender: 'them',
+        sentAt: '2026-01-01T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      },
+      {
+        allowOutsideLoadedWindow: false
+      }
+    );
+
+    expect(result.ignored).toBe(true);
+    expect(result.messages).toEqual(existingMessages);
+  });
+
+  it('updates pagination when an in-range or explicitly allowed message is upserted', () => {
+    const result = applyMessageUpsert(
+      [
+        {
+          id: '2',
+          chatId: 'chat',
+          text: 'middle',
+          sender: 'them',
+          sentAt: '2026-01-02T00:00:00.000Z',
+          authorPublicKey: 'b',
+          eventId: null,
+          nostrEvent: null,
+          meta: {}
+        }
+      ] as never,
+      {
+        oldestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        newestCursor: { id: 2, created_at: '2026-01-02T00:00:00.000Z' },
+        hasOlder: false,
+        hasNewer: false,
+        isLoadingOlder: false,
+        isLoadingNewer: false
+      },
+      {
+        id: '3',
+        chatId: 'chat',
+        text: 'newer',
+        sender: 'them',
+        sentAt: '2026-01-03T00:00:00.000Z',
+        authorPublicKey: 'b',
+        eventId: null,
+        nostrEvent: null,
+        meta: {}
+      },
+      {
+        allowOutsideLoadedWindow: false
+      }
+    );
+
+    expect(result.ignored).toBe(false);
+    expect(result.messages.map((message) => message.id)).toEqual(['2', '3']);
+    expect(result.paginationState.newestCursor).toEqual({
+      id: 3,
+      created_at: '2026-01-03T00:00:00.000Z'
     });
   });
 });

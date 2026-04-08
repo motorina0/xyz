@@ -720,10 +720,143 @@ function resolveIncomingChatInboxStateValue(options: {
   return 'request';
 }
 
+function buildAvatarFallbackValue(value: string): string {
+  const compactValue = value.replace(/\s+/g, ' ').trim();
+  if (!compactValue) {
+    return 'NA';
+  }
+
+  const parts = compactValue.split(' ');
+  if (parts.length >= 2) {
+    return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  }
+
+  return compactValue.slice(0, 2).toUpperCase();
+}
+
+function resolveGroupDisplayNameValue(groupPublicKey: string): string {
+  return `Group ${groupPublicKey.slice(0, 8)}`;
+}
+
+function normalizeRelayStatusUrlValue(value: string): string | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  try {
+    return normalizeRelayUrl(normalized);
+  } catch {
+    return normalized;
+  }
+}
+
+function normalizeRelayStatusUrlsValue(relayUrls: string[]): string[] {
+  const uniqueRelayUrls = new Set<string>();
+  for (const relayUrl of relayUrls) {
+    const normalizedRelayUrl = normalizeRelayStatusUrlValue(relayUrl);
+    if (normalizedRelayUrl) {
+      uniqueRelayUrls.add(normalizedRelayUrl);
+    }
+  }
+
+  return Array.from(uniqueRelayUrls);
+}
+
+function normalizeWritableRelayUrlsValue(relays: ContactRelay[] | undefined): string[] {
+  if (!Array.isArray(relays)) {
+    return [];
+  }
+
+  const uniqueRelays = new Set<string>();
+  for (const relay of relays) {
+    if (!relay || relay.write === false) {
+      continue;
+    }
+
+    const relayUrl = typeof relay.url === 'string' ? relay.url.trim() : '';
+    if (!relayUrl) {
+      continue;
+    }
+
+    try {
+      uniqueRelays.add(normalizeRelayUrl(relayUrl));
+    } catch {
+      continue;
+    }
+  }
+
+  return Array.from(uniqueRelays);
+}
+
+function resolveGroupPublishRelayUrlsValue(
+  relays: ContactRelay[] | undefined,
+  seedRelayUrls: string[] = []
+): string[] {
+  return normalizeRelayStatusUrlsValue([
+    ...inputSanitizerService.normalizeStringArray(seedRelayUrls),
+    ...normalizeWritableRelayUrlsValue(relays)
+  ]);
+}
+
+function buildGroupInviteRequestPlanValue(options: {
+  groupPublicKey: string;
+  createdAt: string;
+  existingChat: Pick<ChatRow, 'meta' | 'name' | 'unread_count'> | null | undefined;
+  preview?: Pick<ContactRecord, 'name' | 'meta'> | null;
+}): {
+  shouldCreate: boolean;
+  nextName: string;
+  nextMeta: Record<string, unknown>;
+  nextUnreadCount: number;
+} | null {
+  const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(options.groupPublicKey);
+  const createdAt = options.createdAt.trim();
+  if (!normalizedGroupPublicKey || !createdAt) {
+    return null;
+  }
+
+  if (
+    resolveIncomingChatInboxStateValue({
+      chat: options.existingChat,
+      isAcceptedContact: false
+    }) !== 'request'
+  ) {
+    return null;
+  }
+
+  const previewName =
+    options.preview?.meta?.display_name?.trim() ||
+    options.preview?.meta?.name?.trim() ||
+    options.preview?.name?.trim() ||
+    resolveGroupDisplayNameValue(normalizedGroupPublicKey);
+  const previewPicture = options.preview?.meta?.picture?.trim() ?? '';
+  const nextMeta: Record<string, unknown> = {
+    ...(options.existingChat?.meta ?? {}),
+    avatar: buildAvatarFallbackValue(previewName),
+    contact_name: previewName,
+    [CHAT_REQUEST_TYPE_META_KEY]: GROUP_INVITE_REQUEST_TYPE,
+    [CHAT_REQUEST_MESSAGE_META_KEY]: GROUP_INVITE_REQUEST_MESSAGE,
+    [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: createdAt
+  };
+  if (previewPicture) {
+    nextMeta.picture = previewPicture;
+  }
+
+  return {
+    shouldCreate: !options.existingChat,
+    nextName: previewName,
+    nextMeta,
+    nextUnreadCount: options.existingChat ? Number(options.existingChat.unread_count ?? 0) + 1 : 1
+  };
+}
+
 export const __nostrStoreTestUtils = {
+  buildGroupInviteRequestPlan: buildGroupInviteRequestPlanValue,
   findConflictingKnownGroupEpochNumber: findConflictingKnownGroupEpochNumberValue,
   findHigherKnownGroupEpochConflict: findHigherKnownGroupEpochConflictValue,
   normalizeChatGroupEpochKeys: normalizeChatGroupEpochKeysValue,
+  resolveGroupPublishRelayUrls: resolveGroupPublishRelayUrlsValue,
   resolveCurrentGroupChatEpochEntry: resolveCurrentGroupChatEpochEntryValue,
   resolveGroupChatEpochEntries: resolveGroupChatEpochEntriesValue,
   resolveIncomingChatInboxState: resolveIncomingChatInboxStateValue
@@ -3122,42 +3255,25 @@ export const useNostrStore = defineStore('nostrStore', () => {
     await Promise.all([chatDataService.init(), chatStore.init()]);
 
     const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
-    if (
-      resolveIncomingChatInboxStateValue({
-        chat: existingChat,
-        isAcceptedContact: false
-      }) !== 'request'
-    ) {
+    const invitePlan = buildGroupInviteRequestPlanValue({
+      groupPublicKey: normalizedGroupPublicKey,
+      createdAt,
+      existingChat,
+      preview
+    });
+    if (!invitePlan) {
       return;
-    }
-
-    const previewName =
-      preview?.meta?.display_name?.trim() ||
-      preview?.meta?.name?.trim() ||
-      preview?.name?.trim() ||
-      resolveGroupDisplayName(normalizedGroupPublicKey);
-    const previewPicture = preview?.meta?.picture?.trim() ?? '';
-    const nextMeta: Record<string, unknown> = {
-      ...(existingChat?.meta ?? {}),
-      avatar: buildAvatarFallback(previewName),
-      contact_name: previewName,
-      [CHAT_REQUEST_TYPE_META_KEY]: GROUP_INVITE_REQUEST_TYPE,
-      [CHAT_REQUEST_MESSAGE_META_KEY]: GROUP_INVITE_REQUEST_MESSAGE,
-      [CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY]: createdAt
-    };
-    if (previewPicture) {
-      nextMeta.picture = previewPicture;
     }
 
     if (!existingChat) {
       await chatDataService.createChat({
         public_key: normalizedGroupPublicKey,
         type: 'group',
-        name: previewName,
+        name: invitePlan.nextName,
         last_message: GROUP_INVITE_REQUEST_MESSAGE,
         last_message_at: createdAt,
-        unread_count: 1,
-        meta: nextMeta
+        unread_count: invitePlan.nextUnreadCount,
+        meta: invitePlan.nextMeta
       });
       await chatStore.reload();
       return;
@@ -3165,14 +3281,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     await chatDataService.updateChat(normalizedGroupPublicKey, {
       type: 'group',
-      ...(existingChat.name !== previewName ? { name: previewName } : {}),
-      meta: nextMeta
+      ...(existingChat.name !== invitePlan.nextName ? { name: invitePlan.nextName } : {}),
+      meta: invitePlan.nextMeta
     });
     await chatDataService.updateChatPreview(
       normalizedGroupPublicKey,
       GROUP_INVITE_REQUEST_MESSAGE,
       createdAt,
-      Number(existingChat.unread_count ?? 0) + 1
+      invitePlan.nextUnreadCount
     );
     await chatStore.reload();
   }
@@ -6270,10 +6386,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relays: ContactRelay[] | undefined,
     seedRelayUrls: string[] = []
   ): string[] {
-    return normalizeRelayStatusUrls([
-      ...inputSanitizerService.normalizeStringArray(seedRelayUrls),
-      ...normalizeWritableRelayUrls(relays)
-    ]);
+    return resolveGroupPublishRelayUrlsValue(relays, seedRelayUrls);
   }
 
   async function resolveLoggedInPublishRelayUrls(seedRelayUrls: string[] = []): Promise<string[]> {

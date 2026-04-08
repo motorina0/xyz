@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { __nostrStoreTestUtils } from 'src/stores/nostrStore';
 
 const {
+  buildGroupInviteRequestPlan,
   findConflictingKnownGroupEpochNumber,
   findHigherKnownGroupEpochConflict,
   normalizeChatGroupEpochKeys,
+  resolveGroupPublishRelayUrls,
   resolveCurrentGroupChatEpochEntry,
   resolveGroupChatEpochEntries,
   resolveIncomingChatInboxState
@@ -85,6 +87,29 @@ describe('nostrStore logic', () => {
     });
   });
 
+  it('synthesizes a fallback current epoch entry when the current key is missing from history', () => {
+    const epochEntries = resolveGroupChatEpochEntries({
+      type: 'group',
+      meta: {
+        group_epoch_keys: [
+          {
+            epoch_number: 1,
+            epoch_public_key: EPOCH_KEY_B,
+            epoch_private_key_encrypted: 'enc-1'
+          }
+        ],
+        current_epoch_public_key: EPOCH_KEY_C,
+        current_epoch_private_key_encrypted: 'enc-current'
+      }
+    } as never);
+
+    expect(epochEntries[0]).toMatchObject({
+      epoch_number: 1,
+      epoch_public_key: EPOCH_KEY_C,
+      epoch_private_key_encrypted: 'enc-current'
+    });
+  });
+
   it('detects a higher known epoch conflict and reports the older applicable higher epoch', () => {
     const conflict = findHigherKnownGroupEpochConflict(
       {
@@ -146,6 +171,27 @@ describe('nostrStore logic', () => {
     });
   });
 
+  it('does not flag conflicts when the same epoch number arrives with the same key', () => {
+    expect(
+      findConflictingKnownGroupEpochNumber(
+        {
+          type: 'group',
+          meta: {
+            group_epoch_keys: [
+              {
+                epoch_number: 3,
+                epoch_public_key: EPOCH_KEY_A,
+                epoch_private_key_encrypted: 'enc-3'
+              }
+            ]
+          }
+        } as never,
+        3,
+        EPOCH_KEY_A
+      )
+    ).toBeNull();
+  });
+
   it('keeps blocked first-contact chats blocked forever unless the chat is explicitly accepted', () => {
     expect(
       resolveIncomingChatInboxState({
@@ -177,5 +223,74 @@ describe('nostrStore logic', () => {
         isAcceptedContact: false
       })
     ).toBe('request');
+  });
+
+  it('treats accepted contacts as accepted even before inbox metadata is written', () => {
+    expect(
+      resolveIncomingChatInboxState({
+        chat: {
+          meta: {}
+        } as never,
+        isAcceptedContact: true
+      })
+    ).toBe('accepted');
+  });
+
+  it('builds group invite request updates only for request-state chats', () => {
+    expect(
+      buildGroupInviteRequestPlan({
+        groupPublicKey: EPOCH_KEY_A,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        existingChat: null,
+        preview: {
+          name: 'Ignored name',
+          meta: {
+            display_name: 'Group Preview',
+            picture: 'https://example.com/group.png'
+          }
+        } as never
+      })
+    ).toMatchObject({
+      shouldCreate: true,
+      nextName: 'Group Preview',
+      nextUnreadCount: 1,
+      nextMeta: {
+        contact_name: 'Group Preview',
+        picture: 'https://example.com/group.png',
+        request_type: 'group_invite',
+        request_message: 'This is an invitation to a group.',
+        last_incoming_message_at: '2026-01-05T00:00:00.000Z'
+      }
+    });
+
+    expect(
+      buildGroupInviteRequestPlan({
+        groupPublicKey: EPOCH_KEY_A,
+        createdAt: '2026-01-05T00:00:00.000Z',
+        existingChat: {
+          name: 'Existing',
+          unread_count: 2,
+          meta: {
+            inbox_state: 'blocked'
+          }
+        } as never,
+        preview: null
+      })
+    ).toBeNull();
+  });
+
+  it('resolves group publish relays from explicit seeds and writable group relays only', () => {
+    expect(
+      resolveGroupPublishRelayUrls(
+        [
+          { url: 'wss://group-write.example', read: true, write: true },
+          { url: 'wss://group-read-only.example', read: true, write: false }
+        ],
+        ['wss://seed.example', 'wss://group-write.example/']
+      )
+    ).toEqual([
+      'wss://seed.example/',
+      'wss://group-write.example/'
+    ]);
   });
 });

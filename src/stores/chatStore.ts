@@ -449,8 +449,58 @@ function mapChatRowToChat(
   };
 }
 
+function buildAcceptedChatMeta(
+  meta: Record<string, unknown>,
+  acceptedAt: string,
+  lastOutgoingMessageAt = ''
+): ChatMetadata {
+  const nextMeta: ChatMetadata = {
+    ...(meta as ChatMetadata),
+    [CHAT_INBOX_STATE_META_KEY]: 'accepted',
+    [CHAT_ACCEPTED_AT_META_KEY]: acceptedAt
+  };
+
+  if (lastOutgoingMessageAt) {
+    const currentOutgoingAt = readMetaString(nextMeta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY);
+    if (toComparableTimestamp(lastOutgoingMessageAt) > toComparableTimestamp(currentOutgoingAt)) {
+      nextMeta[CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY] = lastOutgoingMessageAt;
+    }
+  }
+
+  delete nextMeta[CHAT_BLOCKED_AT_META_KEY];
+  return nextMeta;
+}
+
+function buildBlockedChatMeta(
+  meta: Record<string, unknown>,
+  blockedAt: string
+): ChatMetadata {
+  return {
+    ...(meta as ChatMetadata),
+    [CHAT_INBOX_STATE_META_KEY]: 'blocked',
+    [CHAT_BLOCKED_AT_META_KEY]: blockedAt
+  };
+}
+
+function buildUpdatedChatPreview(
+  chat: Chat,
+  text: string,
+  at: string,
+  isVisible: boolean
+): Chat {
+  return {
+    ...chat,
+    lastMessage: text,
+    lastMessageAt: at,
+    unreadCount: isVisible ? 0 : chat.unreadCount
+  };
+}
+
 export const __chatStoreTestUtils = {
+  buildAcceptedChatMeta,
+  buildBlockedChatMeta,
   buildChatActivitySnapshotByPublicKey,
+  buildUpdatedChatPreview,
   countUnreadMessagesAfter,
   resolveChatCategory,
   syncChatActivityMeta
@@ -792,26 +842,12 @@ export const useChatStore = defineStore('chatStore', () => {
     let nextMetaToPersist: ChatMetadata | null = null;
     const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
 
-    const applyAcceptedMeta = (meta: Record<string, unknown>): ChatMetadata => {
-      const nextMeta: ChatMetadata = {
-        ...(meta as ChatMetadata),
-        [CHAT_INBOX_STATE_META_KEY]: 'accepted',
-        [CHAT_ACCEPTED_AT_META_KEY]: acceptedAt
-      };
-
-      if (lastOutgoingMessageAt) {
-        const currentOutgoingAt = readMetaString(nextMeta, CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY);
-        if (toComparableTimestamp(lastOutgoingMessageAt) > toComparableTimestamp(currentOutgoingAt)) {
-          nextMeta[CHAT_LAST_OUTGOING_MESSAGE_AT_META_KEY] = lastOutgoingMessageAt;
-        }
-      }
-
-      delete nextMeta[CHAT_BLOCKED_AT_META_KEY];
-      return nextMeta;
-    };
-
     if (existingChat) {
-      nextMetaToPersist = applyAcceptedMeta(existingChat.meta as Record<string, unknown>);
+      nextMetaToPersist = buildAcceptedChatMeta(
+        existingChat.meta as Record<string, unknown>,
+        acceptedAt,
+        lastOutgoingMessageAt
+      );
       chats.value = chats.value.map((chat) =>
         chat.id === normalizedChatId
           ? {
@@ -827,7 +863,7 @@ export const useChatStore = defineStore('chatStore', () => {
         return;
       }
 
-      nextMetaToPersist = applyAcceptedMeta(existingRow.meta);
+      nextMetaToPersist = buildAcceptedChatMeta(existingRow.meta, acceptedAt, lastOutgoingMessageAt);
     }
 
     if (!nextMetaToPersist) {
@@ -909,11 +945,7 @@ export const useChatStore = defineStore('chatStore', () => {
         return chat;
       }
 
-      nextMetaToPersist = {
-        ...(chat.meta as ChatMetadata),
-        [CHAT_INBOX_STATE_META_KEY]: 'blocked',
-        [CHAT_BLOCKED_AT_META_KEY]: blockedAt
-      };
+      nextMetaToPersist = buildBlockedChatMeta(chat.meta as ChatMetadata, blockedAt);
       return {
         ...chat,
         unreadCount: 0,
@@ -928,11 +960,7 @@ export const useChatStore = defineStore('chatStore', () => {
         return;
       }
 
-      nextMetaToPersist = {
-        ...(existingRow.meta as ChatMetadata),
-        [CHAT_INBOX_STATE_META_KEY]: 'blocked',
-        [CHAT_BLOCKED_AT_META_KEY]: blockedAt
-      };
+      nextMetaToPersist = buildBlockedChatMeta(existingRow.meta as ChatMetadata, blockedAt);
     }
 
     if (selectedChatId.value === normalizedChatId) {
@@ -1063,13 +1091,14 @@ export const useChatStore = defineStore('chatStore', () => {
           return chat;
         }
 
-        nextUnreadCount = visibleChatId.value === normalizedChatId ? 0 : chat.unreadCount;
-        return {
-          ...chat,
-          lastMessage: text,
-          lastMessageAt: at,
-          unreadCount: nextUnreadCount
-        };
+        const nextChat = buildUpdatedChatPreview(
+          chat,
+          text,
+          at,
+          visibleChatId.value === normalizedChatId
+        );
+        nextUnreadCount = nextChat.unreadCount;
+        return nextChat;
       })
     );
 

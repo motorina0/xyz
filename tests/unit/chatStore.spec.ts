@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { __chatStoreTestUtils } from 'src/stores/chatStore';
 
 const {
+  buildAcceptedChatMeta,
+  buildBlockedChatMeta,
   buildChatActivitySnapshotByPublicKey,
+  buildUpdatedChatPreview,
   countUnreadMessagesAfter,
   resolveChatCategory,
   syncChatActivityMeta
@@ -113,5 +116,79 @@ describe('chatStore logic', () => {
       lastIncomingMessageAt: '',
       lastOutgoingMessageAt: '2026-01-04T00:00:00.000Z'
     });
+  });
+
+  it('builds accepted chat metadata from reply state without keeping blocked markers', () => {
+    expect(
+      buildAcceptedChatMeta(
+        {
+          inbox_state: 'blocked',
+          blocked_at: '2026-01-01T00:00:00.000Z',
+          last_outgoing_message_at: '2026-01-01T00:00:00.000Z'
+        },
+        '2026-01-03T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z'
+      )
+    ).toEqual({
+      inbox_state: 'accepted',
+      accepted_at: '2026-01-03T00:00:00.000Z',
+      last_outgoing_message_at: '2026-01-02T00:00:00.000Z'
+    });
+  });
+
+  it('builds blocked chat metadata and preview updates with the right unread behavior', () => {
+    expect(
+      buildBlockedChatMeta(
+        {
+          inbox_state: 'accepted',
+          accepted_at: '2026-01-01T00:00:00.000Z'
+        },
+        '2026-01-04T00:00:00.000Z'
+      )
+    ).toEqual({
+      inbox_state: 'blocked',
+      accepted_at: '2026-01-01T00:00:00.000Z',
+      blocked_at: '2026-01-04T00:00:00.000Z'
+    });
+
+    expect(
+      buildUpdatedChatPreview(
+        {
+          id: 'chat-a',
+          publicKey: 'chat-a',
+          epochPublicKey: null,
+          type: 'user',
+          name: 'Alice',
+          avatar: 'A',
+          lastMessage: 'old',
+          lastMessageAt: '2026-01-01T00:00:00.000Z',
+          unreadCount: 3,
+          meta: {}
+        },
+        'new',
+        '2026-01-05T00:00:00.000Z',
+        true
+      ).unreadCount
+    ).toBe(0);
+
+    expect(
+      buildUpdatedChatPreview(
+        {
+          id: 'chat-a',
+          publicKey: 'chat-a',
+          epochPublicKey: null,
+          type: 'user',
+          name: 'Alice',
+          avatar: 'A',
+          lastMessage: 'old',
+          lastMessageAt: '2026-01-01T00:00:00.000Z',
+          unreadCount: 3,
+          meta: {}
+        },
+        'new',
+        '2026-01-05T00:00:00.000Z',
+        false
+      ).unreadCount
+    ).toBe(3);
   });
 });
