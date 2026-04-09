@@ -4,7 +4,6 @@ import NDK, {
   NDKEvent,
   type NDKFilter,
   NDKKind,
-  NDKNip07Signer,
   NDKPublishError,
   NDKPrivateKeySigner,
   type NDKRelay,
@@ -56,7 +55,6 @@ import {
   DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS,
   DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
   EVENT_FILTER_LOOKBACK_SECONDS,
-  EVENT_SINCE_STORAGE_KEY,
   GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY,
   GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY,
   GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY,
@@ -70,7 +68,6 @@ import {
   INVITATION_PROOF_TAG,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
-  PRIVATE_KEY_STORAGE_KEY,
   PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
   PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY,
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
@@ -79,7 +76,6 @@ import {
   PRIVATE_PREFERENCES_STORAGE_KEY,
   PUBLIC_KEY_STORAGE_KEY,
   RELAY_CONNECT_FAILURE_COOLDOWN_MS,
-  RELAY_STORAGE_KEYS,
   STARTUP_STEP_MIN_PROGRESS_MS,
   UNKNOWN_REPLY_MESSAGE_TEXT
 } from 'src/stores/nostr/constants';
@@ -87,6 +83,7 @@ import {
   createDeveloperTraceRuntime,
   readDeveloperDiagnosticsEnabledFromStorage
 } from 'src/stores/nostr/developerTrace';
+import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import { createDeveloperDiagnosticsRuntime } from 'src/stores/nostr/developerDiagnostics';
 import { createGroupInviteRuntime } from 'src/stores/nostr/groupInviteRuntime';
 import { createGroupEpochPublishRuntime } from 'src/stores/nostr/groupEpochPublishRuntime';
@@ -306,6 +303,21 @@ export const useNostrStore = defineStore('nostrStore', () => {
     false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
   let queuePrivateMessagesWatchdogRuntime: (delayMs?: number) => void = () => {};
+  let getPrivateKeyHexRuntime: () => string | null = () => {
+    throw new Error('Auth session runtime is not initialized.');
+  };
+  let savePrivateKeyHexRuntime: (hexPrivateKey: string) => boolean = () => {
+    throw new Error('Auth session runtime is not initialized.');
+  };
+  let loginWithExtensionRuntime: () => Promise<string> = async () => {
+    throw new Error('Auth session runtime is not initialized.');
+  };
+  let clearPrivateKeyRuntime: () => void = () => {
+    throw new Error('Auth session runtime is not initialized.');
+  };
+  let logoutRuntime: () => Promise<void> = async () => {
+    throw new Error('Auth session runtime is not initialized.');
+  };
   let refreshAllStoredContactsRuntime: () => Promise<Record<string, unknown>> = async () => {
     throw new Error('Private messages refresh runtime is not initialized.');
   };
@@ -4150,160 +4162,104 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return syncRecentChatContactsPromise;
   }
 
+  const {
+    clearPrivateKey: clearPrivateKeyImpl,
+    getPrivateKeyHex: getPrivateKeyHexImpl,
+    loginWithExtension: loginWithExtensionImpl,
+    logout: logoutImpl,
+    savePrivateKeyHex: savePrivateKeyHexImpl
+  } = createAuthSessionRuntime({
+    authenticatedRelayUrls,
+    backgroundGroupContactRefreshStartedAt,
+    bumpDeveloperDiagnosticsVersion,
+    chatStoreClearAllComposerDrafts: () => {
+      chatStore.clearAllComposerDrafts();
+    },
+    clearBrowserNotificationsPreference,
+    clearDarkModePreference,
+    clearDeveloperTraceEntries,
+    clearPanelOpacityPreference,
+    clearPrivateMessagesBackfillState,
+    clearPrivatePreferencesStorage,
+    clearStoredPrivateMessagesLastReceivedCreatedAt,
+    configuredRelayUrls,
+    contactListVersion,
+    eventSince,
+    getPrivateMessagesEpochSubscriptionRefreshTimerId: () =>
+      privateMessagesEpochSubscriptionRefreshTimerId,
+    groupContactRefreshPromises,
+    hasNip07Extension,
+    isRestoringStartupState,
+    loggedInvalidGroupEpochConflictKeys,
+    ndk,
+    pendingContactCursorPublishStates,
+    pendingContactCursorPublishTimers,
+    pendingEventSinceState,
+    pendingIncomingDeletions,
+    pendingIncomingReactions,
+    relayConnectFailureCooldownUntilByUrl,
+    relayConnectPromises,
+    relayStatusVersion,
+    resetContactSubscriptionsRuntimeState,
+    resetEventSinceForFreshLogin,
+    resetMyRelayListRuntimeState,
+    resetPrivateContactListRuntimeState,
+    resetPrivateMessagesIngestRuntimeState,
+    resetPrivateMessagesSubscriptionRuntimeState,
+    resetPrivateMessagesUiRuntimeState,
+    resetStartupStepTracking,
+    resetTrackedContactEventState,
+    restoreRuntimeState,
+    setCachedSigner: (signer) => {
+      cachedSigner = signer;
+    },
+    setCachedSignerSessionKey: (sessionKey) => {
+      cachedSignerSessionKey = sessionKey;
+    },
+    setPendingPrivateMessagesEpochSubscriptionRefreshOptions: (options) => {
+      pendingPrivateMessagesEpochSubscriptionRefreshOptions = options;
+    },
+    setPrivateMessagesEpochSubscriptionRefreshQueue: (queue) => {
+      privateMessagesEpochSubscriptionRefreshQueue = queue;
+    },
+    setPrivateMessagesEpochSubscriptionRefreshTimerId: (timerId) => {
+      privateMessagesEpochSubscriptionRefreshTimerId = timerId;
+    },
+    setRestoreStartupStatePromise: (promise) => {
+      restoreStartupStatePromise = promise;
+    },
+    setSyncLoggedInContactProfilePromise: (promise) => {
+      syncLoggedInContactProfilePromise = promise;
+    },
+    setSyncRecentChatContactsPromise: (promise) => {
+      syncRecentChatContactsPromise = promise;
+    },
+    stopPrivateMessagesSubscription
+  });
+  getPrivateKeyHexRuntime = getPrivateKeyHexImpl;
+  savePrivateKeyHexRuntime = savePrivateKeyHexImpl;
+  loginWithExtensionRuntime = loginWithExtensionImpl;
+  clearPrivateKeyRuntime = clearPrivateKeyImpl;
+  logoutRuntime = logoutImpl;
+
   function getPrivateKeyHex(): string | null {
-    if (!hasStorage()) {
-      return null;
-    }
-
-    const stored = window.localStorage.getItem(PRIVATE_KEY_STORAGE_KEY);
-    if (!stored) {
-      return null;
-    }
-
-    return inputSanitizerService.normalizeHexKey(stored);
-  }
-
-  function setStoredAuthSession(authMethod: AuthMethod, pubkeyHex: string, privateKeyHex?: string): void {
-    if (!hasStorage()) {
-      return;
-    }
-
-    window.localStorage.setItem(AUTH_METHOD_STORAGE_KEY, authMethod);
-    window.localStorage.setItem(PUBLIC_KEY_STORAGE_KEY, pubkeyHex);
-
-    if (authMethod === 'nsec' && privateKeyHex) {
-      window.localStorage.setItem(PRIVATE_KEY_STORAGE_KEY, privateKeyHex);
-      return;
-    }
-
-    window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
+    return getPrivateKeyHexRuntime();
   }
 
   function savePrivateKeyHex(hexPrivateKey: string): boolean {
-    const normalized = inputSanitizerService.normalizeHexKey(hexPrivateKey);
-    if (!normalized || !hasStorage()) {
-      return false;
-    }
-
-    const signer = new NDKPrivateKeySigner(normalized, ndk);
-    clearPrivateKey();
-    resetEventSinceForFreshLogin();
-    setStoredAuthSession('nsec', signer.pubkey, normalized);
-    cachedSigner = signer;
-    cachedSignerSessionKey = `nsec:${signer.pubkey}`;
-    ndk.signer = signer;
-    return true;
+    return savePrivateKeyHexRuntime(hexPrivateKey);
   }
 
   async function loginWithExtension(): Promise<string> {
-    if (!hasNip07Extension()) {
-      throw new Error('No NIP-07 extension detected. Install or enable one to continue.');
-    }
-
-    const signer = new NDKNip07Signer(undefined, ndk);
-    const user = await signer.blockUntilReady();
-    user.ndk = ndk;
-    const pubkeyHex = inputSanitizerService.normalizeHexKey(user.pubkey ?? signer.pubkey);
-    if (!pubkeyHex) {
-      throw new Error('Failed to read a valid public key from the NIP-07 extension.');
-    }
-
-    clearPrivateKey();
-    resetEventSinceForFreshLogin();
-    setStoredAuthSession('nip07', pubkeyHex);
-    cachedSigner = signer;
-    cachedSignerSessionKey = `nip07:${pubkeyHex}`;
-    ndk.signer = signer;
-    return pubkeyHex;
+    return loginWithExtensionRuntime();
   }
 
   function clearPrivateKey(): void {
-    cachedSigner = null;
-    cachedSignerSessionKey = null;
-    ndk.signer = undefined;
-    resetPrivateMessagesSubscriptionRuntimeState({ clearLastEventState: true });
-    resetStartupStepTracking();
-    pendingIncomingReactions.clear();
-    pendingIncomingDeletions.clear();
-    pendingContactCursorPublishStates.clear();
-    pendingContactCursorPublishTimers.forEach((timerId) => {
-      globalThis.clearTimeout(timerId);
-    });
-    pendingContactCursorPublishTimers.clear();
-    resetTrackedContactEventState();
-    void clearDeveloperTraceEntries().catch((error) => {
-      console.error('Failed to clear developer trace entries.', error);
-    });
-    resetContactSubscriptionsRuntimeState('clear-private-key');
-    resetMyRelayListRuntimeState('clear-private-key');
-    resetPrivateContactListRuntimeState('clear-private-key');
-    stopPrivateMessagesSubscription();
-    if (privateMessagesEpochSubscriptionRefreshTimerId !== null) {
-      globalThis.clearTimeout(privateMessagesEpochSubscriptionRefreshTimerId);
-      privateMessagesEpochSubscriptionRefreshTimerId = null;
-    }
-    pendingPrivateMessagesEpochSubscriptionRefreshOptions = null;
-    privateMessagesEpochSubscriptionRefreshQueue = Promise.resolve();
-    loggedInvalidGroupEpochConflictKeys.clear();
-    resetPrivateMessagesUiRuntimeState();
-    authenticatedRelayUrls.clear();
-    clearStoredPrivateMessagesLastReceivedCreatedAt();
-    clearPrivateMessagesBackfillState();
-    chatStore.clearAllComposerDrafts();
-    bumpDeveloperDiagnosticsVersion();
-
-    if (!hasStorage()) {
-      return;
-    }
-
-    window.localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
-    window.localStorage.removeItem(PRIVATE_KEY_STORAGE_KEY);
-    window.localStorage.removeItem(PUBLIC_KEY_STORAGE_KEY);
-    clearPrivatePreferencesStorage();
+    clearPrivateKeyRuntime();
   }
 
   async function logout(): Promise<void> {
-    clearPrivateKey();
-    eventSince.value = 0;
-    pendingEventSinceState.pendingEventSinceUpdate = 0;
-    isRestoringStartupState.value = false;
-    restoreStartupStatePromise = null;
-    syncLoggedInContactProfilePromise = null;
-    restoreRuntimeState.restorePrivatePreferencesPromise = null;
-    restoreRuntimeState.restoreGroupIdentitySecretsPromise = null;
-    restoreRuntimeState.restoreContactCursorStatePromise = null;
-    syncRecentChatContactsPromise = null;
-    resetPrivateMessagesIngestRuntimeState();
-    resetPrivateMessagesUiRuntimeState({ includeRefreshQueue: true });
-    configuredRelayUrls.clear();
-    relayConnectPromises.clear();
-    relayConnectFailureCooldownUntilByUrl.clear();
-    groupContactRefreshPromises.clear();
-    backgroundGroupContactRefreshStartedAt.clear();
-    pendingPrivateMessagesEpochSubscriptionRefreshOptions = null;
-    privateMessagesEpochSubscriptionRefreshQueue = Promise.resolve();
-    loggedInvalidGroupEpochConflictKeys.clear();
-    contactListVersion.value = 0;
-    relayStatusVersion.value += 1;
-
-    if (hasStorage()) {
-      window.localStorage.removeItem(EVENT_SINCE_STORAGE_KEY);
-      window.localStorage.removeItem(DEVELOPER_DIAGNOSTICS_STORAGE_KEY);
-      for (const storageKey of RELAY_STORAGE_KEYS) {
-        window.localStorage.removeItem(storageKey);
-      }
-    }
-
-    clearDarkModePreference();
-    clearPanelOpacityPreference();
-    clearBrowserNotificationsPreference();
-
-    await Promise.all([
-      chatDataService.clearAllData(),
-      contactsService.clearAllData(),
-      nostrEventDataService.clearAllData(),
-      imageCacheService.clearAllData()
-    ]);
+    return logoutRuntime();
   }
   const {
     getNip05Data,
