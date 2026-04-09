@@ -6,6 +6,12 @@
     "dev": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar dev",
     "dev:e2e": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar dev --port 4100 --hostname 127.0.0.1",
     "build": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar build",
+    "format": "biome format --write",
+    "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false",
+    "lint": "biome lint",
+    "lint:dead-code": "biome lint --only=lint/correctness/noUnusedImports --only=lint/correctness/noUnusedVariables",
+    "lint:fix": "biome check --write",
+    "quality:all": "npm run format && npm run lint:fix && npm run format:check && npm run lint:dead-code && npm run lint",
     "test:unit": "vitest run",
     "test:unit:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
@@ -20,6 +26,7 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
     "@playwright/test": "^1.59.1",
     "@quasar/app-vite": "2.1.0",
     "@types/node": "^20.17.0",
