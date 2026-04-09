@@ -312,15 +312,18 @@ function waitForTransaction(transaction: IDBTransaction): Promise<void> {
 class ChatDataService {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private initPromise: Promise<void> | null = null;
+  private databaseGeneration = 0;
 
   async init(): Promise<void> {
     await this.ensureInitialized();
   }
 
   async clearAllData(): Promise<void> {
-    await closeIndexedDbConnection(this.dbPromise);
+    this.databaseGeneration += 1;
+    const dbPromise = this.dbPromise;
     this.dbPromise = null;
     this.initPromise = null;
+    await closeIndexedDbConnection(dbPromise);
     await deleteIndexedDbDatabase(CHAT_DATA_DB_NAME);
   }
 
@@ -893,7 +896,13 @@ class ChatDataService {
   }
 
   private async initializeDatabase(): Promise<void> {
+    const databaseGeneration = this.databaseGeneration;
     const db = await this.openDatabase();
+    if (databaseGeneration !== this.databaseGeneration) {
+      db.close();
+      return;
+    }
+
     this.dbPromise = Promise.resolve(db);
   }
 

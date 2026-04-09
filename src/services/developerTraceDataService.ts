@@ -1,3 +1,5 @@
+import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
+
 export type DeveloperTraceLevel = 'info' | 'warn' | 'error';
 
 export interface DeveloperTraceEntry {
@@ -176,6 +178,14 @@ class DeveloperTraceDataService {
     });
   }
 
+  async clearAllData(): Promise<void> {
+    return this.enqueueMutation(async () => {
+      await closeIndexedDbConnection(this.dbPromise);
+      this.dbPromise = null;
+      await deleteIndexedDbDatabase(DEVELOPER_TRACE_DB_NAME);
+    });
+  }
+
   private enqueueMutation(operation: () => Promise<void>): Promise<void> {
     const nextOperation = this.mutationQueue.catch(() => undefined).then(operation);
     this.mutationQueue = nextOperation.catch(() => undefined);
@@ -245,7 +255,11 @@ class DeveloperTraceDataService {
       };
 
       request.onsuccess = () => {
-        resolve(request.result);
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+        };
+        resolve(db);
       };
 
       request.onerror = () => {

@@ -59,6 +59,19 @@ function isConstraintError(error: unknown): boolean {
   return name === 'ConstraintError';
 }
 
+function isInvalidStateError(error: unknown): boolean {
+  if (error instanceof DOMException) {
+    return error.name === 'InvalidStateError';
+  }
+
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const name = 'name' in error ? String(error.name) : '';
+  return name === 'InvalidStateError';
+}
+
 function requestToPromise<T>(request: IDBRequest<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     request.onsuccess = () => {
@@ -276,17 +289,22 @@ function contactMetaEquals(first: ContactMetadata, second: ContactMetadata): boo
 }
 
 class ContactsService {
+  private activeDb: IDBDatabase | null = null;
   private dbPromise: Promise<IDBDatabase> | null = null;
   private initPromise: Promise<void> | null = null;
+  private databaseGeneration = 0;
 
   async init(): Promise<void> {
     await this.ensureInitialized();
   }
 
   async clearAllData(): Promise<void> {
-    await closeIndexedDbConnection(this.dbPromise);
+    this.databaseGeneration += 1;
+    const dbPromise = this.dbPromise;
+    this.activeDb = null;
     this.dbPromise = null;
     this.initPromise = null;
+    await closeIndexedDbConnection(dbPromise);
     await deleteIndexedDbDatabase(CONTACTS_DB_NAME);
   }
 
@@ -331,22 +349,38 @@ class ContactsService {
   }
 
   async getContactByPublicKey(publicKey: string): Promise<ContactRecord | null> {
+    return this.getContactByPublicKeyInternal(publicKey, true);
+  }
+
+  private async getContactByPublicKeyInternal(
+    publicKey: string,
+    allowRetry: boolean
+  ): Promise<ContactRecord | null> {
     const normalizedPublicKey = inputSanitizerService.normalizePublicKey(publicKey);
     if (!normalizedPublicKey) {
       return null;
     }
 
-    const db = await this.getDatabase();
-    const transaction = db.transaction(CONTACTS_STORE, 'readonly');
-    const store = transaction.objectStore(CONTACTS_STORE);
-    const index = store.index(CONTACTS_PUBLIC_KEY_INDEX);
-    const rawRecord = await requestToPromise<RawContactStoreRecord | undefined>(
-      index.get(normalizedPublicKey) as IDBRequest<RawContactStoreRecord | undefined>
-    );
-    await waitForTransaction(transaction);
+    try {
+      const db = await this.getDatabase();
+      const transaction = db.transaction(CONTACTS_STORE, 'readonly');
+      const store = transaction.objectStore(CONTACTS_STORE);
+      const index = store.index(CONTACTS_PUBLIC_KEY_INDEX);
+      const rawRecord = await requestToPromise<RawContactStoreRecord | undefined>(
+        index.get(normalizedPublicKey) as IDBRequest<RawContactStoreRecord | undefined>
+      );
+      await waitForTransaction(transaction);
 
-    const record = rawRecord ? normalizeRecord(rawRecord) : null;
-    return record ? toContactRecord(record) : null;
+      const record = rawRecord ? normalizeRecord(rawRecord) : null;
+      return record ? toContactRecord(record) : null;
+    } catch (error) {
+      if (allowRetry && isInvalidStateError(error)) {
+        this.resetDatabaseState();
+        return this.getContactByPublicKeyInternal(publicKey, false);
+      }
+
+      throw error;
+    }
   }
 
   async publicKeyExists(publicKey: string): Promise<boolean> {
@@ -610,7 +644,14 @@ class ContactsService {
   }
 
   private async initializeDatabase(): Promise<void> {
+    const databaseGeneration = this.databaseGeneration;
     const db = await this.openDatabase();
+    if (databaseGeneration !== this.databaseGeneration) {
+      db.close();
+      return;
+    }
+
+    this.activeDb = db;
     this.dbPromise = Promise.resolve(db);
   }
 
@@ -653,6 +694,9 @@ class ContactsService {
         const db = request.result;
         db.onversionchange = () => {
           db.close();
+          if (this.activeDb === db) {
+            this.resetDatabaseState();
+          }
         };
         resolve(db);
       };
@@ -679,6 +723,12 @@ class ContactsService {
     return rawRecords
       .map((record) => normalizeRecord(record))
       .filter((record): record is ContactStoreRecord => record !== null);
+  }
+
+  private resetDatabaseState(): void {
+    this.activeDb = null;
+    this.dbPromise = null;
+    this.initPromise = null;
   }
 }
 

@@ -21,6 +21,7 @@ import {
 } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useChatStore } from 'src/stores/chatStore';
+import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import {
   AUTH_METHOD_STORAGE_KEY,
@@ -155,6 +156,7 @@ export { __nostrStoreTestUtils } from 'src/stores/nostr/testUtils';
 export const useNostrStore = defineStore('nostrStore', () => {
   const ndk = new NDK();
   const chatStore = useChatStore();
+  const nip65RelayStore = useNip65RelayStore();
   const relayStore = useRelayStore();
   const relayStatusVersion = ref(0);
   const contactListVersion = ref(0);
@@ -344,6 +346,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     developerDiagnosticsEnabled,
     developerDiagnosticsStorageKey: DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
     developerDiagnosticsVersion,
+    getLoggedInPublicKeyHex,
     developerTraceState,
     developerTraceVersion,
   });
@@ -2540,9 +2543,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
     clearBrowserNotificationsPreference,
     clearDarkModePreference,
     clearDeveloperTraceEntries,
+    clearNip65RelayStoreState: () => {
+      nip65RelayStore.clear();
+    },
     clearPanelOpacityPreference,
     clearPrivateMessagesBackfillState,
     clearPrivatePreferencesStorage,
+    clearRelayStoreState: () => {
+      relayStore.clear();
+    },
     clearStoredPrivateMessagesLastReceivedCreatedAt,
     configuredRelayUrls,
     contactListVersion,

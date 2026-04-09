@@ -509,6 +509,39 @@ export async function logoutFromSettings(page: Page): Promise<void> {
   await expect(page.getByText('Welcome')).toBeVisible({ timeout: 30_000 });
 }
 
+export async function expectBrowserStorageToBeEmpty(page: Page): Promise<void> {
+  const storageSnapshot = await page.evaluate(async () => {
+    const localStorageKeys = Array.from({ length: window.localStorage.length }, (_, index) =>
+      window.localStorage.key(index)
+    ).filter((key): key is string => typeof key === 'string' && key.length > 0);
+
+    const sessionStorageKeys = Array.from({ length: window.sessionStorage.length }, (_, index) =>
+      window.sessionStorage.key(index)
+    ).filter((key): key is string => typeof key === 'string' && key.length > 0);
+
+    const indexedDbFactory = window.indexedDB as IDBFactory & {
+      databases?: () => Promise<Array<{ name?: string | null }>>;
+    };
+    const indexedDbNames =
+      typeof indexedDbFactory.databases === 'function'
+        ? (await indexedDbFactory.databases()).flatMap((database) => {
+            const name = typeof database?.name === 'string' ? database.name.trim() : '';
+            return name ? [name] : [];
+          })
+        : [];
+
+    return {
+      indexedDbNames,
+      localStorageKeys,
+      sessionStorageKeys,
+    };
+  });
+
+  expect(storageSnapshot.localStorageKeys).toEqual([]);
+  expect(storageSnapshot.sessionStorageKeys).toEqual([]);
+  expect(storageSnapshot.indexedDbNames).toEqual([]);
+}
+
 export async function blockFirstRequest(page: Page): Promise<void> {
   await page.getByTestId('chat-request-block-button').first().click();
   await expect(page.getByTestId('chat-request-item')).toHaveCount(0);

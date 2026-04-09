@@ -12,6 +12,7 @@ import {
   E2E_DUAL_RELAY_URLS,
   E2E_RELAY_URL,
   establishAcceptedDirectChat,
+  expectBrowserStorageToBeEmpty,
   logoutFromSettings,
   navigateToChat,
   openAppRelaysSettings,
@@ -581,6 +582,7 @@ test('logout and logging in as another user does not leak prior chat state', asy
     await expect(alice.page.getByText(TEST_ACCOUNTS.isolationBob.displayName)).toBeVisible();
 
     await logoutFromSettings(alice.page);
+    await expectBrowserStorageToBeEmpty(alice.page);
     await bootstrapSessionOnPage(alice.page, TEST_ACCOUNTS.isolationCharlie);
 
     await alice.page.goto('/#/chats');

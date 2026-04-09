@@ -1,19 +1,18 @@
 import NDK, { NDKNip07Signer, NDKPrivateKeySigner, type NDKSigner } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
+import { developerTraceDataService } from 'src/services/developerTraceDataService';
 import { imageCacheService } from 'src/services/imageCacheService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import {
   AUTH_METHOD_STORAGE_KEY,
-  DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
-  EVENT_SINCE_STORAGE_KEY,
   PRIVATE_KEY_STORAGE_KEY,
   PUBLIC_KEY_STORAGE_KEY,
-  RELAY_STORAGE_KEYS,
 } from 'src/stores/nostr/constants';
 import { hasStorage } from 'src/stores/nostr/shared';
 import type { AuthMethod, SubscribePrivateMessagesOptions } from 'src/stores/nostr/types';
+import { deleteAllIndexedDbDatabases } from 'src/utils/indexedDbStorage';
 import type { Ref } from 'vue';
 
 interface RestoreRuntimeState {
@@ -30,9 +29,11 @@ interface AuthSessionRuntimeDeps {
   clearBrowserNotificationsPreference: () => void;
   clearDarkModePreference: () => void;
   clearDeveloperTraceEntries: () => Promise<void>;
+  clearNip65RelayStoreState: () => void;
   clearPanelOpacityPreference: () => void;
   clearPrivateMessagesBackfillState: () => void;
   clearPrivatePreferencesStorage: () => void;
+  clearRelayStoreState: () => void;
   clearStoredPrivateMessagesLastReceivedCreatedAt: () => void;
   configuredRelayUrls: { clear: () => void };
   contactListVersion: Ref<number>;
@@ -90,9 +91,11 @@ export function createAuthSessionRuntime({
   clearBrowserNotificationsPreference,
   clearDarkModePreference,
   clearDeveloperTraceEntries,
+  clearNip65RelayStoreState,
   clearPanelOpacityPreference,
   clearPrivateMessagesBackfillState,
   clearPrivatePreferencesStorage,
+  clearRelayStoreState,
   clearStoredPrivateMessagesLastReceivedCreatedAt,
   configuredRelayUrls,
   contactListVersion,
@@ -280,12 +283,13 @@ export function createAuthSessionRuntime({
     loggedInvalidGroupEpochConflictKeys.clear();
     contactListVersion.value = 0;
     relayStatusVersion.value += 1;
+    clearRelayStoreState();
+    clearNip65RelayStoreState();
 
     if (hasStorage()) {
-      window.localStorage.removeItem(EVENT_SINCE_STORAGE_KEY);
-      window.localStorage.removeItem(DEVELOPER_DIAGNOSTICS_STORAGE_KEY);
-      for (const storageKey of RELAY_STORAGE_KEYS) {
-        window.localStorage.removeItem(storageKey);
+      window.localStorage.clear();
+      if (typeof window.sessionStorage !== 'undefined') {
+        window.sessionStorage.clear();
       }
     }
 
@@ -296,9 +300,11 @@ export function createAuthSessionRuntime({
     await Promise.all([
       chatDataService.clearAllData(),
       contactsService.clearAllData(),
+      developerTraceDataService.clearAllData(),
       nostrEventDataService.clearAllData(),
       imageCacheService.clearAllData(),
     ]);
+    await deleteAllIndexedDbDatabases();
   }
 
   return {

@@ -73,6 +73,21 @@ export function createRelayListStoreSetup({
     const relays = computed(() => relayEntries.value.map((entry) => entry.url));
     const isInitialized = ref(false);
 
+    function clear(): void {
+      relayEntries.value = [];
+      isInitialized.value = false;
+
+      if (!hasStorage()) {
+        return;
+      }
+
+      try {
+        window.localStorage.removeItem(storageKey);
+      } catch (error) {
+        console.warn(`Failed to clear relay list from localStorage key "${storageKey}"`, error);
+      }
+    }
+
     function ensureInitialized(): void {
       if (!isInitialized.value) {
         init();
@@ -172,6 +187,7 @@ export function createRelayListStoreSetup({
       relays,
       init,
       addRelay,
+      clear,
       removeRelay,
       replaceRelayEntries,
       restoreDefaults,

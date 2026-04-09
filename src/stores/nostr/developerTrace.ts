@@ -13,6 +13,7 @@ interface DeveloperTraceRuntimeDeps {
   developerTraceState: DeveloperTraceRuntimeState;
   developerTraceVersion: Ref<number>;
   developerDiagnosticsStorageKey: string;
+  getLoggedInPublicKeyHex: () => string | null;
 }
 
 export function readDeveloperDiagnosticsEnabledFromStorage(
@@ -28,6 +29,7 @@ export function readDeveloperDiagnosticsEnabledFromStorage(
 export function createDeveloperTraceRuntime({
   developerDiagnosticsEnabled,
   developerDiagnosticsVersion,
+  getLoggedInPublicKeyHex,
   developerTraceState,
   developerTraceVersion,
   developerDiagnosticsStorageKey,
@@ -159,7 +161,7 @@ export function createDeveloperTraceRuntime({
       echoDeveloperTraceToConsole(level, scope, phase, normalizedDetails);
     }
 
-    if (!developerDiagnosticsEnabled.value) {
+    if (!developerDiagnosticsEnabled.value || !getLoggedInPublicKeyHex()) {
       return;
     }
 

@@ -2,6 +2,14 @@ function canUseIndexedDb(): boolean {
   return typeof window !== 'undefined' && typeof window.indexedDB !== 'undefined';
 }
 
+interface IndexedDbDatabaseInfo {
+  name?: string | null;
+}
+
+type IndexedDbFactoryWithDatabases = IDBFactory & {
+  databases?: () => Promise<IndexedDbDatabaseInfo[]>;
+};
+
 export async function closeIndexedDbConnection(
   dbPromise: Promise<IDBDatabase | null> | Promise<IDBDatabase> | null
 ): Promise<void> {
@@ -37,4 +45,45 @@ export async function deleteIndexedDbDatabase(databaseName: string): Promise<voi
       reject(new Error(`Deleting IndexedDB database "${databaseName}" is blocked.`));
     };
   });
+}
+
+export async function listIndexedDbDatabaseNames(): Promise<string[]> {
+  if (!canUseIndexedDb()) {
+    return [];
+  }
+
+  const indexedDbFactory = window.indexedDB as IndexedDbFactoryWithDatabases;
+  if (typeof indexedDbFactory.databases !== 'function') {
+    return [];
+  }
+
+  try {
+    const databases = await indexedDbFactory.databases();
+    return Array.from(
+      new Set(
+        databases.flatMap((database) => {
+          const name = typeof database?.name === 'string' ? database.name.trim() : '';
+          return name ? [name] : [];
+        })
+      )
+    );
+  } catch (error) {
+    console.warn('Failed to enumerate IndexedDB databases.', error);
+    return [];
+  }
+}
+
+export async function deleteAllIndexedDbDatabases(fallbackNames: string[] = []): Promise<void> {
+  const databaseNames = Array.from(
+    new Set(
+      [...fallbackNames, ...(await listIndexedDbDatabaseNames())].flatMap((databaseName) => {
+        const normalizedName = databaseName.trim();
+        return normalizedName ? [normalizedName] : [];
+      })
+    )
+  );
+
+  for (const databaseName of databaseNames) {
+    await deleteIndexedDbDatabase(databaseName);
+  }
 }
