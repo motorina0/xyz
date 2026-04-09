@@ -386,6 +386,44 @@ export function buildGroupInviteRequestPlanValue(options: {
   };
 }
 
+export function buildAcceptedGroupInviteChatPlanValue(options: {
+  groupPublicKey: string;
+  fallbackName?: string;
+  existingChat: Pick<ChatRow, 'meta' | 'name'> | null | undefined;
+  acceptedAt?: string;
+}): {
+  nextName: string;
+  nextMeta: Record<string, unknown>;
+} | null {
+  const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(options.groupPublicKey);
+  const existingChat = options.existingChat;
+  if (!normalizedGroupPublicKey || !existingChat) {
+    return null;
+  }
+
+  const nextName =
+    options.fallbackName?.trim() || resolveGroupDisplayNameValue(normalizedGroupPublicKey);
+  const acceptedAt =
+    (typeof existingChat.meta?.accepted_at === 'string'
+      ? existingChat.meta.accepted_at.trim()
+      : '') ||
+    options.acceptedAt?.trim() ||
+    new Date().toISOString();
+  const nextMeta: Record<string, unknown> = {
+    ...(existingChat.meta ?? {}),
+    contact_name: nextName,
+    inbox_state: 'accepted',
+    accepted_at: acceptedAt
+  };
+  delete nextMeta[CHAT_REQUEST_TYPE_META_KEY];
+  delete nextMeta[CHAT_REQUEST_MESSAGE_META_KEY];
+
+  return {
+    nextName,
+    nextMeta
+  };
+}
+
 function readProfileFieldValue(
   profile: NDKUserProfile | null,
   keys: string[],

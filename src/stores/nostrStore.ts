@@ -50,8 +50,6 @@ import {
   AUTH_METHOD_STORAGE_KEY,
   BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS,
   CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY,
-  CHAT_REQUEST_MESSAGE_META_KEY,
-  CHAT_REQUEST_TYPE_META_KEY,
   CONTACT_CURSOR_FETCH_BATCH_SIZE,
   CONTACT_CURSOR_PUBLISH_DELAY_MS,
   CONTACT_CURSOR_VERSION,
@@ -110,6 +108,7 @@ import { createStartupRuntime } from 'src/stores/nostr/startupRuntime';
 import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContactStateRuntime';
 import { createUserActions } from 'src/stores/nostr/userActions';
 import {
+  buildAcceptedGroupInviteChatPlanValue,
   buildAvatarFallbackValue,
   buildGroupInviteRequestPlanValue,
   buildIdentifierFallbacksValue,
@@ -823,6 +822,18 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return resolveGroupDisplayNameValue(groupPublicKey);
   }
 
+  function buildAcceptedGroupInviteChatPlan(options: {
+    groupPublicKey: string;
+    fallbackName?: string;
+    existingChat: Pick<ChatRow, 'meta' | 'name'> | null | undefined;
+    acceptedAt?: string;
+  }): {
+    nextName: string;
+    nextMeta: Record<string, unknown>;
+  } | null {
+    return buildAcceptedGroupInviteChatPlanValue(options);
+  }
+
   async function ensureGroupContactAndChat(
     groupPublicKey: string,
     encryptedPrivateKey: string,
@@ -997,24 +1008,22 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
     const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
     if (existingChat) {
-      const acceptedAt =
-        typeof existingChat.meta?.accepted_at === 'string' && existingChat.meta.accepted_at.trim()
-          ? existingChat.meta.accepted_at.trim()
-          : new Date().toISOString();
-      const nextChatMeta: ChatMetadata = {
-        ...(existingChat.meta ?? {}),
-        contact_name: initialName,
-        inbox_state: 'accepted',
-        accepted_at: acceptedAt
-      };
-      delete nextChatMeta[CHAT_REQUEST_TYPE_META_KEY];
-      delete nextChatMeta[CHAT_REQUEST_MESSAGE_META_KEY];
-
-      await chatDataService.updateChat(normalizedTargetPubkey, {
-        type: 'group',
-        ...(existingChat.name !== initialName ? { name: initialName } : {}),
-        meta: nextChatMeta
+      const acceptedChatPlan = buildAcceptedGroupInviteChatPlan({
+        groupPublicKey: normalizedTargetPubkey,
+        fallbackName: initialName,
+        existingChat,
+        acceptedAt: new Date().toISOString()
       });
+
+      if (acceptedChatPlan) {
+        await chatDataService.updateChat(normalizedTargetPubkey, {
+          type: 'group',
+          ...(existingChat.name !== acceptedChatPlan.nextName
+            ? { name: acceptedChatPlan.nextName }
+            : {}),
+          meta: acceptedChatPlan.nextMeta as ChatMetadata
+        });
+      }
     }
 
     try {

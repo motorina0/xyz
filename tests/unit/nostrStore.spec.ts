@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { __nostrStoreTestUtils } from 'src/stores/nostrStore';
 
 const {
+  buildAcceptedGroupInviteChatPlan,
   beginStartupStepSnapshot,
   buildAvatarFallback,
   buildIdentifierFallbacks,
@@ -575,6 +576,135 @@ describe('nostrStore logic', () => {
         request_type: 'group_invite',
         request_message: 'This is an invitation to a group.',
         last_incoming_message_at: '2026-01-06T00:00:00.000Z'
+      }
+    });
+  });
+
+  it('builds accepted group invite chat updates that clear request metadata and preserve acceptance state', () => {
+    expect(
+      buildAcceptedGroupInviteChatPlan({
+        groupPublicKey: EPOCH_KEY_A,
+        fallbackName: 'Accepted Group',
+        existingChat: {
+          name: 'Pending Group',
+          meta: {
+            custom_flag: true,
+            request_type: 'group_invite',
+            request_message: 'This is an invitation to a group.',
+            inbox_state: 'accepted',
+            accepted_at: '2026-01-07T00:00:00.000Z',
+            last_incoming_message_at: '2026-01-06T00:00:00.000Z'
+          }
+        } as never,
+        acceptedAt: '2026-01-08T00:00:00.000Z'
+      })
+    ).toEqual({
+      nextName: 'Accepted Group',
+      nextMeta: {
+        custom_flag: true,
+        inbox_state: 'accepted',
+        accepted_at: '2026-01-07T00:00:00.000Z',
+        last_incoming_message_at: '2026-01-06T00:00:00.000Z',
+        contact_name: 'Accepted Group'
+      }
+    });
+  });
+
+  it('uses the provided accepted timestamp when accepting a group invite for the first time', () => {
+    expect(
+      buildAcceptedGroupInviteChatPlan({
+        groupPublicKey: EPOCH_KEY_A,
+        fallbackName: 'Fresh Group',
+        existingChat: {
+          name: 'Pending Group',
+          meta: {
+            request_type: 'group_invite',
+            request_message: 'This is an invitation to a group.'
+          }
+        } as never,
+        acceptedAt: '2026-01-09T00:00:00.000Z'
+      })
+    ).toEqual({
+      nextName: 'Fresh Group',
+      nextMeta: {
+        inbox_state: 'accepted',
+        accepted_at: '2026-01-09T00:00:00.000Z',
+        contact_name: 'Fresh Group'
+      }
+    });
+  });
+
+  it('reapplying accepted group invite updates is idempotent', () => {
+    const firstPlan = buildAcceptedGroupInviteChatPlan({
+      groupPublicKey: EPOCH_KEY_A,
+      fallbackName: 'Stable Group',
+      existingChat: {
+        name: 'Pending Group',
+        meta: {
+          custom_flag: true,
+          inbox_state: 'accepted',
+          accepted_at: '2026-01-10T00:00:00.000Z',
+          contact_name: 'Stable Group'
+        }
+      } as never,
+      acceptedAt: '2026-01-11T00:00:00.000Z'
+    });
+
+    expect(firstPlan).not.toBeNull();
+    expect(
+      buildAcceptedGroupInviteChatPlan({
+        groupPublicKey: EPOCH_KEY_A,
+        fallbackName: 'Stable Group',
+        existingChat: {
+          name: firstPlan?.nextName ?? '',
+          meta: firstPlan?.nextMeta ?? {}
+        } as never,
+        acceptedAt: '2026-01-12T00:00:00.000Z'
+      })
+    ).toEqual(firstPlan);
+  });
+
+  it('preserves existing group metadata when accepting an already stored group chat', () => {
+    expect(
+      buildAcceptedGroupInviteChatPlan({
+        groupPublicKey: EPOCH_KEY_A,
+        fallbackName: 'Upgraded Group',
+        existingChat: {
+          name: 'Stored Group',
+          meta: {
+            avatar: 'UG',
+            picture: 'https://example.com/group.png',
+            current_epoch_public_key: EPOCH_KEY_B,
+            group_epoch_keys: [
+              {
+                epoch_number: 1,
+                epoch_public_key: EPOCH_KEY_B,
+                epoch_private_key_encrypted: 'enc-1'
+              }
+            ],
+            accepted_at: '2026-01-13T00:00:00.000Z',
+            request_type: 'group_invite',
+            request_message: 'This is an invitation to a group.'
+          }
+        } as never,
+        acceptedAt: '2026-01-14T00:00:00.000Z'
+      })
+    ).toEqual({
+      nextName: 'Upgraded Group',
+      nextMeta: {
+        avatar: 'UG',
+        picture: 'https://example.com/group.png',
+        current_epoch_public_key: EPOCH_KEY_B,
+        group_epoch_keys: [
+          {
+            epoch_number: 1,
+            epoch_public_key: EPOCH_KEY_B,
+            epoch_private_key_encrypted: 'enc-1'
+          }
+        ],
+        accepted_at: '2026-01-13T00:00:00.000Z',
+        inbox_state: 'accepted',
+        contact_name: 'Upgraded Group'
       }
     });
   });

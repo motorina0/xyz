@@ -6,6 +6,7 @@ import {
   resetStartupStepSnapshotsValue
 } from 'src/stores/nostr/startupState';
 import {
+  buildAcceptedGroupInviteChatPlanValue,
   buildAvatarFallbackValue,
   buildGroupInviteRequestPlanValue,
   buildIdentifierFallbacksValue,
@@ -27,6 +28,7 @@ import {
 } from 'src/stores/nostr/valueUtils';
 
 export const __nostrStoreTestUtils = {
+  buildAcceptedGroupInviteChatPlan: buildAcceptedGroupInviteChatPlanValue,
   beginStartupStepSnapshot: beginStartupStepSnapshotValue,
   buildAvatarFallback: buildAvatarFallbackValue,
   buildIdentifierFallbacks: buildIdentifierFallbacksValue,
