@@ -63,8 +63,6 @@ import {
   GROUP_EPOCH_KEYS_CHAT_META_KEY,
   GROUP_IDENTITY_SECRET_TAG,
   GROUP_IDENTITY_SECRET_VERSION,
-  GROUP_INVITE_REQUEST_MESSAGE,
-  GROUP_INVITE_REQUEST_TYPE,
   GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY,
   GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY,
   GROUP_PRIVATE_KEY_CONTACT_META_KEY,
@@ -90,6 +88,7 @@ import {
   readDeveloperDiagnosticsEnabledFromStorage
 } from 'src/stores/nostr/developerTrace';
 import { createDeveloperDiagnosticsRuntime } from 'src/stores/nostr/developerDiagnostics';
+import { createGroupInviteRuntime } from 'src/stores/nostr/groupInviteRuntime';
 import { createGroupEpochPublishRuntime } from 'src/stores/nostr/groupEpochPublishRuntime';
 import { createGroupEpochStateRuntime } from 'src/stores/nostr/groupEpochStateRuntime';
 import { createContactProfileRuntime } from 'src/stores/nostr/contactProfileRuntime';
@@ -108,9 +107,7 @@ import { createStartupRuntime } from 'src/stores/nostr/startupRuntime';
 import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContactStateRuntime';
 import { createUserActions } from 'src/stores/nostr/userActions';
 import {
-  buildAcceptedGroupInviteChatPlanValue,
   buildAvatarFallbackValue,
-  buildGroupInviteRequestPlanValue,
   buildIdentifierFallbacksValue,
   buildUpdatedContactMetaValue,
   contactMetadataEqualValue,
@@ -177,7 +174,6 @@ import { useChatStore } from 'src/stores/chatStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import type {
   ChatGroupEpochKey,
-  ChatMetadata,
   DeletedMessageMetadata,
   GroupMemberTicketDelivery,
   MessageReplyPreview,
@@ -329,6 +325,19 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   ) => Promise<void> = async () => {
     throw new Error('Group epoch history runtime is not initialized.');
+  };
+  let upsertIncomingGroupInviteRequestChatRuntime: (
+    groupPublicKey: string,
+    createdAt: string,
+    preview?: Pick<ContactRecord, 'name' | 'meta'> | null
+  ) => Promise<void> = async () => {
+    throw new Error('Group invite runtime is not initialized.');
+  };
+  let ensureGroupInvitePubkeyIsContactRuntime: (
+    targetPubkeyHex: string,
+    fallbackName?: string
+  ) => Promise<void> = async () => {
+    throw new Error('Group invite runtime is not initialized.');
   };
   let publishGroupIdentitySecretRuntime: (
     groupPublicKey: string,
@@ -822,18 +831,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return resolveGroupDisplayNameValue(groupPublicKey);
   }
 
-  function buildAcceptedGroupInviteChatPlan(options: {
-    groupPublicKey: string;
-    fallbackName?: string;
-    existingChat: Pick<ChatRow, 'meta' | 'name'> | null | undefined;
-    acceptedAt?: string;
-  }): {
-    nextName: string;
-    nextMeta: Record<string, unknown>;
-  } | null {
-    return buildAcceptedGroupInviteChatPlanValue(options);
-  }
-
   async function ensureGroupContactAndChat(
     groupPublicKey: string,
     encryptedPrivateKey: string,
@@ -936,121 +933,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     createdAt: string,
     preview: Pick<ContactRecord, 'name' | 'meta'> | null = null
   ): Promise<void> {
-    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
-    if (!normalizedGroupPublicKey) {
-      return;
-    }
-
-    await Promise.all([chatDataService.init(), chatStore.init()]);
-
-    const existingChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
-    const invitePlan = buildGroupInviteRequestPlanValue({
-      groupPublicKey: normalizedGroupPublicKey,
-      createdAt,
-      existingChat,
-      preview
-    });
-    if (!invitePlan) {
-      return;
-    }
-
-    if (!existingChat) {
-      await chatDataService.createChat({
-        public_key: normalizedGroupPublicKey,
-        type: 'group',
-        name: invitePlan.nextName,
-        last_message: GROUP_INVITE_REQUEST_MESSAGE,
-        last_message_at: createdAt,
-        unread_count: invitePlan.nextUnreadCount,
-        meta: invitePlan.nextMeta
-      });
-      await chatStore.reload();
-      return;
-    }
-
-    await chatDataService.updateChat(normalizedGroupPublicKey, {
-      type: 'group',
-      ...(existingChat.name !== invitePlan.nextName ? { name: invitePlan.nextName } : {}),
-      meta: invitePlan.nextMeta
-    });
-    await chatDataService.updateChatPreview(
-      normalizedGroupPublicKey,
-      GROUP_INVITE_REQUEST_MESSAGE,
-      createdAt,
-      invitePlan.nextUnreadCount
-    );
-    await chatStore.reload();
+    return upsertIncomingGroupInviteRequestChatRuntime(groupPublicKey, createdAt, preview);
   }
 
   async function ensureGroupInvitePubkeyIsContact(
     targetPubkeyHex: string,
     fallbackName = ''
   ): Promise<void> {
-    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (
-      !normalizedTargetPubkey ||
-      !loggedInPubkeyHex ||
-      normalizedTargetPubkey === loggedInPubkeyHex
-    ) {
-      return;
-    }
-
-    await Promise.all([contactsService.init(), chatDataService.init()]);
-    const initialName = fallbackName.trim() || resolveGroupDisplayName(normalizedTargetPubkey);
-    await ensureContactStoredAsGroup(normalizedTargetPubkey, {
-      fallbackName: initialName
-    });
-    await ensureContactListedInPrivateContactList(normalizedTargetPubkey, {
-      fallbackName: initialName,
-      type: 'group'
-    });
-
-    const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
-    if (existingChat) {
-      const acceptedChatPlan = buildAcceptedGroupInviteChatPlan({
-        groupPublicKey: normalizedTargetPubkey,
-        fallbackName: initialName,
-        existingChat,
-        acceptedAt: new Date().toISOString()
-      });
-
-      if (acceptedChatPlan) {
-        await chatDataService.updateChat(normalizedTargetPubkey, {
-          type: 'group',
-          ...(existingChat.name !== acceptedChatPlan.nextName
-            ? { name: acceptedChatPlan.nextName }
-            : {}),
-          meta: acceptedChatPlan.nextMeta as ChatMetadata
-        });
-      }
-    }
-
-    try {
-      await subscribePrivateMessagesForLoggedInUser(true);
-    } catch (error) {
-      console.warn(
-        'Failed to refresh private messages after accepting group invite',
-        normalizedTargetPubkey,
-        error
-      );
-    }
-
-    try {
-      await refreshGroupContactByPublicKey(normalizedTargetPubkey, initialName);
-    } catch (error) {
-      console.warn('Failed to refresh accepted group invite profile', normalizedTargetPubkey, error);
-      await useChatStore().syncContactProfile(normalizedTargetPubkey);
-    }
-
-    bumpContactListVersion();
-    await useChatStore().reload();
-
-    try {
-      await publishPrivateContactList(getAppRelayUrls());
-    } catch (error) {
-      console.warn('Failed to publish private contact list after accepting group invite', error);
-    }
+    return ensureGroupInvitePubkeyIsContactRuntime(targetPubkeyHex, fallbackName);
   }
 
   async function ensurePrivatePreferences(
@@ -4074,6 +3964,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
   refreshContactByPublicKeyRuntime = refreshContactByPublicKey;
   queueBackgroundGroupContactRefreshRuntime = queueBackgroundGroupContactRefresh;
+
+  const {
+    ensureGroupInvitePubkeyIsContact: ensureGroupInvitePubkeyIsContactImpl,
+    upsertIncomingGroupInviteRequestChat: upsertIncomingGroupInviteRequestChatImpl
+  } = createGroupInviteRuntime({
+    bumpContactListVersion,
+    chatStore,
+    ensureContactListedInPrivateContactList,
+    ensureContactStoredAsGroup,
+    getAppRelayUrls,
+    getLoggedInPublicKeyHex,
+    publishPrivateContactList,
+    refreshGroupContactByPublicKey,
+    subscribePrivateMessagesForLoggedInUser
+  });
+  ensureGroupInvitePubkeyIsContactRuntime = ensureGroupInvitePubkeyIsContactImpl;
+  upsertIncomingGroupInviteRequestChatRuntime = upsertIncomingGroupInviteRequestChatImpl;
 
   const {
     applyContactCursorStateToContact,
