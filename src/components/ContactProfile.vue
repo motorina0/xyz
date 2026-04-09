@@ -917,6 +917,7 @@ import { DEFAULT_RELAYS } from 'src/constants/relays';
 import { chatDataService, type ChatRow } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
+import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import type {
   GroupMemberTicketDelivery,
@@ -998,6 +999,7 @@ const emit = defineEmits<{
 
 const $q = useQuasar();
 const nostrStore = useNostrStore();
+const chatStore = useChatStore();
 const localPubkey = computed({
   get: () => props.pubkey ?? '',
   set: (value: string) => emit('update:pubkey', value)
@@ -1155,6 +1157,27 @@ const nextPublishedGroupMembers = computed(() => {
   return [...remainingMembers, ...pendingAddedMembers];
 });
 const allKnownRelays = computed(() => uniqueRelayUrls([...relayList.value, ...groupRelayUrls.value]));
+const trackedGroupChatStoreSignature = computed(() => {
+  const normalizedPubkey = normalizedHeaderPubkey.value;
+  if (!normalizedPubkey) {
+    return '';
+  }
+
+  const matchingChat = chatStore.chats.find(
+    (chat) => normalizePubkeyInput(chat.publicKey) === normalizedPubkey && chat.type === 'group'
+  );
+  if (!matchingChat) {
+    return '';
+  }
+
+  return JSON.stringify({
+    publicKey: matchingChat.publicKey,
+    epochPublicKey: matchingChat.epochPublicKey,
+    lastMessageAt: matchingChat.lastMessageAt,
+    unreadCount: matchingChat.unreadCount,
+    meta: matchingChat.meta
+  });
+});
 const groupEpochRows = computed(() => normalizeGroupEpochRows(currentGroupChat.value?.meta?.group_epoch_keys));
 const currentEpochPublicKey = computed(() => {
   const fromChat = currentGroupChat.value?.meta?.current_epoch_public_key;
@@ -1310,6 +1333,18 @@ watch(
   () => groupMemberTicketDeliverySignature.value,
   () => {
     void loadGroupMemberTicketEvents();
+  },
+  { immediate: true }
+);
+
+watch(
+  [() => trackedGroupChatStoreSignature.value, isGroupContact, () => props.pubkey],
+  ([, isGroup, pubkey]) => {
+    if (!isGroup) {
+      return;
+    }
+
+    void refreshCurrentGroupChat(pubkey ?? '');
   },
   { immediate: true }
 );
@@ -2586,6 +2621,22 @@ async function loadContactFromPubkey(input: string): Promise<void> {
       isLoadingContact.value = false;
     }
   }
+}
+
+async function refreshCurrentGroupChat(input: string): Promise<void> {
+  const normalizedPubkey = normalizePubkeyInput(input);
+  if (!normalizedPubkey) {
+    currentGroupChat.value = null;
+    return;
+  }
+
+  await chatDataService.init();
+  const groupChat = await chatDataService.getChatByPublicKey(normalizedPubkey);
+  if (normalizePubkeyInput(props.pubkey ?? '') !== normalizedPubkey) {
+    return;
+  }
+
+  currentGroupChat.value = groupChat;
 }
 </script>
 
