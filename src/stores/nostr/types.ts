@@ -10,7 +10,7 @@ import type {
   DeveloperTraceLevel,
 } from 'src/services/developerTraceDataService';
 import type { ChatGroupEpochKey, MessageReaction, MessageRelayStatus } from 'src/types/chat';
-import type { ContactRecord, ContactRelay } from 'src/types/contact';
+import type { ContactRelay } from 'src/types/contact';
 
 export interface NostrIdentifierResolutionResult {
   isValid: boolean;

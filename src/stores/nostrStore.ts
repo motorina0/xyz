@@ -1,14 +1,8 @@
 import NDK, {
-  isValidNip05,
-  isValidPubkey,
   type NDKEvent,
-  NDKKind,
   NDKPrivateKeySigner,
-  NDKPublishError,
-  type NDKRelay,
   type NDKRelayInformation,
   type NDKRelayList,
-  NDKRelaySet,
   type NDKSigner,
   type NDKUser,
   type NDKUserProfile,
@@ -19,7 +13,6 @@ import NDK, {
 import { defineStore } from 'pinia';
 import { type ChatRow, chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import { imageCacheService } from 'src/services/imageCacheService';
 import {
   inputSanitizerService,
   type NpubValidationResult,
@@ -31,31 +24,12 @@ import { useChatStore } from 'src/stores/chatStore';
 import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
 import {
   AUTH_METHOD_STORAGE_KEY,
-  BACKGROUND_GROUP_CONTACT_REFRESH_COOLDOWN_MS,
-  CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY,
-  CONTACT_CURSOR_FETCH_BATCH_SIZE,
-  CONTACT_CURSOR_PUBLISH_DELAY_MS,
-  CONTACT_CURSOR_VERSION,
   DEFAULT_EVENT_SINCE_LOOKBACK_SECONDS,
   DEVELOPER_DIAGNOSTICS_STORAGE_KEY,
-  EVENT_FILTER_LOOKBACK_SECONDS,
-  GROUP_CHAT_EPOCH_PUBLIC_KEY_META_KEY,
-  GROUP_CURRENT_EPOCH_PRIVATE_KEY_ENCRYPTED_CHAT_META_KEY,
-  GROUP_CURRENT_EPOCH_PUBLIC_KEY_CHAT_META_KEY,
-  GROUP_EPOCH_KEYS_CHAT_META_KEY,
-  GROUP_IDENTITY_SECRET_TAG,
-  GROUP_IDENTITY_SECRET_VERSION,
-  GROUP_MEMBER_TICKET_DELIVERIES_CHAT_META_KEY,
-  GROUP_OWNER_PUBLIC_KEY_CONTACT_META_KEY,
-  GROUP_PRIVATE_KEY_CONTACT_META_KEY,
   INITIAL_CONNECT_TIMEOUT_MS,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
   PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
-  PRIVATE_MESSAGES_LAST_RECEIVED_EVENT_STORAGE_KEY,
-  PRIVATE_PREFERENCES_D_TAG,
-  PRIVATE_PREFERENCES_KIND,
-  PRIVATE_PREFERENCES_STORAGE_KEY,
   PUBLIC_KEY_STORAGE_KEY,
   RELAY_CONNECT_FAILURE_COOLDOWN_MS,
   STARTUP_STEP_MIN_PROGRESS_MS,
@@ -84,52 +58,25 @@ import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessages
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
 import { createRelayConnectionRuntime } from 'src/stores/nostr/relayConnectionRuntime';
 import { createRelayPublishRuntime } from 'src/stores/nostr/relayPublishRuntime';
-import { hasStorage, isPlainRecord } from 'src/stores/nostr/shared';
+import { hasStorage } from 'src/stores/nostr/shared';
 import { createStartupContactSyncRuntime } from 'src/stores/nostr/startupContactSyncRuntime';
 import { createStartupRuntime } from 'src/stores/nostr/startupRuntime';
 import {
-  beginStartupStepSnapshotValue,
-  completeStartupStepSnapshotValue,
   createInitialStartupStepSnapshots,
-  failStartupStepSnapshotValue,
-  resetStartupStepSnapshotsValue,
   type StartupDisplaySnapshot,
-  type StartupStepId,
   type StartupStepSnapshot,
-  type StartupStepStatus,
 } from 'src/stores/nostr/startupState';
 import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
 import { createSubscriptionLoggingRuntime } from 'src/stores/nostr/subscriptionLoggingRuntime';
-import { __nostrStoreTestUtils } from 'src/stores/nostr/testUtils';
 import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContactStateRuntime';
 import type {
   AuthMethod,
-  ContactCursorContent,
   ContactCursorState,
-  ContactProfileEventState,
-  ContactRefreshLifecycle,
-  ContactRelayListEventState,
-  ContactRelayListFetchResult,
-  CreateGroupChatInput,
-  CreateGroupChatResult,
-  DeveloperDiagnosticsSnapshot,
-  DeveloperGroupMessageSubscriptionSnapshot,
-  DeveloperPendingDeletionSnapshot,
-  DeveloperPendingQueueRefreshSummary,
-  DeveloperPendingReactionSnapshot,
-  DeveloperPrivateMessagesSubscriptionSnapshot,
-  DeveloperRelayRow,
-  DeveloperSessionSnapshot,
-  DeveloperTraceEntry,
-  DeveloperTraceLevel,
   GiftWrappedRumorPublishResult,
   GroupIdentitySecretContent,
   MessageRow,
-  NostrIdentifierResolutionResult,
-  NostrNip05DataResult,
   PendingIncomingDeletion,
   PendingIncomingReaction,
-  PrivateMessagesBackfillState,
   PrivatePreferences,
   PublishGroupMemberChangesResult,
   PublishUserMetadataInput,
@@ -138,9 +85,6 @@ import type {
   RelayPublishStatusesResult,
   RelaySaveStatus,
   RotateGroupEpochResult,
-  SendDirectMessageDeletionOptions,
-  SendDirectMessageOptions,
-  SendDirectMessageReactionOptions,
   SendGiftWrappedRumorOptions,
   SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
@@ -177,11 +121,6 @@ import {
   areBrowserNotificationsEnabled,
   clearBrowserNotificationsPreference,
 } from 'src/utils/browserNotificationPreference';
-import {
-  mergeGroupMemberTicketDeliveries,
-  normalizeGroupMemberTicketDeliveries,
-} from 'src/utils/groupMemberTicketDelivery';
-import { normalizeMessageRelayStatuses } from 'src/utils/messageRelayStatus';
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 import { ref, watch } from 'vue';
 
@@ -382,7 +321,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   } = createTrackedContactStateRuntime();
   const {
     beginStartupStep,
-    clearStartupDisplayTimer,
     completeStartupStep,
     createStartupBatchTracker,
     failStartupStep,
@@ -396,7 +334,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
   const {
     bumpDeveloperDiagnosticsVersion,
-    bumpDeveloperTraceVersion,
     clearDeveloperTraceEntries,
     listDeveloperTraceEntries,
     logDeveloperTrace,
@@ -434,13 +371,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getPrivateMessagesEpochSwitchSince,
     getPrivateMessagesStartupFloorSince,
     getPrivateMessagesStartupLiveSince,
-    normalizeGroupIdentitySecretContent,
+
     normalizeTimestamp,
-    readPrivateMessagesBackfillState,
+
     readPrivatePreferencesFromStorage,
-    readStoredPrivateMessagesLastReceivedCreatedAt,
+
     resetEventSinceForFreshLogin,
-    setStoredEventSince,
+
     sha256Hex,
     toComparableTimestamp,
     updateStoredEventSinceFromCreatedAt,
@@ -535,7 +472,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return resolveCurrentGroupChatEpochEntryValue(chat);
   }
 
-  async function upsertGroupMemberTicketDelivery(
+  async function _upsertGroupMemberTicketDelivery(
     groupPublicKey: string,
     delivery: GroupMemberTicketDelivery
   ): Promise<void> {
@@ -670,7 +607,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
   }
 
-  function readGiftWrapRecipientPubkey(event: Pick<NDKEvent, 'tags'>): string | null {
+  function _readGiftWrapRecipientPubkey(event: Pick<NDKEvent, 'tags'>): string | null {
     const tags = Array.isArray(event.tags)
       ? event.tags.filter((tag): tag is string[] => Array.isArray(tag))
       : [];
@@ -838,7 +775,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return firstId.localeCompare(secondId);
   }
 
-  function buildAvatarFallback(value: string): string {
+  function _buildAvatarFallback(value: string): string {
     return buildAvatarFallbackValue(value);
   }
 
@@ -886,7 +823,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
-  function normalizeUniqueMemberPublicKeys(
+  function _normalizeUniqueMemberPublicKeys(
     memberPublicKeys: string[],
     excludedPublicKeys: string[] = []
   ): string[] {
@@ -906,7 +843,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     );
   }
 
-  async function publishGroupEpochTickets(
+  async function _publishGroupEpochTickets(
     groupPublicKey: string,
     memberPublicKeys: string[],
     options: {
@@ -1593,7 +1530,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     return toStoredNostrEventRuntime(event);
   }
 
-  async function refreshMessageInLiveState(messageId: number): Promise<void> {
+  async function _refreshMessageInLiveState(messageId: number): Promise<void> {
     return refreshMessageInLiveStateRuntime(messageId);
   }
 
@@ -1841,11 +1778,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchContactRelayList,
     getAppRelayUrls,
     listTrackedContactPubkeys,
-    normalizeWritableRelayUrls,
+
     parseContactProfileEvent,
     refreshContactRelayList,
     refreshGroupRelayListsOnStartup,
-    resolveContactRelayListReadRelayUrls,
+
     resolveGroupPublishRelayUrls,
     resolveLoggedInPublishRelayUrls,
     resolveLoggedInReadRelayUrls,
@@ -1899,12 +1836,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
 
   const {
-    applyMyRelayListEntries,
     fetchMyRelayListEntries,
     publishMyRelayList,
     resetMyRelayListRuntimeState,
     restoreMyRelayList,
-    stopMyRelayListSubscription,
+
     subscribeMyRelayListUpdates,
     updateLoggedInUserRelayList,
   } = createMyRelayListRuntime({
@@ -2395,7 +2331,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     queueBackgroundGroupContactRefresh,
     refreshContactByPublicKey,
     refreshGroupContactByPublicKey,
-    resolveUserByIdentifiers,
   } = createContactProfileRuntime({
     backgroundGroupContactRefreshStartedAt,
     buildIdentifierFallbacks,
@@ -2441,12 +2376,10 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     applyContactCursorStateToContact,
-    buildChatMetaWithUnseenReactionCount,
-    compareContactCursorState,
+
     createGroupChat,
     fetchContactCursorEvents,
-    fetchGroupIdentitySecretEvents,
-    publishContactCursor,
+
     publishGroupIdentitySecret: publishGroupIdentitySecretImpl,
     publishPrivatePreferences,
     restoreContactCursorState,
@@ -2603,7 +2536,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     stopPrivateMessagesBackfillRuntime(reason);
   }
 
-  async function restoreGroupEpochHistory(
+  async function _restoreGroupEpochHistory(
     groupPublicKey: string,
     epochPublicKey: string,
     options: {

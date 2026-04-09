@@ -20,8 +20,7 @@ import type {
   RelayConnectionState,
 } from 'src/stores/nostr/types';
 import { useRelayStore } from 'src/stores/relayStore';
-import type { MessageRelayStatus } from 'src/types/chat';
-import type { ContactMetadata, ContactRelay } from 'src/types/contact';
+import type { ContactMetadata } from 'src/types/contact';
 import type { Ref } from 'vue';
 
 interface DeveloperDiagnosticsDeps {

@@ -140,7 +140,6 @@ interface PrivateStateRuntimeDeps {
 
 export function createPrivateStateRuntime({
   beginStartupStep,
-  buildFreshPrivatePreferences,
   buildRelaySaveStatus,
   bumpContactListVersion,
   chatStore,
@@ -149,7 +148,6 @@ export function createPrivateStateRuntime({
   completeStartupStep,
   contactRelayListsEqual,
   createInitialGroupEpochSecretState,
-  createStartupBatchTracker,
   decryptContactCursorContent,
   decryptGroupIdentitySecretContent,
   decryptPrivatePreferencesContent,
@@ -162,10 +160,8 @@ export function createPrivateStateRuntime({
   ensurePrivatePreferences,
   ensureRelayConnections,
   failStartupStep,
-  getFilterSince,
   getLoggedInPublicKeyHex,
   getStartupStepSnapshot,
-  isRestoringStartupState,
   ndk,
   normalizeEventId,
   normalizeTimestamp,
@@ -175,9 +171,9 @@ export function createPrivateStateRuntime({
   publishGroupRelayList,
   publishPrivateContactList,
   publishReplaceableEventWithRelayStatuses,
-  queueTrackedContactSubscriptionsRefresh,
+
   readPrivatePreferencesFromStorage,
-  refreshContactByPublicKey,
+
   resolveLoggedInPublishRelayUrls,
   resolveLoggedInReadRelayUrls,
   restoreState,

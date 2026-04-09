@@ -647,7 +647,7 @@ export const useChatStore = defineStore('chatStore', () => {
     visibleChatId.value = nextChatId;
   }
 
-  async function getLatestIncomingMessageAt(chatId: string): Promise<string | null> {
+  async function _getLatestIncomingMessageAt(chatId: string): Promise<string | null> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     const loggedInPublicKey = getLoggedInPublicKey();
     if (!normalizedChatId || !loggedInPublicKey) {

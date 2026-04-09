@@ -50,8 +50,6 @@ function getStatusSegmentClassName(status: StatusSegment['key']): string {
       return 'bubble__status-segment--blue';
     case 'failed':
       return 'bubble__status-segment--red';
-    case 'pending':
-    case 'missing':
     default:
       return 'bubble__status-segment--gray';
   }
@@ -68,8 +66,6 @@ function getStatusDotClassName(
       return 'bubble__status-list-dot--green';
     case 'failed':
       return 'bubble__status-list-dot--red';
-    case 'pending':
-    case 'missing':
     default:
       return 'bubble__status-list-dot--gray';
   }

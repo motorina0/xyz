@@ -10,7 +10,6 @@ import {
 } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
-import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import {
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
   PRIVATE_MESSAGES_WATCHDOG_INTERVAL_MS,
@@ -510,7 +509,7 @@ export function createPrivateMessagesSubscriptionRuntime({
       const relaySnapshots = getRelaySnapshots(relayUrls);
       const disconnectedRelayUrls = relayUrls.filter((relayUrl) => {
         const relay = ndk.pool.getRelay(normalizeRelayUrl(relayUrl), false);
-        return !relay || !relay.connected;
+        return !relay?.connected;
       });
       const privateMessageTargetDetails = await buildPrivateMessageSubscriptionTargetDetails(
         recipientPubkeys,
