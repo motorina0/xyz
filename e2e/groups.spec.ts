@@ -360,6 +360,75 @@ test('hard reload after rotation keeps the higher group epoch current and messag
   }
 });
 
+test('member restart restores group history from both the current and prior epochs', async ({
+  browser,
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochHistoryAlice);
+  let bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochHistoryBob);
+
+  try {
+    const groupPublicKey = await createGroup(alice.page, {
+      name: `Epoch History Group ${Date.now()}`,
+      about: 'Historical epoch restore coverage',
+    });
+    const epochZeroMessage = `epoch-zero-message-${Date.now()}`;
+    const epochOneMessage = `epoch-one-message-${Date.now()}`;
+    const restartReplyMessage = `epoch-history-reply-${Date.now()}`;
+
+    await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
+    await openRequests(bob.page);
+    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
+    await acceptFirstRequest(bob.page);
+
+    await navigateToChat(alice.page, groupPublicKey);
+    await sendMessage(alice.page, epochZeroMessage, {
+      chatId: groupPublicKey,
+    });
+    await navigateToChat(bob.page, groupPublicKey);
+    await waitForThreadMessage(bob.page, epochZeroMessage, {
+      chatId: groupPublicKey,
+    });
+
+    await rotateGroupEpoch(alice.page, groupPublicKey, [bob.session.publicKey], [E2E_RELAY_URL]);
+
+    await navigateToChat(alice.page, groupPublicKey);
+    await sendMessage(alice.page, epochOneMessage, {
+      chatId: groupPublicKey,
+    });
+    await navigateToChat(bob.page, groupPublicKey);
+    await waitForThreadMessage(bob.page, epochOneMessage, {
+      chatId: groupPublicKey,
+    });
+
+    await disposeUsers(bob);
+    bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupEpochHistoryBob);
+
+    await navigateToChat(bob.page, groupPublicKey);
+    await waitForThreadMessage(bob.page, epochZeroMessage, {
+      chatId: groupPublicKey,
+    });
+    await waitForThreadMessage(bob.page, epochOneMessage, {
+      chatId: groupPublicKey,
+    });
+
+    await openGroupContact(bob.page, groupPublicKey);
+    await openGroupEpochsTab(bob.page);
+    await expect.poll(() => readGroupEpochNumbers(bob.page), { timeout: 12_000 }).toEqual([1, 0]);
+
+    await navigateToChat(bob.page, groupPublicKey);
+    await sendMessage(bob.page, restartReplyMessage, {
+      chatId: groupPublicKey,
+    });
+    await navigateToChat(alice.page, groupPublicKey);
+    await waitForThreadMessage(alice.page, restartReplyMessage, {
+      chatId: groupPublicKey,
+    });
+    await expectNoUnexpectedBrowserErrors([alice, bob]);
+  } finally {
+    await disposeUsers(alice, bob);
+  }
+});
+
 test('group messages continue both ways after an explicit epoch rotation', async ({ browser }) => {
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupRotateAlice);
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupRotateBob);

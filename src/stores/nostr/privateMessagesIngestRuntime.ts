@@ -326,43 +326,6 @@ export function createPrivateMessagesIngestRuntime({
         });
         return;
       }
-      const higherEpochConflict = findHigherKnownGroupEpochConflict(
-        existingGroupChat,
-        epochNumber,
-        incomingEpochCreatedAt
-      );
-      if (higherEpochConflict) {
-        logInvalidIncomingEpochNumber(
-          senderPubkeyHex,
-          epochNumber,
-          epochPublicKey ?? '',
-          incomingEpochCreatedAt,
-          higherEpochConflict
-        );
-        logInboundEvent('drop', {
-          reason: 'invalid-epoch-number',
-          epochNumber,
-          higherEpochNumber: higherEpochConflict.higherEpochEntry.epoch_number,
-          higherEpochPublicKey: formatSubscriptionLogValue(
-            higherEpochConflict.higherEpochEntry.epoch_public_key
-          ),
-          higherEpochCreatedAt:
-            higherEpochConflict.olderHigherEpochEntry?.invitation_created_at ??
-            higherEpochConflict.higherEpochEntry.invitation_created_at ??
-            null,
-          createdAt: incomingEpochCreatedAt,
-          ...buildInboundTraceDetails({
-            wrappedEvent,
-            rumorEvent,
-            loggedInPubkeyHex,
-            senderPubkeyHex,
-            chatPubkey: senderPubkeyHex,
-            relayUrls: wrappedRelayUrls,
-            recipients,
-          }),
-        });
-        return;
-      }
       const wasAcceptedGroup =
         resolveIncomingChatInboxStateValue({
           chat: existingGroupChat,

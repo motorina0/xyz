@@ -133,6 +133,14 @@ export const TEST_ACCOUNTS = {
     privateKey: 'b646572a31e22409692be6f6d7840812687525e71f4b2abb8673889f9a8507ba',
     displayName: 'Bob Epoch',
   },
+  groupEpochHistoryAlice: {
+    privateKey: 'c1b0d6e5f2a34789b1c2d3e4f5061728394a5b6c7d8e9fa0b1c2d3e4f5061728',
+    displayName: 'Alice Epoch History',
+  },
+  groupEpochHistoryBob: {
+    privateKey: '7a91b4c6d8e0f1234567890abcdef1234567890abcdef1234567890abcdef123',
+    displayName: 'Bob Epoch History',
+  },
   groupRotateAlice: {
     privateKey: '5b31c34552ff63d834cf3159bd69b42177f6b8e164baec19c4c2aff641bb468a',
     displayName: 'Alice Rotate',

@@ -1862,10 +1862,10 @@ body.body--dark .thread-header__action {
   min-height: 28px;
   padding: 0 12px;
   border-radius: 999px;
-  background: var(--tg-sticky-bg) !important;
-  border: 1px solid var(--tg-border);
+  background: var(--q-primary) !important;
+  border: 1px solid var(--q-primary);
   box-shadow: none !important;
-  color: var(--tg-text-secondary) !important;
+  color: var(--tg-active-text) !important;
 }
 
 .thread-more__button::before {
@@ -1873,7 +1873,7 @@ body.body--dark .thread-header__action {
 }
 
 .thread-more__button:hover {
-  background: var(--tg-hover) !important;
+  background: var(--q-primary) !important;
   box-shadow: none !important;
 }
 

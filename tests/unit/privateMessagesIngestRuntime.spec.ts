@@ -437,20 +437,6 @@ describe('privateMessagesIngestRuntime', () => {
       },
       expectedReason: 'conflicting-epoch-public-key',
     },
-    {
-      name: 'higher known epoch conflicts',
-      configure(deps: ReturnType<typeof createDeps>) {
-        deps.findHigherKnownGroupEpochConflict.mockReturnValue({
-          higherEpochEntry: {
-            epoch_number: 3,
-            epoch_public_key: 'd'.repeat(64),
-            epoch_private_key_encrypted: 'enc-higher',
-          },
-          olderHigherEpochEntry: null,
-        });
-      },
-      expectedReason: 'invalid-epoch-number',
-    },
   ])('drops invalid group epoch tickets for $name', async ({ configure, expectedReason }) => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);
@@ -494,6 +480,87 @@ describe('privateMessagesIngestRuntime', () => {
       'drop',
       expect.objectContaining({
         reason: expectedReason,
+      })
+    );
+  });
+
+  it('persists historical group epoch tickets even when a newer epoch is already known', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: 'a'.repeat(64),
+      eventId: 'epoch-ticket-history',
+      kind: 1014,
+      createdAt: 1700000000,
+    });
+
+    deps.findHigherKnownGroupEpochConflict.mockReturnValue({
+      higherEpochEntry: {
+        epoch_number: 3,
+        epoch_public_key: 'd'.repeat(64),
+        invitation_created_at: '2023-11-15T00:00:00.000Z',
+      },
+      olderHigherEpochEntry: null,
+    });
+    deps.resolveIncomingChatInboxStateValue.mockReturnValue('accepted');
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    deps.verifyIncomingGroupEpochTicket.mockResolvedValue({
+      epochNumber: 2,
+      epochPrivateKey: 'epoch-private-key',
+      isValid: true,
+      signedEvent: {
+        id: 'signed-epoch-ticket',
+      },
+    });
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: 'a'.repeat(64),
+      public_key: 'a'.repeat(64),
+      type: 'group',
+      name: 'Launch Group',
+      last_message: '',
+      last_message_at: '',
+      unread_count: 0,
+      meta: {
+        inbox_state: 'accepted',
+        accepted_at: createdAt,
+      },
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 91,
+      chat_public_key: 'a'.repeat(64),
+      author_public_key: 'a'.repeat(64),
+      created_at: createdAt,
+      event_id: 'signed-epoch-ticket',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.persistIncomingGroupEpochTicket).toHaveBeenCalledWith(
+      'a'.repeat(64),
+      2,
+      'epoch-private-key',
+      expect.objectContaining({
+        accepted: true,
+        invitationCreatedAt: createdAt,
+      })
+    );
+    expect(serviceMocks.chatDataService.createMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chat_public_key: 'a'.repeat(64),
+        message: 'Epoch 2',
+        event_id: 'signed-epoch-ticket',
+      })
+    );
+    expect(deps.logInboundEvent).not.toHaveBeenCalledWith(
+      'drop',
+      expect.objectContaining({
+        reason: 'invalid-epoch-number',
       })
     );
   });

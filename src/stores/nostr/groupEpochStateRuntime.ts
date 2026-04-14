@@ -496,22 +496,6 @@ export function createGroupEpochStateRuntime({
       return;
     }
 
-    const higherEpochConflict = findHigherKnownGroupEpochConflictValue(
-      existingChat,
-      epochNumber,
-      invitationCreatedAt
-    );
-    if (higherEpochConflict) {
-      logInvalidIncomingEpochNumber(
-        normalizedGroupPublicKey,
-        epochNumber,
-        normalizedEpochPublicKey,
-        invitationCreatedAt,
-        higherEpochConflict
-      );
-      return;
-    }
-
     const existingEpochEntry =
       existingGroupEpochKeys.find(
         (entry) =>
