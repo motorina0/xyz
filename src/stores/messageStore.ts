@@ -379,6 +379,19 @@ function resolveSendRelayUrlsValue(options: {
   return normalizedRelayUrls;
 }
 
+function shouldPublishSelfCopyForChatRow(chat: Pick<ChatRow, 'public_key' | 'type'>): boolean {
+  if (chat.type === 'group') {
+    return false;
+  }
+
+  const loggedInPublicKey = getLoggedInPublicKey();
+  if (!loggedInPublicKey) {
+    return true;
+  }
+
+  return normalizeChatIdentifier(chat.public_key) !== loggedInPublicKey;
+}
+
 function resolveChatDeliveryTargetValue<T extends Pick<ChatRow, 'public_key' | 'type' | 'meta'>>(
   chat: T | null | undefined,
   options: {
@@ -408,7 +421,7 @@ function resolveChatDeliveryTargetValue<T extends Pick<ChatRow, 'public_key' | '
       relayUrls: options.relayUrls,
       recipientRelayUrls: options.recipientRelayUrls,
     }),
-    publishSelfCopy: chat.type !== 'group',
+    publishSelfCopy: shouldPublishSelfCopyForChatRow(chat),
   };
 }
 
@@ -1289,7 +1302,7 @@ export const useMessageStore = defineStore('messageStore', () => {
         localMessageId: created.id,
         createdAt: created.created_at,
         replyToEventId: replyTargetEventId,
-        publishSelfCopy: chat.type !== 'group',
+        publishSelfCopy: shouldPublishSelfCopyForChatRow(chat),
       });
     } catch (error) {
       sendError = error;

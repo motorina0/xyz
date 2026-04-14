@@ -329,20 +329,25 @@ export function useMessageBubbleStatus(options: {
 
   const statusSections = computed<StatusSection[]>(() => {
     if (options.isMine.value) {
-      return [
+      const sections: StatusSection[] = [
         {
           key: 'recipient',
           title: contactRelaysTitle.value,
           items: contactStatusListItems.value,
           emptyLabel: 'No relays',
         },
-        {
+      ];
+
+      if (myStatusListItems.value.length > 0) {
+        sections.push({
           key: 'self',
           title: 'My Relays (message backup)',
           items: myStatusListItems.value,
           emptyLabel: 'No relays',
-        },
-      ];
+        });
+      }
+
+      return sections;
     }
 
     if (normalizedContactRelayUrls.value.length > 0) {

@@ -257,6 +257,47 @@ describe('messageStore logic', () => {
     ).toBeNull();
   });
 
+  it('does not publish a backup self-copy when the selected chat is the logged-in user', () => {
+    const originalWindow = globalThis.window;
+
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: {
+          getItem: (key: string) => (key === 'npub' ? 'self-chat' : null),
+        },
+      },
+      configurable: true,
+    });
+
+    try {
+      expect(
+        resolveChatDeliveryTarget(
+          {
+            public_key: 'self-chat',
+            type: 'user',
+            meta: {},
+          } as never,
+          {
+            recipientRelayUrls: ['wss://self.example'],
+          }
+        )
+      ).toMatchObject({
+        recipientPublicKey: 'self-chat',
+        relayUrls: ['wss://self.example'],
+        publishSelfCopy: false,
+      });
+    } finally {
+      if (typeof originalWindow === 'undefined') {
+        Reflect.deleteProperty(globalThis, 'window');
+      } else {
+        Object.defineProperty(globalThis, 'window', {
+          value: originalWindow,
+          configurable: true,
+        });
+      }
+    }
+  });
+
   it('prefers direct reply event ids and otherwise falls back to persisted message event ids', () => {
     expect(
       resolveReplyTargetEventId(
