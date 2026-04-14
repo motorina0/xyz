@@ -93,6 +93,7 @@ export interface CreateGroupChatResult {
   groupPublicKey: string;
   encryptedPrivateKey: string;
   groupSecretSave: RelaySaveStatus;
+  memberListSyncError: string | null;
   contactListSyncError: string | null;
 }
 

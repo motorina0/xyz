@@ -247,6 +247,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<RelaySaveStatus> = async () => {
     throw new Error('Private state runtime is not initialized.');
   };
+  let publishGroupMembershipFollowSetRuntime: (
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls?: string[]
+  ) => Promise<RelaySaveStatus> = async () => {
+    throw new Error('Private state runtime is not initialized.');
+  };
   const authenticatedRelayUrls = new Set<string>();
   const pendingEventSinceState = {
     pendingEventSinceUpdate: 0,
@@ -1014,6 +1021,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       publishEventWithRelayStatuses,
       publishGroupIdentitySecret: (groupPublicKey, encryptedPrivateKey, seedRelayUrls = []) =>
         publishGroupIdentitySecretRuntime(groupPublicKey, encryptedPrivateKey, seedRelayUrls),
+      publishGroupMembershipFollowSet: (groupPublicKey, memberPublicKeys, seedRelayUrls = []) =>
+        publishGroupMembershipFollowSetRuntime(groupPublicKey, memberPublicKeys, seedRelayUrls),
       toIsoTimestampFromUnix,
       toStoredNostrEvent,
     });
@@ -1362,6 +1371,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchContactCursorEvents,
 
     publishGroupIdentitySecret: publishGroupIdentitySecretImpl,
+    publishGroupMembershipFollowSet: publishGroupMembershipFollowSetImpl,
     publishPrivatePreferences,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
@@ -1403,6 +1413,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     persistIncomingGroupEpochTicket,
     publishGroupRelayList,
     publishPrivateContactList,
+    publishEventWithRelayStatuses,
     publishReplaceableEventWithRelayStatuses,
     queueTrackedContactSubscriptionsRefresh,
     readPrivatePreferencesFromStorage,
@@ -1420,6 +1431,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     writePrivatePreferencesToStorage,
   });
   publishGroupIdentitySecretRuntime = publishGroupIdentitySecretImpl;
+  publishGroupMembershipFollowSetRuntime = publishGroupMembershipFollowSetImpl;
   const {
     refreshAllStoredContacts: refreshAllStoredContactsImpl,
     restoreStartupState,

@@ -513,6 +513,16 @@ async function handleConfirmNewGroup(): Promise<void> {
 
     notifyGroupSecretSave(createdGroup);
 
+    if (createdGroup.memberListSyncError) {
+      $q.notify({
+        type: 'warning',
+        message: 'Group created, but member list sync failed.',
+        caption: createdGroup.memberListSyncError,
+        position: 'top-right',
+        timeout: 6500
+      });
+    }
+
     if (createdGroup.contactListSyncError) {
       $q.notify({
         type: 'warning',

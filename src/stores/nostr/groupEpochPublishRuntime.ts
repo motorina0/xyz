@@ -78,6 +78,11 @@ interface GroupEpochPublishRuntimeDeps {
     encryptedPrivateKey: string,
     seedRelayUrls?: string[]
   ) => Promise<RelaySaveStatus>;
+  publishGroupMembershipFollowSet: (
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls?: string[]
+  ) => Promise<RelaySaveStatus>;
   toIsoTimestampFromUnix: (value: number | undefined) => string;
   toStoredNostrEvent: (event: NDKEvent) => Promise<NostrEvent | null>;
 }
@@ -98,6 +103,7 @@ export function createGroupEpochPublishRuntime({
   persistIncomingGroupEpochTicket,
   publishEventWithRelayStatuses,
   publishGroupIdentitySecret,
+  publishGroupMembershipFollowSet,
   toIsoTimestampFromUnix,
   toStoredNostrEvent,
 }: GroupEpochPublishRuntimeDeps) {
@@ -219,6 +225,7 @@ export function createGroupEpochPublishRuntime({
 
     const normalizedMemberPubkeys = normalizeUniqueMemberPublicKeys(memberPublicKeys, [
       normalizedOwnerPublicKey,
+      normalizedGroupPublicKey,
     ]);
     const normalizedTicketRecipientPubkeys = shouldRotateEpoch
       ? normalizeUniqueMemberPublicKeys([normalizedOwnerPublicKey, ...normalizedMemberPubkeys])
@@ -296,10 +303,11 @@ export function createGroupEpochPublishRuntime({
 
     const currentMemberPubkeys = normalizeUniqueMemberPublicKeys(
       (groupContact.meta.group_members ?? []).map((member) => member.public_key),
-      [normalizedOwnerPublicKey]
+      [normalizedOwnerPublicKey, normalizedGroupPublicKey]
     );
     const nextMemberPubkeys = normalizeUniqueMemberPublicKeys(memberPublicKeys, [
       normalizedOwnerPublicKey,
+      normalizedGroupPublicKey,
     ]);
     const nextMemberPubkeySet = new Set(nextMemberPubkeys);
     const currentMemberPubkeySet = new Set(currentMemberPubkeys);
@@ -309,8 +317,8 @@ export function createGroupEpochPublishRuntime({
     const addedMemberPubkeys = nextMemberPubkeys.filter(
       (memberPublicKey) => !currentMemberPubkeySet.has(memberPublicKey)
     );
-
-    return publishGroupEpochTickets(
+    const membershipDidChange = hasRemovedMembers || addedMemberPubkeys.length > 0;
+    const publishResult = await publishGroupEpochTickets(
       normalizedGroupPublicKey,
       hasRemovedMembers ? nextMemberPubkeys : addedMemberPubkeys,
       {
@@ -318,6 +326,23 @@ export function createGroupEpochPublishRuntime({
         seedRelayUrls,
       }
     );
+
+    if (!membershipDidChange) {
+      return publishResult;
+    }
+
+    const memberListSave = await publishGroupMembershipFollowSet(
+      normalizedGroupPublicKey,
+      nextMemberPubkeys,
+      seedRelayUrls
+    );
+
+    return {
+      ...publishResult,
+      publishedRelayUrls: Array.from(
+        new Set([...publishResult.publishedRelayUrls, ...memberListSave.publishedRelayUrls])
+      ),
+    };
   }
 
   async function sendGroupEpochTicket(

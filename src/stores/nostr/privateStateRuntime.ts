@@ -1,6 +1,7 @@
 import type NDK from '@nostr-dev-kit/ndk';
 import {
   NDKEvent,
+  NDKKind,
   NDKPrivateKeySigner,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
@@ -13,6 +14,7 @@ import {
   CONTACT_CURSOR_PUBLISH_DELAY_MS,
   GROUP_IDENTITY_SECRET_TAG,
   GROUP_IDENTITY_SECRET_VERSION,
+  GROUP_MEMBERS_FOLLOW_SET_D_TAG,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_PREFERENCES_D_TAG,
   PRIVATE_PREFERENCES_KIND,
@@ -28,11 +30,16 @@ import type {
 } from 'src/stores/nostr/types';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 import {
+  buildGroupMembershipFollowSetPrivateTags,
+  parseGroupMembershipFollowSetPrivateTags,
+} from 'src/utils/groupMembershipFollowSet';
+import {
   areMessageReactionsEqual,
   buildMetaWithReactions,
   countUnseenReactionsForAuthor,
   normalizeMessageReactions,
 } from 'src/utils/messageReactions';
+import { resolveGroupPublishRelayUrlsValue } from 'src/stores/nostr/valueUtils';
 import type { Ref } from 'vue';
 
 interface RestoreRuntimeState {
@@ -112,6 +119,11 @@ interface PrivateStateRuntimeDeps {
     seedRelayUrls?: string[]
   ) => Promise<RelaySaveStatus>;
   publishPrivateContactList: (seedRelayUrls?: string[]) => Promise<void>;
+  publishEventWithRelayStatuses: (
+    event: NDKEvent,
+    relayUrls: string[],
+    scope?: 'recipient' | 'self'
+  ) => Promise<{ relayStatuses: any[]; error: Error | null }>;
   publishReplaceableEventWithRelayStatuses: (
     event: NDKEvent,
     relayUrls: string[],
@@ -169,10 +181,12 @@ export function createPrivateStateRuntime({
   persistIncomingGroupEpochTicket,
   publishGroupRelayList,
   publishPrivateContactList,
+  publishEventWithRelayStatuses,
   publishReplaceableEventWithRelayStatuses,
 
   readPrivatePreferencesFromStorage,
 
+  refreshContactRelayList,
   resolveLoggedInPublishRelayUrls,
   resolveLoggedInReadRelayUrls,
   restoreState,
@@ -394,6 +408,272 @@ export function createPrivateStateRuntime({
     return relaySaveStatus;
   }
 
+  async function encryptGroupMembershipFollowSetContent(
+    groupPrivateKey: string,
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    excludedPubkeys: string[] = []
+  ): Promise<string> {
+    const normalizedGroupPrivateKey = inputSanitizerService.normalizeHexKey(groupPrivateKey);
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPrivateKey || !normalizedGroupPublicKey) {
+      throw new Error('A valid group identity is required.');
+    }
+
+    const groupSigner = new NDKPrivateKeySigner(normalizedGroupPrivateKey, ndk);
+    const signerUser = await groupSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
+      throw new Error('Decrypted group private key does not match the group public key.');
+    }
+
+    return groupSigner.encrypt(
+      signerUser,
+      JSON.stringify(
+        buildGroupMembershipFollowSetPrivateTags(memberPublicKeys, [
+          normalizedGroupPublicKey,
+          ...excludedPubkeys,
+        ])
+      ),
+      'nip44'
+    );
+  }
+
+  async function decryptGroupMembershipFollowSetContent(
+    groupPrivateKey: string,
+    groupPublicKey: string,
+    content: string,
+    excludedPubkeys: string[] = []
+  ): Promise<string[]> {
+    const normalizedGroupPrivateKey = inputSanitizerService.normalizeHexKey(groupPrivateKey);
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedContent = content.trim();
+    if (!normalizedGroupPrivateKey || !normalizedGroupPublicKey) {
+      throw new Error('A valid group identity is required.');
+    }
+
+    if (!normalizedContent) {
+      return [];
+    }
+
+    const groupSigner = new NDKPrivateKeySigner(normalizedGroupPrivateKey, ndk);
+    const signerUser = await groupSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
+      throw new Error('Decrypted group private key does not match the group public key.');
+    }
+
+    const decryptedContent = await groupSigner.decrypt(signerUser, normalizedContent, 'nip44');
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(decryptedContent);
+    } catch {
+      return [];
+    }
+
+    return parseGroupMembershipFollowSetPrivateTags(parsed, [
+      normalizedGroupPublicKey,
+      ...excludedPubkeys,
+    ]);
+  }
+
+  async function publishGroupMembershipFollowSet(
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls: string[] = []
+  ): Promise<RelaySaveStatus> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await contactsService.init();
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can publish the group member list.');
+    }
+
+    const encryptedGroupPrivateKey = groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    if (!encryptedGroupPrivateKey) {
+      throw new Error('Encrypted group private key not found.');
+    }
+
+    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
+    if (
+      !decryptedSecret ||
+      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !==
+        normalizedGroupPublicKey
+    ) {
+      throw new Error('Failed to decrypt the group private key.');
+    }
+
+    const relayUrls = resolveGroupPublishRelayUrlsValue(groupContact.relays, seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish group member list without at least one group relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const listEvent = new NDKEvent(ndk, {
+      kind: NDKKind.FollowSet,
+      created_at: Math.floor(Date.now() / 1000),
+      pubkey: normalizedGroupPublicKey,
+      content: await encryptGroupMembershipFollowSetContent(
+        decryptedSecret.group_privkey,
+        normalizedGroupPublicKey,
+        memberPublicKeys,
+        [normalizedOwnerPublicKey]
+      ),
+      tags: [['d', GROUP_MEMBERS_FOLLOW_SET_D_TAG]],
+    });
+
+    const groupSigner = new NDKPrivateKeySigner(decryptedSecret.group_privkey, ndk);
+    await listEvent.sign(groupSigner);
+
+    const publishResult = await publishEventWithRelayStatuses(listEvent, relayUrls, 'self');
+    if (
+      publishResult.relayStatuses.some(
+        (entry) => entry.direction === 'outbound' && entry.status === 'published'
+      )
+    ) {
+      updateStoredEventSinceFromCreatedAt(listEvent.created_at);
+    }
+
+    const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
+    if (publishResult.error && !relaySaveStatus.errorMessage) {
+      relaySaveStatus.errorMessage = publishResult.error.message;
+    }
+
+    if (publishResult.error && relaySaveStatus.publishedRelayUrls.length === 0) {
+      throw publishResult.error;
+    }
+
+    return relaySaveStatus;
+  }
+
+  function buildRestoredGroupMembers(
+    memberPubkeys: string[],
+    existingMembers: ContactMetadata['group_members']
+  ): NonNullable<ContactMetadata['group_members']> {
+    const existingMembersByPubkey = new Map(
+      inputSanitizerService
+        .normalizeContactGroupMembers(existingMembers)
+        .map((member) => [member.public_key, member] as const)
+    );
+
+    return memberPubkeys.map((memberPublicKey) => {
+      return (
+        existingMembersByPubkey.get(memberPublicKey) ?? {
+          public_key: memberPublicKey,
+          name: memberPublicKey,
+        }
+      );
+    });
+  }
+
+  async function restoreGroupMembershipFollowSet(
+    groupPublicKey: string,
+    groupPrivateKey: string,
+    ownerPublicKey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<boolean> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedGroupPrivateKey = inputSanitizerService.normalizeHexKey(groupPrivateKey);
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(ownerPublicKey);
+    if (!normalizedGroupPublicKey || !normalizedGroupPrivateKey || !normalizedOwnerPublicKey) {
+      return false;
+    }
+
+    await contactsService.init();
+    const existingGroupContact =
+      await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!existingGroupContact || existingGroupContact.type !== 'group') {
+      return false;
+    }
+
+    try {
+      await refreshContactRelayList(normalizedGroupPublicKey);
+    } catch (error) {
+      console.warn(
+        'Failed to refresh group relay list before restoring group members',
+        normalizedGroupPublicKey,
+        error
+      );
+    }
+
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      return false;
+    }
+
+    const relayUrls = resolveGroupPublishRelayUrlsValue(groupContact.relays, seedRelayUrls);
+    if (relayUrls.length === 0) {
+      return false;
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk);
+    const listEvent = await ndk.fetchEvent(
+      {
+        kinds: [NDKKind.FollowSet],
+        authors: [normalizedGroupPublicKey],
+        '#d': [GROUP_MEMBERS_FOLLOW_SET_D_TAG],
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+      },
+      relaySet
+    );
+    if (!listEvent) {
+      return false;
+    }
+
+    updateStoredEventSinceFromCreatedAt(listEvent.created_at);
+    const memberPubkeys = await decryptGroupMembershipFollowSetContent(
+      normalizedGroupPrivateKey,
+      normalizedGroupPublicKey,
+      listEvent.content,
+      [normalizedOwnerPublicKey]
+    );
+    const existingMembers = inputSanitizerService.normalizeContactGroupMembers(
+      groupContact.meta.group_members
+    );
+    const nextMembers = buildRestoredGroupMembers(memberPubkeys, existingMembers);
+    if (JSON.stringify(existingMembers) === JSON.stringify(nextMembers)) {
+      return false;
+    }
+
+    const nextMeta: ContactMetadata = {
+      ...(groupContact.meta ?? {}),
+    };
+    if (nextMembers.length > 0) {
+      nextMeta.group_members = nextMembers;
+    } else {
+      delete nextMeta.group_members;
+    }
+
+    const updatedContact = await contactsService.updateContact(groupContact.id, {
+      meta: nextMeta,
+    });
+    if (!updatedContact) {
+      throw new Error('Failed to persist restored group members.');
+    }
+
+    return true;
+  }
+
   async function fetchGroupIdentitySecretEvents(
     seedRelayUrls: string[] = []
   ): Promise<Map<string, NDKEvent>> {
@@ -460,6 +740,7 @@ export function createPrivateStateRuntime({
         }
 
         let didChange = false;
+        const loggedInPubkeyHex = getLoggedInPublicKeyHex();
         for (const [groupPublicKey, event] of eventsByGroupPubkey.entries()) {
           let decryptedSecret: GroupIdentitySecretContent | null = null;
           try {
@@ -493,6 +774,24 @@ export function createPrivateStateRuntime({
                 invitationCreatedAt: toIsoTimestampFromUnix(event.created_at),
               }
             );
+          }
+
+          if (loggedInPubkeyHex) {
+            try {
+              didChange =
+                (await restoreGroupMembershipFollowSet(
+                  groupPublicKey,
+                  decryptedSecret.group_privkey,
+                  loggedInPubkeyHex,
+                  seedRelayUrls
+                )) || didChange;
+            } catch (error) {
+              console.warn(
+                'Failed to restore group members from follow set',
+                groupPublicKey,
+                error
+              );
+            }
           }
         }
 
@@ -595,6 +894,14 @@ export function createPrivateStateRuntime({
       }
     }
 
+    let memberListSyncError: string | null = null;
+    try {
+      await publishGroupMembershipFollowSet(groupPublicKey, [], relayUrls);
+    } catch (error) {
+      memberListSyncError =
+        error instanceof Error ? error.message : 'Failed to publish group member list.';
+    }
+
     let contactListSyncError: string | null = null;
     try {
       await publishPrivateContactList(relayUrls);
@@ -607,6 +914,7 @@ export function createPrivateStateRuntime({
       groupPublicKey,
       encryptedPrivateKey,
       groupSecretSave,
+      memberListSyncError,
       contactListSyncError,
     };
   }
@@ -978,6 +1286,7 @@ export function createPrivateStateRuntime({
     fetchContactCursorEvents,
     fetchGroupIdentitySecretEvents,
     publishContactCursor,
+    publishGroupMembershipFollowSet,
     publishGroupIdentitySecret,
     publishPrivatePreferences,
     restoreContactCursorState,

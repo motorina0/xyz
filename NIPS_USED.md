@@ -44,6 +44,12 @@ This list is based on the current app code, especially `src/stores/nostrStore.ts
 - Used for encryption throughout the app.
 - It is used by the DM/gift-wrap pipeline, and also to self-encrypt private preferences, group identity secrets, per-contact cursor data, and the private contact-list payload.
 
+## NIP-51
+
+- Used for private follow-set style lists.
+- The app publishes a group-authored `kind:30000` follow set with `["d", "memebrs"]` when a group is created and whenever the owner changes the effective group membership set.
+- Group member pubkeys are stored only as NIP-44-encrypted private `p` items in `content`, and the latest event is used to restore the owner-side `group_members` snapshot for that group.
+
 ## NIP-59
 
 - Used for gift wrapping.
@@ -66,7 +72,3 @@ This list is based on the current app code, especially `src/stores/nostrStore.ts
 
 - This appears to be a repo-local draft/private-group scheme layered on top of NIP-17.
 - The app implements `kind:1014` epoch tickets, verifies them on receipt, rotates epoch keys, stores epoch history, and routes group DMs through the current epoch public key.
-
-## Note
-
-- I did not count the app's encrypted private contact list as clear NIP-51 support, even though it uses `kind:30000` (`NDKKind.FollowSet`), because the app stores the contact `p` tags inside encrypted content instead of publishing a normal public follow set.

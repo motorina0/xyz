@@ -146,8 +146,9 @@ function createDeps() {
     resolveGroupDisplayName: vi.fn(
       (groupPublicKey: string) => `Group ${groupPublicKey.slice(0, 8)}`
     ),
-    resolveIncomingChatInboxStateValue: vi.fn(({ isAcceptedContact }) =>
-      isAcceptedContact ? 'accepted' : 'request'
+    resolveIncomingChatInboxStateValue: vi.fn(
+      ({ isAcceptedContact }): 'accepted' | 'blocked' | 'request' =>
+        isAcceptedContact ? 'accepted' : 'request'
     ),
     resolveIncomingPrivateMessageRecipientContext: vi.fn().mockResolvedValue({
       recipientPubkey: 'b'.repeat(64),
@@ -414,9 +415,13 @@ describe('privateMessagesIngestRuntime', () => {
     });
     await runtime.getPrivateMessagesIngestQueue();
 
-    expect(deps.processIncomingDeletionRumorEvent).toHaveBeenCalledWith(rumorEvent, 'a'.repeat(64), {
-      uiThrottleMs: 25,
-    });
+    expect(deps.processIncomingDeletionRumorEvent).toHaveBeenCalledWith(
+      rumorEvent,
+      'a'.repeat(64),
+      {
+        uiThrottleMs: 25,
+      }
+    );
     expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
   });
 

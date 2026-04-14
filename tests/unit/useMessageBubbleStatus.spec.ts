@@ -1,6 +1,6 @@
 import { useMessageBubbleStatus } from 'src/composables/useMessageBubbleStatus';
-import { computed, ref } from 'vue';
 import { describe, expect, it } from 'vitest';
+import { computed, ref } from 'vue';
 
 describe('useMessageBubbleStatus', () => {
   it('omits the backup relay section when an outbound message has no self-copy relay statuses', () => {
