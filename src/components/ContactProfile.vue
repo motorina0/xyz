@@ -871,7 +871,8 @@
       title="Share Contact"
       subtitle="Scan the QR code or copy the nostr address."
       plain
-      max-width="420px"
+      max-width="520px"
+      body-class="profile-share-dialog__body"
       @update:model-value="closeShareDialog"
     >
       <div class="profile-share" data-testid="contact-profile-share-dialog">
@@ -3314,24 +3315,28 @@ body.body--dark .profile-header__action {
   padding-left: 8px;
 }
 
+:deep(.profile-share-dialog__body) {
+  padding: 12px 14px 14px;
+}
+
 .profile-share {
   display: grid;
-  gap: 16px;
+  gap: 12px;
 }
 
 .profile-share__qr-shell {
   display: flex;
   justify-content: center;
-  padding: 8px 0 2px;
+  padding: 2px 0 0;
 }
 
 .profile-share__qr {
-  width: min(100%, 248px);
+  width: min(100%, 336px);
   height: auto;
-  border-radius: 24px;
+  border-radius: 22px;
   border: 1px solid color-mix(in srgb, var(--tg-border) 86%, #d8e2f0 14%);
   background: #fff;
-  padding: 14px;
+  padding: 12px;
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
 }
 
@@ -3407,6 +3412,24 @@ body.body--dark .mobile-nav__btn--active {
 }
 
 @media (max-width: 640px) {
+  :deep(.profile-share-dialog__body) {
+    padding: 6px 8px 10px;
+  }
+
+  .profile-share {
+    gap: 8px;
+  }
+
+  .profile-share__qr-shell {
+    padding: 0;
+  }
+
+  .profile-share__qr {
+    width: 100%;
+    border-radius: 18px;
+    padding: 8px;
+  }
+
   .profile-card__birthday-grid {
     grid-template-columns: 1fr;
   }

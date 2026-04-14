@@ -5,6 +5,7 @@
       v-model:pubkey="profilePubkey"
       :read-only="false"
       :show-relays-edit-action="true"
+      :show-share-action="true"
       :show-publish-action="true"
       :is-publishing="isPublishing"
       @open-relays-settings="handleOpenRelaysSettings"
