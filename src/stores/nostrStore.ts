@@ -44,6 +44,7 @@ import {
 import { createGroupEpochPublishRuntime } from 'src/stores/nostr/groupEpochPublishRuntime';
 import { createGroupEpochStateRuntime } from 'src/stores/nostr/groupEpochStateRuntime';
 import { createGroupInviteRuntime } from 'src/stores/nostr/groupInviteRuntime';
+import { createInboundPresentationRuntime } from 'src/stores/nostr/inboundPresentationRuntime';
 import { createMessageEventRuntime } from 'src/stores/nostr/messageEventRuntime';
 import { createMessageMutationRuntime } from 'src/stores/nostr/messageMutationRuntime';
 import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
@@ -66,6 +67,7 @@ import {
 } from 'src/stores/nostr/startupState';
 import { createStorageSessionRuntime } from 'src/stores/nostr/storageSession';
 import { createSubscriptionLoggingRuntime } from 'src/stores/nostr/subscriptionLoggingRuntime';
+import { createSubscriptionRefreshRuntime } from 'src/stores/nostr/subscriptionRefreshRuntime';
 import { createTrackedContactStateRuntime } from 'src/stores/nostr/trackedContactStateRuntime';
 import type {
   AuthMethod,
@@ -108,10 +110,7 @@ import type {
   NostrEventDirection,
 } from 'src/types/chat';
 import type { ContactMetadata, ContactRecord } from 'src/types/contact';
-import {
-  areBrowserNotificationsEnabled,
-  clearBrowserNotificationsPreference,
-} from 'src/utils/browserNotificationPreference';
+import { clearBrowserNotificationsPreference } from 'src/utils/browserNotificationPreference';
 import { clearDarkModePreference, clearPanelOpacityPreference } from 'src/utils/themeStorage';
 import { ref, watch } from 'vue';
 
@@ -1014,67 +1013,20 @@ export const useNostrStore = defineStore('nostrStore', () => {
     logDeveloperTrace('info', `subscription:${name}`, phase, details);
   }
 
-  function buildInboundTraceDetails(
-    options: {
-      wrappedEvent?: {
-        id?: string | null;
-        kind?: number | null;
-        created_at?: number | null;
-      } | null;
-      rumorEvent?: { id?: string | null; kind?: number | null; created_at?: number | null } | null;
-      loggedInPubkeyHex?: string | null;
-      senderPubkeyHex?: string | null;
-      chatPubkey?: string | null;
-      targetEventId?: string | null;
-      relayUrls?: string[];
-      recipients?: string[];
-    } = {}
-  ): Record<string, unknown> {
-    const relayUrls = Array.isArray(options.relayUrls)
-      ? options.relayUrls.filter(
-          (value): value is string => typeof value === 'string' && value.trim().length > 0
-        )
-      : [];
-    const recipients = Array.isArray(options.recipients)
-      ? options.recipients.filter(
-          (value): value is string => typeof value === 'string' && value.trim().length > 0
-        )
-      : [];
-    const wrappedEventId =
-      normalizeEventId(options.wrappedEvent?.id ?? null) ?? options.wrappedEvent?.id ?? null;
-    const rumorEventId =
-      normalizeEventId(options.rumorEvent?.id ?? null) ?? options.rumorEvent?.id ?? null;
-    const createdAt = options.rumorEvent?.created_at ?? options.wrappedEvent?.created_at;
-    const normalizedCreatedAt = Number.isInteger(createdAt) ? Number(createdAt) : null;
-
-    return {
-      wrappedEventId: formatSubscriptionLogValue(wrappedEventId),
-      wrappedKind: options.wrappedEvent?.kind ?? null,
-      rumorEventId: formatSubscriptionLogValue(rumorEventId),
-      rumorKind: options.rumorEvent?.kind ?? null,
-      createdAt: normalizedCreatedAt,
-      createdAtIso:
-        normalizedCreatedAt && normalizedCreatedAt > 0
-          ? new Date(normalizedCreatedAt * 1000).toISOString()
-          : null,
-      senderPubkey: formatSubscriptionLogValue(options.senderPubkeyHex),
-      loggedInPubkey: formatSubscriptionLogValue(options.loggedInPubkeyHex),
-      chatPubkey: formatSubscriptionLogValue(options.chatPubkey),
-      targetEventId: formatSubscriptionLogValue(options.targetEventId),
-      relayCount: relayUrls.length,
-      relayUrls,
-      ...(recipients.length > 0
-        ? {
-            recipientCount: recipients.length,
-            recipients: recipients.map((value) => formatSubscriptionLogValue(value)),
-          }
-        : {}),
-    };
-  }
-
-  function logInboundEvent(stage: string, details: Record<string, unknown> = {}): void {
-    logDeveloperTrace('info', 'inbound', stage, details);
-  }
+  const {
+    buildInboundTraceDetails,
+    deriveChatName,
+    logInboundEvent,
+    shouldNotifyForAcceptedChatOnly,
+    showIncomingMessageBrowserNotification,
+  } = createInboundPresentationRuntime({
+    formatSubscriptionLogValue,
+    getLoggedInPublicKeyHex,
+    getVisibleChatId: () => chatStore.visibleChatId,
+    isRestoringStartupState,
+    logDeveloperTrace,
+    normalizeEventId,
+  });
 
   function bumpContactListVersion(): void {
     contactListVersion.value += 1;
@@ -1097,153 +1049,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     }
 
     return Math.floor(Date.now() / 1000);
-  }
-
-  function deriveChatName(contact: ContactRecord | null, publicKey: string): string {
-    const displayName = contact?.meta.display_name?.trim() ?? '';
-    if (displayName) {
-      return displayName;
-    }
-
-    const profileName = contact?.meta.name?.trim() ?? '';
-    if (profileName) {
-      return profileName;
-    }
-
-    const contactName = contact?.name?.trim() ?? '';
-    if (contactName) {
-      return contactName;
-    }
-
-    return publicKey.slice(0, 16);
-  }
-
-  function buildBrowserNotificationMessagePreview(messageText: string): string {
-    const normalizedText = messageText.replace(/\s+/g, ' ').trim();
-    if (!normalizedText) {
-      return 'New message';
-    }
-
-    if (normalizedText.length <= 140) {
-      return normalizedText;
-    }
-
-    return `${normalizedText.slice(0, 137)}...`;
-  }
-
-  function buildChatNotificationHref(chatPubkey: string): string | null {
-    if (typeof window === 'undefined') {
-      return null;
-    }
-
-    const normalizedBase = (() => {
-      const base = process.env.VUE_ROUTER_BASE?.trim() || '/';
-      return base.endsWith('/') ? base : `${base}/`;
-    })();
-    const encodedChatPubkey = encodeURIComponent(chatPubkey);
-
-    if (process.env.VUE_ROUTER_MODE === 'hash') {
-      return `${window.location.origin}${normalizedBase}#/chats/${encodedChatPubkey}`;
-    }
-
-    return `${window.location.origin}${normalizedBase}chats/${encodedChatPubkey}`;
-  }
-
-  function shouldSuppressIncomingMessageBrowserNotification(chatPubkey: string): boolean {
-    if (isRestoringStartupState.value || !areBrowserNotificationsEnabled()) {
-      return true;
-    }
-
-    if (typeof document === 'undefined') {
-      return false;
-    }
-
-    return (
-      document.visibilityState === 'visible' &&
-      document.hasFocus() &&
-      chatStore.visibleChatId === chatPubkey
-    );
-  }
-
-  async function shouldNotifyForAcceptedChatOnly(
-    chatPubkey: string,
-    chatMeta: Record<string, unknown> | null | undefined
-  ): Promise<boolean> {
-    const inboxState =
-      chatMeta && typeof chatMeta.inbox_state === 'string' ? chatMeta.inbox_state.trim() : '';
-    if (inboxState === 'blocked') {
-      return false;
-    }
-
-    if (inboxState === 'accepted') {
-      return true;
-    }
-
-    const acceptedAt =
-      chatMeta && typeof chatMeta.accepted_at === 'string' ? chatMeta.accepted_at.trim() : '';
-    if (acceptedAt) {
-      return true;
-    }
-
-    const lastOutgoingMessageAt =
-      chatMeta && typeof chatMeta.last_outgoing_message_at === 'string'
-        ? chatMeta.last_outgoing_message_at.trim()
-        : '';
-    if (lastOutgoingMessageAt) {
-      return true;
-    }
-
-    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
-    if (!loggedInPubkeyHex) {
-      return false;
-    }
-
-    try {
-      const messageRows = await chatDataService.listMessages(chatPubkey);
-      return messageRows.some(
-        (messageRow) =>
-          inputSanitizerService.normalizeHexKey(messageRow.author_public_key) === loggedInPubkeyHex
-      );
-    } catch (error) {
-      console.warn(
-        'Failed to confirm accepted-chat state for browser notification eligibility',
-        error
-      );
-      return false;
-    }
-  }
-
-  function showIncomingMessageBrowserNotification(options: {
-    chatPubkey: string;
-    title: string;
-    messageText: string;
-    iconUrl?: string;
-  }): void {
-    if (
-      typeof window === 'undefined' ||
-      shouldSuppressIncomingMessageBrowserNotification(options.chatPubkey)
-    ) {
-      return;
-    }
-
-    try {
-      const notification = new window.Notification(options.title, {
-        body: buildBrowserNotificationMessagePreview(options.messageText),
-        ...(options.iconUrl ? { icon: options.iconUrl } : {}),
-      });
-
-      notification.onclick = () => {
-        notification.close();
-        window.focus();
-
-        const href = buildChatNotificationHref(options.chatPubkey);
-        if (href) {
-          window.location.assign(href);
-        }
-      };
-    } catch (error) {
-      console.warn('Failed to show browser notification for incoming message', error);
-    }
   }
 
   function normalizeRelayStatusUrl(value: string): string | null {
@@ -1477,6 +1282,37 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
 
   const {
+    queueEpochDrivenPrivateMessagesSubscriptionRefresh,
+    queueTrackedContactSubscriptionsRefresh,
+  } = createSubscriptionRefreshRuntime({
+    getPendingPrivateMessagesEpochSubscriptionRefreshOptions: () =>
+      pendingPrivateMessagesEpochSubscriptionRefreshOptions,
+    getPrivateMessagesEpochSubscriptionRefreshQueue: () =>
+      privateMessagesEpochSubscriptionRefreshQueue,
+    getPrivateMessagesEpochSubscriptionRefreshTimerId: () =>
+      privateMessagesEpochSubscriptionRefreshTimerId,
+    normalizeRelayStatusUrls,
+    normalizeThrottleMs,
+    privateMessagesEpochSubscriptionRefreshDebounceMs:
+      PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS,
+    setPendingPrivateMessagesEpochSubscriptionRefreshOptions: (options) => {
+      pendingPrivateMessagesEpochSubscriptionRefreshOptions = options;
+    },
+    setPrivateMessagesEpochSubscriptionRefreshQueue: (queue) => {
+      privateMessagesEpochSubscriptionRefreshQueue = queue;
+    },
+    setPrivateMessagesEpochSubscriptionRefreshTimerId: (timerId) => {
+      privateMessagesEpochSubscriptionRefreshTimerId = timerId;
+    },
+    subscribeContactProfileUpdates: (seedRelayUrls, force) =>
+      subscribeContactProfileUpdates(seedRelayUrls, force),
+    subscribeContactRelayListUpdates: (seedRelayUrls, force) =>
+      subscribeContactRelayListUpdates(seedRelayUrls, force),
+    subscribePrivateMessagesForLoggedInUser: (force, options) =>
+      subscribePrivateMessagesForLoggedInUser(force, options),
+  });
+
+  const {
     fetchMyRelayList,
     publishMyRelayList,
     resetMyRelayListRuntimeState,
@@ -1510,24 +1346,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStoredEventSinceFromCreatedAt,
   });
 
-  function queueContactRelayListSubscriptionRefresh(
-    seedRelayUrls: string[] = [],
-    force = false
-  ): void {
-    void subscribeContactRelayListUpdates(seedRelayUrls, force).catch((error) => {
-      console.warn('Failed to refresh contact relay list subscription', error);
-    });
-  }
-
-  function queueContactProfileSubscriptionRefresh(
-    seedRelayUrls: string[] = [],
-    force = false
-  ): void {
-    void subscribeContactProfileUpdates(seedRelayUrls, force).catch((error) => {
-      console.warn('Failed to refresh contact profile subscription', error);
-    });
-  }
-
   function ensurePrivateMessagesWatchdog(): void {
     ensurePrivateMessagesWatchdogRuntime();
   }
@@ -1537,82 +1355,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     options: SubscribePrivateMessagesOptions = {}
   ): Promise<void> {
     return subscribePrivateMessagesForLoggedInUserRuntime(force, options);
-  }
-
-  function queuePrivateMessagesSubscriptionRefresh(
-    force = false,
-    options: SubscribePrivateMessagesOptions = {}
-  ): void {
-    void subscribePrivateMessagesForLoggedInUser(force, options).catch((error) => {
-      console.warn('Failed to refresh private messages subscription', error);
-    });
-  }
-
-  function mergeSubscribePrivateMessagesOptions(
-    first: SubscribePrivateMessagesOptions,
-    second: SubscribePrivateMessagesOptions
-  ): SubscribePrivateMessagesOptions {
-    const mergedSeedRelayUrls = normalizeRelayStatusUrls([
-      ...inputSanitizerService.normalizeStringArray(first.seedRelayUrls ?? []),
-      ...inputSanitizerService.normalizeStringArray(second.seedRelayUrls ?? []),
-    ]);
-    const firstSinceOverride =
-      Number.isInteger(first.sinceOverride) && Number(first.sinceOverride) >= 0
-        ? Math.floor(Number(first.sinceOverride))
-        : null;
-    const secondSinceOverride =
-      Number.isInteger(second.sinceOverride) && Number(second.sinceOverride) >= 0
-        ? Math.floor(Number(second.sinceOverride))
-        : null;
-    const mergedSinceOverride =
-      firstSinceOverride === null
-        ? secondSinceOverride
-        : secondSinceOverride === null
-          ? firstSinceOverride
-          : Math.min(firstSinceOverride, secondSinceOverride);
-    const mergedRestoreThrottleMs = Math.max(
-      normalizeThrottleMs(first.restoreThrottleMs),
-      normalizeThrottleMs(second.restoreThrottleMs)
-    );
-
-    return {
-      ...(mergedRestoreThrottleMs > 0 ? { restoreThrottleMs: mergedRestoreThrottleMs } : {}),
-      ...(mergedSeedRelayUrls.length > 0 ? { seedRelayUrls: mergedSeedRelayUrls } : {}),
-      ...(mergedSinceOverride !== null ? { sinceOverride: mergedSinceOverride } : {}),
-      ...(first.startupTrackStep === true || second.startupTrackStep === true
-        ? { startupTrackStep: true }
-        : {}),
-    };
-  }
-
-  function queueEpochDrivenPrivateMessagesSubscriptionRefresh(
-    options: SubscribePrivateMessagesOptions = {}
-  ): void {
-    pendingPrivateMessagesEpochSubscriptionRefreshOptions =
-      pendingPrivateMessagesEpochSubscriptionRefreshOptions === null
-        ? mergeSubscribePrivateMessagesOptions({}, options)
-        : mergeSubscribePrivateMessagesOptions(
-            pendingPrivateMessagesEpochSubscriptionRefreshOptions,
-            options
-          );
-
-    if (privateMessagesEpochSubscriptionRefreshTimerId !== null) {
-      globalThis.clearTimeout(privateMessagesEpochSubscriptionRefreshTimerId);
-    }
-
-    privateMessagesEpochSubscriptionRefreshTimerId = globalThis.setTimeout(() => {
-      privateMessagesEpochSubscriptionRefreshTimerId = null;
-      const refreshOptions = pendingPrivateMessagesEpochSubscriptionRefreshOptions ?? {};
-      pendingPrivateMessagesEpochSubscriptionRefreshOptions = null;
-      privateMessagesEpochSubscriptionRefreshQueue = privateMessagesEpochSubscriptionRefreshQueue
-        .then(() => subscribePrivateMessagesForLoggedInUser(true, refreshOptions))
-        .catch((error) => {
-          console.warn(
-            'Failed to refresh private message subscription after epoch ticket update',
-            error
-          );
-        });
-    }, PRIVATE_MESSAGES_EPOCH_SUBSCRIPTION_REFRESH_DEBOUNCE_MS);
   }
 
   const {
@@ -1904,15 +1646,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     subscribeWithReqLogging,
     updateStoredEventSinceFromCreatedAt,
   });
-
-  function queueTrackedContactSubscriptionsRefresh(
-    seedRelayUrls: string[] = [],
-    force = false
-  ): void {
-    queueContactProfileSubscriptionRefresh(seedRelayUrls, force);
-    queueContactRelayListSubscriptionRefresh(seedRelayUrls, force);
-    queuePrivateMessagesSubscriptionRefresh(force, { seedRelayUrls });
-  }
 
   let refreshContactByPublicKeyRuntime: (
     pubkeyHex: string,
