@@ -643,43 +643,22 @@ class ChatDataService {
     const db = await this.getDatabase();
     const transaction = db.transaction(MESSAGES_STORE, 'readonly');
     const store = transaction.objectStore(MESSAGES_STORE);
-    const index = store.index(MESSAGES_CHAT_CREATED_AT_INDEX);
-    const request = index.openCursor(createChatCreatedAtRange(normalizedPublicKey), 'prev');
-
-    const matches = await new Promise<MessageSearchResult[]>((resolve, reject) => {
-      const rows: MessageSearchResult[] = [];
-
-      request.onsuccess = () => {
-        const cursorValue = request.result;
-        if (!cursorValue) {
-          resolve(rows);
-          return;
-        }
-
-        const record = cursorValue.value as MessageRecord;
-        if (
-          normalizePublicKeyValue(record.chat_public_key) === normalizedPublicKey &&
-          messageRecordMatchesSearchQuery(record, normalizedQuery)
-        ) {
-          rows.push({
-            id: record.id,
-            chat_public_key: record.chat_public_key,
-            message: record.message,
-            created_at: record.created_at,
-            event_id: normalizeEventId(record.event_id),
-          });
-        }
-
-        cursorValue.continue();
-      };
-
-      request.onerror = () => {
-        reject(request.error ?? new Error('Failed to iterate message search cursor.'));
-      };
-    });
-
+    const index = store.index(MESSAGES_CHAT_PUBLIC_KEY_INDEX);
+    const records = await requestToPromise<MessageRecord[]>(
+      index.getAll(IDBKeyRange.only(normalizedPublicKey)) as IDBRequest<MessageRecord[]>
+    );
     await waitForTransaction(transaction);
-    return matches;
+
+    return records
+      .filter((record) => messageRecordMatchesSearchQuery(record, normalizedQuery))
+      .sort((first, second) => sortMessagesByCreated(second, first))
+      .map((record) => ({
+        id: record.id,
+        chat_public_key: record.chat_public_key,
+        message: record.message,
+        created_at: record.created_at,
+        event_id: normalizeEventId(record.event_id),
+      }));
   }
 
   async listLatestMessages(chatPublicKey: string, limit: number): Promise<MessageBatchResult> {

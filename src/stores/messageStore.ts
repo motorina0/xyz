@@ -1226,11 +1226,52 @@ export const useMessageStore = defineStore('messageStore', () => {
       return loadedMessage;
     }
 
-    const hydratedMessage = await hydrateMessageRow(targetRow, normalizedChatId);
-    upsertMessageInState(normalizedChatId, hydratedMessage, {
-      allowOutsideLoadedWindow: true,
-    });
-    return getMessageFromState(normalizedChatId, String(normalizedMessageId)) ?? hydratedMessage;
+    const allRows = await chatDataService.listMessages(normalizedChatId);
+    const targetIndex = allRows.findIndex((row) => row.id === normalizedMessageId);
+    if (targetIndex < 0) {
+      return null;
+    }
+
+    const currentMessages = messagesByChat.value[normalizedChatId] ?? [];
+    const currentOldestMessageId = Number.parseInt(currentMessages[0]?.id ?? '', 10);
+    const currentNewestMessageId = Number.parseInt(
+      currentMessages[currentMessages.length - 1]?.id ?? '',
+      10
+    );
+    const currentOldestIndex = allRows.findIndex((row) => row.id === currentOldestMessageId);
+    const currentNewestIndex = allRows.findIndex((row) => row.id === currentNewestMessageId);
+
+    let rowsToMerge: MessageRow[] = [allRows[targetIndex]];
+    const paginationPatch: Partial<ChatMessagePaginationState> = {};
+
+    if (
+      currentMessages.length > 0 &&
+      currentOldestIndex >= 0 &&
+      currentNewestIndex >= 0 &&
+      targetIndex < currentOldestIndex
+    ) {
+      rowsToMerge = allRows.slice(targetIndex, currentOldestIndex);
+      paginationPatch.oldestCursor = buildMessageCursorFromRow(allRows[targetIndex]);
+      paginationPatch.hasOlder = targetIndex > 0;
+    } else if (
+      currentMessages.length > 0 &&
+      currentOldestIndex >= 0 &&
+      currentNewestIndex >= 0 &&
+      targetIndex > currentNewestIndex
+    ) {
+      rowsToMerge = allRows.slice(currentNewestIndex + 1, targetIndex + 1);
+      paginationPatch.newestCursor = buildMessageCursorFromRow(allRows[targetIndex]);
+      paginationPatch.hasNewer = targetIndex < allRows.length - 1;
+    }
+
+    const hydratedMessages = await hydrateMessageRows(rowsToMerge, normalizedChatId);
+    messagesByChat.value[normalizedChatId] = mergeMessagesById(currentMessages, hydratedMessages);
+
+    if (Object.keys(paginationPatch).length > 0) {
+      setPaginationState(normalizedChatId, paginationPatch);
+    }
+
+    return getMessageFromState(normalizedChatId, String(normalizedMessageId)) ?? null;
   }
 
   async function loadOlderMessages(chatId: string): Promise<void> {
