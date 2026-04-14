@@ -158,7 +158,11 @@
               'thread-message-entry--sender-change': item.showSenderName,
               'thread-message-entry--target':
                 highlightedMessageId === item.message.id ||
-                highlightedMessageId === item.message.eventId
+                highlightedMessageId === item.message.eventId,
+              'thread-message-entry--target-search':
+                highlightedMessageKind === 'search' &&
+                (highlightedMessageId === item.message.id ||
+                  highlightedMessageId === item.message.eventId)
             }"
             :data-day-key="item.dayKey"
             :data-day-label="item.dayLabel"
@@ -308,6 +312,7 @@ const threadSearchInputRef = ref<{ focus: () => void } | null>(null);
 const stickyDayLabel = ref('');
 const activeReply = ref<MessageReplyPreview | null>(null);
 const highlightedMessageId = ref<string | null>(null);
+const highlightedMessageKind = ref<'default' | 'search' | null>(null);
 const isThreadScrollLocked = ref(false);
 const isAutomaticBottomScrollEnabled = ref(true);
 const chatStore = useChatStore();
@@ -1390,21 +1395,30 @@ function handleCancelReply(): void {
 
 function clearReplyTargetHighlight(): void {
   highlightedMessageId.value = null;
+  highlightedMessageKind.value = null;
   if (highlightTimerId !== null) {
     window.clearTimeout(highlightTimerId);
     highlightTimerId = null;
   }
 }
 
-function highlightMessageTarget(messageId: string): void {
+function highlightMessageTarget(
+  messageId: string,
+  options: {
+    durationMs?: number;
+    kind?: 'default' | 'search';
+  } = {}
+): void {
   clearReplyTargetHighlight();
   highlightedMessageId.value = messageId;
+  highlightedMessageKind.value = options.kind ?? 'default';
   highlightTimerId = window.setTimeout(() => {
     if (highlightedMessageId.value === messageId) {
       highlightedMessageId.value = null;
+      highlightedMessageKind.value = null;
     }
     highlightTimerId = null;
-  }, 1800);
+  }, options.durationMs ?? 1800);
 }
 
 function findThreadMessageEntry(targetId: string): HTMLElement | null {
@@ -1457,6 +1471,8 @@ async function revealMessageById(
     behavior?: ScrollBehavior;
     block?: ScrollLogicalPosition;
     ensureLoaded?: boolean;
+    highlightDurationMs?: number;
+    highlightKind?: 'default' | 'search';
   } = {}
 ): Promise<boolean> {
   const currentChatId = props.chat?.id ?? null;
@@ -1485,7 +1501,10 @@ async function revealMessageById(
     return false;
   }
 
-  highlightMessageTarget(messageId);
+  highlightMessageTarget(messageId, {
+    durationMs: options.highlightDurationMs,
+    kind: options.highlightKind
+  });
   window.setTimeout(() => {
     if (navigationToken !== threadSearchNavigationToken) {
       return;
@@ -1823,7 +1842,9 @@ async function revealThreadSearchMatch(
   const didReveal = await revealMessageById(targetMatch.messageId, {
     behavior,
     block: 'center',
-    ensureLoaded: true
+    ensureLoaded: true,
+    highlightDurationMs: 3600,
+    highlightKind: 'search'
   });
   if (!didReveal) {
     return;
@@ -2490,6 +2511,10 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
   animation: thread-message-target 1.8s ease;
 }
 
+.thread-message-entry--target-search :deep(.bubble) {
+  animation: thread-message-target-search 3.6s ease;
+}
+
 @keyframes thread-message-target {
   0% {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--q-primary) 42%, transparent);
@@ -2501,6 +2526,36 @@ body.body--dark .q-btn.thread-scroll-jump:hover {
 
   100% {
     box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+@keyframes thread-message-target-search {
+  0% {
+    box-shadow:
+      0 0 0 0 color-mix(in srgb, var(--q-primary) 52%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--q-primary) 16%, transparent);
+    transform: translateY(0);
+  }
+
+  14% {
+    box-shadow:
+      0 0 0 3px color-mix(in srgb, var(--q-primary) 58%, transparent),
+      0 0 0 10px color-mix(in srgb, var(--q-primary) 18%, transparent);
+    transform: translateY(-1px);
+  }
+
+  52% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--q-primary) 34%, transparent),
+      0 0 0 6px color-mix(in srgb, var(--q-primary) 10%, transparent);
+    transform: translateY(0);
+  }
+
+  100% {
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
+    transform: translateY(0);
   }
 }
 
