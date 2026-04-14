@@ -274,6 +274,55 @@ function countUnreadMessagesAfter(
   }, 0);
 }
 
+function findLatestIncomingMessageAt(
+  messageRows: Awaited<ReturnType<typeof chatDataService.listMessages>>,
+  loggedInPublicKey: string | null
+): string {
+  if (!loggedInPublicKey) {
+    return '';
+  }
+
+  let latestIncomingMessageAt = '';
+  for (const row of messageRows) {
+    const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
+    if (!authorPublicKey || authorPublicKey === loggedInPublicKey) {
+      continue;
+    }
+
+    if (toComparableTimestamp(row.created_at) > toComparableTimestamp(latestIncomingMessageAt)) {
+      latestIncomingMessageAt = row.created_at;
+    }
+  }
+
+  return latestIncomingMessageAt;
+}
+
+function resolveEffectiveLastSeenReceivedActivityAt(
+  chatLastSeenReceivedActivityAt: string,
+  contactLastSeenIncomingActivityAt: string
+): string {
+  return toComparableTimestamp(contactLastSeenIncomingActivityAt) >
+    toComparableTimestamp(chatLastSeenReceivedActivityAt)
+    ? contactLastSeenIncomingActivityAt
+    : chatLastSeenReceivedActivityAt;
+}
+
+function resolveMarkAsReadBoundaryAt(
+  currentLastSeenReceivedActivityAt: string,
+  lastIncomingMessageAt: string,
+  latestIncomingMessageAt: string
+): string {
+  const latestIncomingBoundaryAt =
+    toComparableTimestamp(latestIncomingMessageAt) > toComparableTimestamp(lastIncomingMessageAt)
+      ? latestIncomingMessageAt
+      : lastIncomingMessageAt;
+
+  return toComparableTimestamp(latestIncomingBoundaryAt) >
+    toComparableTimestamp(currentLastSeenReceivedActivityAt)
+    ? latestIncomingBoundaryAt
+    : '';
+}
+
 function syncChatActivityMeta(
   meta: Record<string, unknown>,
   snapshot: ChatActivitySnapshot | undefined
@@ -480,9 +529,12 @@ export const __chatStoreTestUtils = {
   buildUpdatedChatPreview,
   chatMatchesSearch,
   countUnreadMessagesAfter,
+  findLatestIncomingMessageAt,
   mapChatRowToChat,
   resolveChatCategory,
   resolveDefaultSelectedChatId,
+  resolveEffectiveLastSeenReceivedActivityAt,
+  resolveMarkAsReadBoundaryAt,
   syncChatActivityMeta,
 };
 
@@ -551,10 +603,23 @@ export const useChatStore = defineStore('chatStore', () => {
           contactContext,
           contactContext?.givenName || contactContext?.contactName || row.name || row.public_key
         );
-        const nextMeta = syncChatActivityMeta(
+        let nextMeta = syncChatActivityMeta(
           nextMetaWithContactContext,
           activitySnapshotByPublicKey.get(row.public_key.toLowerCase())
         );
+        const effectiveLastSeenReceivedActivityAt = resolveEffectiveLastSeenReceivedActivityAt(
+          readMetaString(nextMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY),
+          contactContext?.lastSeenIncomingActivityAt ?? ''
+        );
+        if (
+          toComparableTimestamp(effectiveLastSeenReceivedActivityAt) >
+          toComparableTimestamp(readMetaString(nextMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY))
+        ) {
+          nextMeta = {
+            ...nextMeta,
+            [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: effectiveLastSeenReceivedActivityAt,
+          };
+        }
         if (nextMeta !== row.meta) {
           metaSyncPromises.push(
             chatDataService.updateChatMeta(row.public_key, nextMeta).catch((error) => {
@@ -565,7 +630,7 @@ export const useChatStore = defineStore('chatStore', () => {
 
         const normalizedUnreadCount = countUnreadMessagesAfter(
           incomingMessageTimestampsByPublicKey.get(row.public_key.toLowerCase()),
-          readMetaString(nextMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY)
+          effectiveLastSeenReceivedActivityAt
         );
         if (normalizedUnreadCount !== row.unread_count) {
           unreadCountSyncPromises.push(
@@ -844,15 +909,45 @@ export const useChatStore = defineStore('chatStore', () => {
       return;
     }
 
-    chats.value = chats.value.map((chat) =>
-      chat.id === normalizedChatId ? { ...chat, unreadCount: 0 } : chat
+    const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
+    let persistedMeta: Record<string, unknown> = {};
+    if (!existingChat) {
+      await chatDataService.init();
+      const persistedChat = await chatDataService.getChatByPublicKey(normalizedChatId);
+      if (
+        persistedChat?.meta &&
+        typeof persistedChat.meta === 'object' &&
+        !Array.isArray(persistedChat.meta)
+      ) {
+        persistedMeta = persistedChat.meta as Record<string, unknown>;
+      }
+    }
+    const currentMeta =
+      existingChat?.meta &&
+      typeof existingChat.meta === 'object' &&
+      !Array.isArray(existingChat.meta)
+        ? (existingChat.meta as Record<string, unknown>)
+        : persistedMeta;
+    const currentLastSeenReceivedActivityAt = readMetaString(currentMeta, LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY);
+    const lastIncomingMessageAt = readMetaString(
+      currentMeta,
+      CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY
+    );
+    const latestIncomingMessageAt = findLatestIncomingMessageAt(
+      await chatDataService.listMessages(normalizedChatId),
+      getLoggedInPublicKey()
+    );
+    const nextLastSeenReceivedActivityAt = resolveMarkAsReadBoundaryAt(
+      currentLastSeenReceivedActivityAt,
+      lastIncomingMessageAt,
+      latestIncomingMessageAt
     );
 
-    try {
-      await chatDataService.markChatAsRead(normalizedChatId);
-    } catch (error) {
-      console.error('Failed to mark chat as read', error);
+    if (nextLastSeenReceivedActivityAt) {
+      await setLastSeenReceivedActivityAt(normalizedChatId, nextLastSeenReceivedActivityAt);
     }
+
+    await setUnreadCount(normalizedChatId, 0);
   }
 
   async function muteChat(chatId: string): Promise<void> {

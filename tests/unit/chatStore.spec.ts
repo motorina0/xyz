@@ -9,9 +9,12 @@ const {
   buildUpdatedChatPreview,
   chatMatchesSearch,
   countUnreadMessagesAfter,
+  findLatestIncomingMessageAt,
   mapChatRowToChat,
   resolveChatCategory,
   resolveDefaultSelectedChatId,
+  resolveEffectiveLastSeenReceivedActivityAt,
+  resolveMarkAsReadBoundaryAt,
   syncChatActivityMeta,
 } = __chatStoreTestUtils;
 
@@ -48,6 +51,61 @@ describe('chatStore logic', () => {
     expect(countUnreadMessagesAfter(timestamps, '2026-01-02T00:00:00.000Z')).toBe(1);
     expect(countUnreadMessagesAfter(timestamps, '')).toBe(3);
     expect(countUnreadMessagesAfter(undefined, '2026-01-02T00:00:00.000Z')).toBe(0);
+  });
+
+  it('uses the newer of the chat and contact seen boundaries during restore', () => {
+    expect(
+      resolveEffectiveLastSeenReceivedActivityAt(
+        '2026-01-02T00:00:00.000Z',
+        '2026-01-03T00:00:00.000Z'
+      )
+    ).toBe('2026-01-03T00:00:00.000Z');
+
+    expect(
+      resolveEffectiveLastSeenReceivedActivityAt(
+        '2026-01-04T00:00:00.000Z',
+        '2026-01-03T00:00:00.000Z'
+      )
+    ).toBe('2026-01-04T00:00:00.000Z');
+  });
+
+  it('resolves the durable mark-as-read boundary from the newest incoming message', () => {
+    const latestIncomingMessageAt = findLatestIncomingMessageAt(
+      [
+        {
+          author_public_key: 'me',
+          created_at: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          author_public_key: 'them',
+          created_at: '2026-01-02T00:00:00.000Z',
+        },
+        {
+          author_public_key: 'them',
+          created_at: '2026-01-03T00:00:00.000Z',
+        },
+      ] as never,
+      'me'
+    );
+
+    expect(latestIncomingMessageAt).toBe('2026-01-03T00:00:00.000Z');
+    expect(
+      resolveMarkAsReadBoundaryAt(
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+        latestIncomingMessageAt
+      )
+    ).toBe('2026-01-03T00:00:00.000Z');
+    expect(
+      resolveMarkAsReadBoundaryAt(
+        '2026-01-03T00:00:00.000Z',
+        '2026-01-02T00:00:00.000Z',
+        latestIncomingMessageAt
+      )
+    ).toBe('');
+    expect(
+      resolveMarkAsReadBoundaryAt('2026-01-01T00:00:00.000Z', '2026-01-04T00:00:00.000Z', '')
+    ).toBe('2026-01-04T00:00:00.000Z');
   });
 
   it('promotes a request chat to accepted when an outgoing message appears', () => {

@@ -10,6 +10,7 @@ import {
   expectBrowserStorageToBeEmpty,
   expectNoUnexpectedBrowserErrors,
   logoutFromSettings,
+  markChatAsRead,
   navigateToChat,
   openDirectChatFromIdentifier,
   openRequests,
@@ -19,7 +20,9 @@ import {
   TEST_ACCOUNTS,
   waitForChatPreview,
   waitForChatReactionBadge,
+  waitForChatUnreadCount,
   waitForDeletedMessageState,
+  waitForNoChatUnreadBadge,
   waitForNoRequests,
   waitForReaction,
   waitForReactionCount,
@@ -102,26 +105,14 @@ test('hard reload restores accepted DM chat list, unread count, and thread histo
     await waitForThreadMessage(bob.page, thirdMessage, {
       chatId: alice.session.publicKey,
     });
-    await expect(
-      bob
-        .page
-        .getByTestId('chat-item')
-        .filter({ hasText: TEST_ACCOUNTS.startupRestoreAlice.displayName })
-        .locator('.chat-item__meta .q-badge')
-    ).toHaveCount(0);
+    await waitForNoChatUnreadBadge(bob.page, TEST_ACCOUNTS.startupRestoreAlice.displayName);
 
     await reloadAndWaitForApp(bob.page);
     await expect(bob.page).toHaveURL(new RegExp(`#\\/chats\\/${alice.session.publicKey}$`));
     await waitForThreadMessage(bob.page, thirdMessage, {
       chatId: alice.session.publicKey,
     });
-    await expect(
-      bob
-        .page
-        .getByTestId('chat-item')
-        .filter({ hasText: TEST_ACCOUNTS.startupRestoreAlice.displayName })
-        .locator('.chat-item__meta .q-badge')
-    ).toHaveCount(0);
+    await waitForNoChatUnreadBadge(bob.page, TEST_ACCOUNTS.startupRestoreAlice.displayName);
 
     await sendMessage(bob.page, replyAfterReload, {
       chatId: alice.session.publicKey,
@@ -133,6 +124,46 @@ test('hard reload restores accepted DM chat list, unread count, and thread histo
     await expectNoUnexpectedBrowserErrors([alice, bob]);
   } finally {
     await disposeUsers(alice, bob);
+  }
+});
+
+test('mark as read survives a hard reload', async ({ browser }) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.markReadAlice);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.markReadBob);
+  const charlie = await bootstrapUser(browser, TEST_ACCOUNTS.markReadCharlie);
+
+  try {
+    const firstMessage = `mark-read-one-${Date.now()}`;
+    const secondMessage = `mark-read-two-${Date.now()}`;
+    const latestOtherChatMessage = `mark-read-other-${Date.now()}`;
+
+    await establishAcceptedDirectChat(charlie, bob);
+    await establishAcceptedDirectChat(alice, bob);
+
+    await bob.page.goto('/#/settings/profile');
+    await sendMessage(alice.page, firstMessage, {
+      chatId: bob.session.publicKey,
+    });
+    await sendMessage(alice.page, secondMessage, {
+      chatId: bob.session.publicKey,
+    });
+    await sendMessage(charlie.page, latestOtherChatMessage, {
+      chatId: bob.session.publicKey,
+    });
+
+    await bob.page.goto('/#/chats');
+    await waitForChatPreview(bob.page, latestOtherChatMessage);
+    await waitForChatPreview(bob.page, secondMessage, secondMessage);
+    await waitForChatUnreadCount(bob.page, 2, secondMessage);
+
+    await markChatAsRead(bob.page, secondMessage);
+    await reloadAndWaitForApp(bob.page);
+    await waitForChatPreview(bob.page, secondMessage, secondMessage);
+    await waitForNoChatUnreadBadge(bob.page, secondMessage);
+
+    await expectNoUnexpectedBrowserErrors([alice, bob, charlie]);
+  } finally {
+    await disposeUsers(alice, bob, charlie);
   }
 });
 

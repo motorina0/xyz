@@ -61,6 +61,18 @@ export const TEST_ACCOUNTS = {
     privateKey: 'c25694028321c053f174245104441935f681ce5117a89b27e4263e4360d05433',
     displayName: 'Bob Actions',
   },
+  markReadAlice: {
+    privateKey: '2cdd0f6d4a47bb4502993a61cb0b3cf86cded94311aa87eb0e08652d6d93cd15',
+    displayName: 'Alice Mark Read',
+  },
+  markReadBob: {
+    privateKey: 'fe57584f9d6ce2869c1f55fb3c8419fe89e6222cf5f92a019f89a2669482b3dd',
+    displayName: 'Bob Mark Read',
+  },
+  markReadCharlie: {
+    privateKey: '8b345418bf7c7cf7cf6f4dc1c4d1a9f3f4a762ec5b8fdf8cbd2f9e4f3cd06dea',
+    displayName: 'Charlie Mark Read',
+  },
   reactionReloadAlice: {
     privateKey: 'ed0d7a4610d16dd4ffb0a14fe92cfad11ad2bd575f53dcfc0bbfd799a098ce8e',
     displayName: 'Alice Reactions Reload',
@@ -751,6 +763,15 @@ export async function waitForChatUnreadCount(
   );
 }
 
+export async function waitForNoChatUnreadBadge(
+  page: Page,
+  match?: string | RegExp
+): Promise<void> {
+  await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toHaveCount(0, {
+    timeout: 12_000,
+  });
+}
+
 export async function waitForChatReactionBadge(
   page: Page,
   count: number,
@@ -767,6 +788,12 @@ export async function waitForChatReactionBadge(
 
 export async function openChatActions(page: Page, match?: string | RegExp): Promise<void> {
   await resolveChatItem(page, match).getByTestId('chat-item-actions-button').click();
+}
+
+export async function markChatAsRead(page: Page, match?: string | RegExp): Promise<void> {
+  await openChatActions(page, match);
+  await page.getByText('Mark as Read', { exact: true }).click();
+  await waitForNoChatUnreadBadge(page, match);
 }
 
 export async function reactToMessage(
