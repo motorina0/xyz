@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const ndkMocks = vi.hoisted(() => {
   const giftWrap = vi.fn();
   const fromNip05 = vi.fn();
+  const groupPubkey = 'a'.repeat(64);
 
   class MockNDKUser {
     pubkey: string;
@@ -19,7 +20,25 @@ const ndkMocks = vi.hoisted(() => {
     static fromNip05 = fromNip05;
   }
 
+  class MockNDKPrivateKeySigner {
+    pubkey: string;
+    privateKey: string;
+
+    constructor(privateKey: string) {
+      this.privateKey = privateKey;
+      this.pubkey = groupPubkey;
+    }
+
+    async user(): Promise<{ pubkey: string }> {
+      return {
+        pubkey: this.pubkey,
+      };
+    }
+  }
+
   return {
+    groupPubkey,
+    MockNDKPrivateKeySigner,
     MockNDKUser,
     fromNip05,
     giftWrap,
@@ -47,6 +66,7 @@ vi.mock('@nostr-dev-kit/ndk', async () => {
 
   return {
     ...actual,
+    NDKPrivateKeySigner: ndkMocks.MockNDKPrivateKeySigner,
     NDKUser: ndkMocks.MockNDKUser,
     giftWrap: ndkMocks.giftWrap,
   };
@@ -373,5 +393,124 @@ describe('userActions runtime', () => {
         eventId: 'event-1',
       })
     );
+  });
+
+  it('rejects group ticket relay retries when the logged-in user is not the group owner', async () => {
+    const deps = createDeps();
+    const actions = createUserActions(deps);
+    deps.readFirstTagValue.mockReturnValue('b'.repeat(64));
+
+    serviceMocks.nostrEventDataService.getEventById.mockResolvedValue({
+      direction: 'out',
+      event: {
+        id: 'epoch-ticket',
+        kind: 1014,
+        created_at: 1700000000,
+        pubkey: ndkMocks.groupPubkey,
+        tags: [['p', 'm'.repeat(64)]],
+      },
+    });
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue({
+      id: 12,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      name: 'Launch Group',
+      given_name: null,
+      meta: {
+        owner_public_key: 'a'.repeat(64),
+      },
+      relays: [],
+      sendMessagesToAppRelays: false,
+    });
+
+    await expect(
+      actions.retryGroupEpochTicketRelay(' epoch-ticket ', ' wss://group.example ')
+    ).rejects.toThrow('Only the owner can retry group epoch ticket delivery.');
+
+    expect(deps.ensureGroupIdentitySecretEpochState).not.toHaveBeenCalled();
+    expect(deps.appendRelayStatusesToGroupMemberTicketEvent).not.toHaveBeenCalled();
+  });
+
+  it('marks group ticket relay retries as pending first and failed when republish errors', async () => {
+    const deps = createDeps();
+    const actions = createUserActions(deps);
+    deps.readFirstTagValue.mockReturnValue('b'.repeat(64));
+    const failureStatuses = [
+      makeRelayStatus({
+        relay_url: 'wss://group.example',
+        status: 'failed',
+        detail: 'member relay down',
+      }),
+    ];
+
+    serviceMocks.nostrEventDataService.getEventById.mockResolvedValue({
+      direction: 'out',
+      event: {
+        id: 'epoch-ticket',
+        kind: 1014,
+        created_at: 1700000000,
+        pubkey: ndkMocks.groupPubkey,
+        tags: [['p', 'm'.repeat(64)]],
+      },
+    });
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue({
+      id: 12,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      name: 'Launch Group',
+      given_name: null,
+      meta: {
+        owner_public_key: 'f'.repeat(64),
+      },
+      relays: [],
+      sendMessagesToAppRelays: false,
+    });
+    deps.publishEventWithRelayStatuses.mockResolvedValue({
+      relayStatuses: failureStatuses,
+      error: new Error('publish failed'),
+    });
+
+    await expect(
+      actions.retryGroupEpochTicketRelay(' epoch-ticket ', ' wss://group.example ')
+    ).rejects.toThrow('member relay down');
+
+    expect(deps.appendRelayStatusesToGroupMemberTicketEvent).toHaveBeenNthCalledWith(
+      1,
+      ndkMocks.groupPubkey,
+      'b'.repeat(64),
+      2,
+      [
+        makeRelayStatus({
+          relay_url: 'wss://group.example',
+          scope: 'recipient',
+          status: 'pending',
+        }),
+      ],
+      expect.objectContaining({
+        direction: 'out',
+        eventId: 'epoch-ticket',
+        createdAt: '2023-11-14T22:13:20.000Z',
+      })
+    );
+    expect(deps.appendRelayStatusesToGroupMemberTicketEvent).toHaveBeenNthCalledWith(
+      2,
+      ndkMocks.groupPubkey,
+      'b'.repeat(64),
+      2,
+      [
+        makeRelayStatus({
+          relay_url: 'wss://group.example',
+          scope: 'recipient',
+          status: 'failed',
+          detail: 'member relay down',
+        }),
+      ],
+      expect.objectContaining({
+        direction: 'out',
+        eventId: 'epoch-ticket',
+        createdAt: '2023-11-14T22:13:20.000Z',
+      })
+    );
+    expect(deps.giftWrapSignedEvent).toHaveBeenCalled();
   });
 });

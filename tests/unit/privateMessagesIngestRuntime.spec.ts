@@ -361,4 +361,255 @@ describe('privateMessagesIngestRuntime', () => {
     expect(deps.applyPendingIncomingDeletionsForMessage).toHaveBeenCalled();
     expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
   });
+
+  it('routes inbound reaction rumors through the reaction processor', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: 'a'.repeat(64),
+      eventId: 'reaction-event',
+      kind: NDKKind.Reaction,
+    });
+
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.processIncomingReactionRumorEvent).toHaveBeenCalledWith(
+      rumorEvent,
+      'a'.repeat(64),
+      'a'.repeat(64),
+      expect.objectContaining({
+        uiThrottleMs: 25,
+        direction: 'in',
+        relayStatuses: [makeRelayStatus()],
+        rumorNostrEvent: expect.objectContaining({
+          id: 'reaction-event',
+          kind: NDKKind.Reaction,
+        }),
+      })
+    );
+    expect(serviceMocks.chatDataService.createChat).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+  });
+
+  it('routes inbound deletion rumors through the deletion processor', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: 'a'.repeat(64),
+      eventId: 'deletion-event',
+      kind: NDKKind.EventDeletion,
+    });
+
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.processIncomingDeletionRumorEvent).toHaveBeenCalledWith(rumorEvent, 'a'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'conflicting epoch public keys',
+      configure(deps: ReturnType<typeof createDeps>) {
+        deps.findConflictingKnownGroupEpochNumber.mockReturnValue({
+          epoch_number: 2,
+          epoch_public_key: 'c'.repeat(64),
+          epoch_private_key_encrypted: 'enc-conflict',
+        });
+      },
+      expectedReason: 'conflicting-epoch-public-key',
+    },
+    {
+      name: 'higher known epoch conflicts',
+      configure(deps: ReturnType<typeof createDeps>) {
+        deps.findHigherKnownGroupEpochConflict.mockReturnValue({
+          higherEpochEntry: {
+            epoch_number: 3,
+            epoch_public_key: 'd'.repeat(64),
+            epoch_private_key_encrypted: 'enc-higher',
+          },
+          olderHigherEpochEntry: null,
+        });
+      },
+      expectedReason: 'invalid-epoch-number',
+    },
+  ])('drops invalid group epoch tickets for $name', async ({ configure, expectedReason }) => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: 'a'.repeat(64),
+      eventId: 'epoch-ticket',
+      kind: 1014,
+    });
+
+    configure(deps);
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    deps.verifyIncomingGroupEpochTicket.mockResolvedValue({
+      epochNumber: 2,
+      epochPrivateKey: 'epoch-private-key',
+      isValid: true,
+      signedEvent: {
+        id: 'signed-epoch-ticket',
+      },
+    });
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: 'a'.repeat(64),
+      public_key: 'a'.repeat(64),
+      type: 'group',
+      name: 'Launch Group',
+      last_message: '',
+      last_message_at: '',
+      unread_count: 0,
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(deps.persistIncomingGroupEpochTicket).not.toHaveBeenCalled();
+    expect(deps.upsertIncomingGroupInviteRequestChat).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+    expect(deps.logInboundEvent).toHaveBeenCalledWith(
+      'drop',
+      expect.objectContaining({
+        reason: expectedReason,
+      })
+    );
+  });
+
+  it('persists blocked incoming messages with zero unread count and no browser notification', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: 'a'.repeat(64),
+      content: '  Blocked hello  ',
+    });
+
+    deps.resolveIncomingChatInboxStateValue.mockReturnValue('blocked');
+    deps.shouldNotifyForAcceptedChatOnly.mockResolvedValue(true);
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: 'a'.repeat(64),
+      public_key: 'a'.repeat(64),
+      type: 'user',
+      name: 'Blocked Chat',
+      last_message: 'Older preview',
+      last_message_at: '2023-11-14T22:00:00.000Z',
+      unread_count: 5,
+      meta: {
+        inbox_state: 'blocked',
+      },
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 55,
+      chat_public_key: 'a'.repeat(64),
+      author_public_key: 'a'.repeat(64),
+      created_at: createdAt,
+      event_id: 'rumor-event',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(serviceMocks.chatDataService.updateChatPreview).toHaveBeenCalledWith(
+      'a'.repeat(64),
+      'Blocked hello',
+      createdAt,
+      0
+    );
+    expect(deps.showIncomingMessageBrowserNotification).not.toHaveBeenCalled();
+    expect(deps.queuePrivateMessagesUiRefresh).toHaveBeenCalledWith({
+      throttleMs: 25,
+      reloadChats: true,
+      reloadMessages: true,
+    });
+  });
+
+  it('treats self-sent gift-wrapped messages as outbound activity for the other participant', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const loggedInPubkey = 'a'.repeat(64);
+    const otherParticipantPubkey = 'c'.repeat(64);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: loggedInPubkey,
+      senderPubkey: loggedInPubkey,
+      eventId: 'self-message',
+      content: '  Saved note  ',
+    });
+
+    rumorEvent.tags = [
+      ['p', loggedInPubkey],
+      ['p', otherParticipantPubkey],
+    ];
+    (rumorEvent.getMatchingTags as ReturnType<typeof vi.fn>).mockImplementation(
+      (tagName: string) => (tagName === 'p' ? rumorEvent.tags : [])
+    );
+
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.createChat.mockResolvedValue({
+      id: otherParticipantPubkey,
+      public_key: otherParticipantPubkey,
+      type: 'user',
+      name: `Chat ${otherParticipantPubkey.slice(0, 8)}`,
+      last_message: '',
+      last_message_at: createdAt,
+      unread_count: 0,
+      meta: {},
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 77,
+      chat_public_key: otherParticipantPubkey,
+      author_public_key: loggedInPubkey,
+      created_at: createdAt,
+      event_id: 'self-message',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), loggedInPubkey, {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(serviceMocks.chatDataService.createChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        public_key: otherParticipantPubkey,
+      })
+    );
+    expect(serviceMocks.nostrEventDataService.upsertEvent).toHaveBeenCalledWith({
+      event: expect.objectContaining({
+        id: 'self-message',
+      }),
+      direction: 'out',
+      relay_statuses: [makeRelayStatus()],
+    });
+    expect(serviceMocks.chatDataService.updateChatPreview).toHaveBeenCalledWith(
+      otherParticipantPubkey,
+      'Saved note',
+      createdAt,
+      0
+    );
+    expect(deps.showIncomingMessageBrowserNotification).not.toHaveBeenCalled();
+  });
 });

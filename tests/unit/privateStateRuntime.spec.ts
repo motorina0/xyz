@@ -388,4 +388,159 @@ describe('privateStateRuntime', () => {
     );
     expect(deps.chatStore.reload).toHaveBeenCalled();
   });
+
+  it('applies contact cursor state by viewing older reactions, reopening newer ones, and recalculating counts', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateStateRuntime(deps);
+    const contactPublicKey = 'a'.repeat(64);
+    const loggedInPublicKey = 'f'.repeat(64);
+    const cursorAt = '2026-01-03T00:00:00.000Z';
+
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: contactPublicKey,
+      public_key: contactPublicKey,
+      type: 'user',
+      name: 'Alice',
+      last_message: 'Latest',
+      last_message_at: '2026-01-04T00:00:00.000Z',
+      unread_count: 5,
+      meta: {},
+    });
+    serviceMocks.chatDataService.listMessages.mockResolvedValue([
+      {
+        id: 11,
+        chat_public_key: contactPublicKey,
+        author_public_key: loggedInPublicKey,
+        created_at: '2026-01-02T00:00:00.000Z',
+        meta: {
+          reactions: [
+            {
+              emoji: '👍',
+              name: 'thumbs up',
+              reactorPublicKey: contactPublicKey,
+              createdAt: '2026-01-02T00:00:00.000Z',
+            },
+            {
+              emoji: '🔥',
+              name: 'fire',
+              reactorPublicKey: contactPublicKey,
+              createdAt: '2026-01-04T00:00:00.000Z',
+              viewedByAuthorAt: '2026-01-02T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+      {
+        id: 12,
+        chat_public_key: contactPublicKey,
+        author_public_key: contactPublicKey,
+        created_at: '2026-01-04T00:00:00.000Z',
+        meta: {},
+      },
+    ]);
+
+    await expect(
+      runtime.applyContactCursorStateToContact(
+        {
+          id: 7,
+          public_key: contactPublicKey,
+          type: 'user',
+          name: 'Alice',
+          given_name: null,
+          meta: {
+            last_seen_incoming_activity_at: '2026-01-01T00:00:00.000Z',
+            last_seen_incoming_activity_event_id: 'older-event',
+          },
+          relays: [],
+          sendMessagesToAppRelays: false,
+        },
+        {
+          last_seen_incoming_activity_at: cursorAt,
+          last_seen_incoming_activity_event_id: 'cursor-event',
+        }
+      )
+    ).resolves.toBe(true);
+
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledWith(7, {
+      meta: {
+        last_seen_incoming_activity_at: cursorAt,
+        last_seen_incoming_activity_event_id: 'cursor-event',
+      },
+    });
+    expect(serviceMocks.chatDataService.updateMessageMeta).toHaveBeenCalledWith(
+      11,
+      expect.objectContaining({
+        reactions: [
+          {
+            emoji: '👍',
+            name: 'thumbs up',
+            reactorPublicKey: contactPublicKey,
+            createdAt: '2026-01-02T00:00:00.000Z',
+            viewedByAuthorAt: cursorAt,
+          },
+          {
+            emoji: '🔥',
+            name: 'fire',
+            reactorPublicKey: contactPublicKey,
+            createdAt: '2026-01-04T00:00:00.000Z',
+          },
+        ],
+      })
+    );
+    expect(serviceMocks.chatDataService.updateChatMeta).toHaveBeenCalledWith(contactPublicKey, {
+      last_seen_received_activity_at: cursorAt,
+      unseen_reaction_count: 1,
+    });
+    expect(serviceMocks.chatDataService.updateChatUnreadCount).toHaveBeenCalledWith(
+      contactPublicKey,
+      1
+    );
+    expect(deps.scheduleChatChecks).toHaveBeenCalledWith([contactPublicKey]);
+  });
+
+  it('treats missing private preferences as a no-op contact-cursor restore', async () => {
+    const deps = createDeps({
+      getStartupStepSnapshot: vi.fn(() => ({
+        status: 'success',
+      })),
+      readPrivatePreferencesFromStorage: vi.fn(() => null),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+
+    await runtime.restoreContactCursorState(['wss://seed.example']);
+
+    expect(deps.beginStartupStep).toHaveBeenCalledWith('contact-cursor-data');
+    expect(deps.completeStartupStep).toHaveBeenCalledWith('contact-cursor-data');
+    expect(serviceMocks.contactsService.init).not.toHaveBeenCalled();
+    expect(deps.chatStore.reload).not.toHaveBeenCalled();
+  });
+
+  it('skips chat and message reloads when no contact cursors are restored from relays', async () => {
+    const deps = createDeps({
+      readPrivatePreferencesFromStorage: vi.fn(() => ({
+        contactSecret: 'secret',
+      })),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+
+    serviceMocks.contactsService.listContacts.mockResolvedValue([
+      {
+        id: 7,
+        public_key: 'a'.repeat(64),
+        type: 'user',
+        name: 'Alice',
+        given_name: null,
+        meta: {},
+        relays: [],
+        sendMessagesToAppRelays: false,
+      },
+    ]);
+    (deps.ndk.fetchEvents as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+
+    await runtime.restoreContactCursorState(['wss://seed.example']);
+
+    expect(deps.completeStartupStep).toHaveBeenCalledWith('contact-cursor-data');
+    expect(serviceMocks.contactsService.updateContact).not.toHaveBeenCalled();
+    expect(deps.chatStore.reload).not.toHaveBeenCalled();
+  });
 });
