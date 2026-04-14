@@ -88,6 +88,17 @@
                 @click="handleRefreshContactProfile"
               />
               <q-btn
+                v-if="props.showShareAction"
+                no-caps
+                outline
+                color="primary"
+                label="Share"
+                class="profile-tab-actions__button"
+                data-testid="contact-profile-share-button"
+                :disable="!shareNostrAddress"
+                @click="handleOpenShareDialog"
+              />
+              <q-btn
                 v-if="props.showPublishAction"
                 no-caps
                 unelevated
@@ -855,6 +866,55 @@
     </div>
 
     <AppDialog
+      v-if="isShareDialogOpen"
+      :model-value="isShareDialogOpen"
+      title="Share Contact"
+      subtitle="Scan the QR code or copy the nostr address."
+      plain
+      max-width="420px"
+      @update:model-value="closeShareDialog"
+    >
+      <div class="profile-share" data-testid="contact-profile-share-dialog">
+        <div
+          v-if="shareQrCodeSvgDataUrl"
+          class="profile-share__qr-shell"
+        >
+          <img
+            :src="shareQrCodeSvgDataUrl"
+            alt="QR code for contact nostr address"
+            class="profile-share__qr"
+            data-testid="contact-profile-share-qr"
+          />
+        </div>
+
+        <q-input
+          :model-value="shareNostrAddress"
+          class="tg-input profile-share__address"
+          outlined
+          dense
+          rounded
+          readonly
+          label="Nostr Address"
+        >
+          <template #append>
+            <q-btn
+              flat
+              dense
+              round
+              icon="content_copy"
+              color="primary"
+              aria-label="Copy nostr address"
+              :disable="!shareNostrAddress"
+              @click.stop="handleCopyProfileValue(shareNostrAddress, 'Nostr address')"
+            >
+              <AppTooltip>Copy nostr address</AppTooltip>
+            </q-btn>
+          </template>
+        </q-input>
+      </div>
+    </AppDialog>
+
+    <AppDialog
       v-if="selectedGroupMemberTicketStatus"
       :model-value="selectedGroupMemberTicketStatus !== null"
       :title="selectedGroupMemberTicketStatusTitle"
@@ -943,6 +1003,7 @@ import {
 import { buildAvatarText } from 'src/utils/avatarText';
 import { normalizeGroupMemberTicketDeliveries } from 'src/utils/groupMemberTicketDelivery';
 import { formatCompactPublicKey } from 'src/utils/publicKeyText';
+import { buildQrCodeSvgDataUrl } from 'src/utils/qrCode';
 import { buildRelayLookupKey, uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -981,6 +1042,7 @@ interface Props {
   readOnly?: boolean;
   showHeader?: boolean;
   showRelaysEditAction?: boolean;
+  showShareAction?: boolean;
   showPublishAction?: boolean;
   isPublishing?: boolean;
 }
@@ -989,6 +1051,7 @@ const props = withDefaults(defineProps<Props>(), {
   readOnly: false,
   showHeader: false,
   showRelaysEditAction: false,
+  showShareAction: false,
   showPublishAction: false,
   isPublishing: false
 });
@@ -1016,6 +1079,7 @@ const currentGroupChat = ref<ChatRow | null>(null);
 const groupOwnerMember = ref<GroupMemberDraft | null>(null);
 const isLoadingContact = ref(false);
 const isRefreshingContact = ref(false);
+const isShareDialogOpen = ref(false);
 const isRefreshingGroupMembersFromFollowSet = ref(false);
 const displayedPubkeyFormat = ref<PubkeyDisplayFormat>('hex');
 const pubkeyError = ref('');
@@ -1057,6 +1121,23 @@ const displayHexPubkey = computed(() => {
 const displayNpub = computed(() => {
   const pubkey = normalizedDisplayPubkey.value;
   return pubkey ? nostrStore.encodeNpub(pubkey) ?? '' : '';
+});
+const shareNostrAddress = computed(() => {
+  const npub = displayNpub.value.trim();
+  return npub ? `nostr:${npub}` : '';
+});
+const shareQrCodeSvgDataUrl = computed(() => {
+  const shareValue = shareNostrAddress.value;
+  if (!shareValue) {
+    return '';
+  }
+
+  try {
+    return buildQrCodeSvgDataUrl(shareValue);
+  } catch (error) {
+    console.warn('Failed to generate contact share QR code', error);
+    return '';
+  }
 });
 const displayedPubkeyValue = computed(() => {
   return displayedPubkeyFormat.value === 'npub' ? displayNpub.value : displayHexPubkey.value;
@@ -1126,7 +1207,9 @@ const canUseDefaultGroupRelays = computed(() => {
 const mobileNavGridStyle = computed(() => ({
   gridTemplateColumns: `repeat(${isGroupContact.value ? (isOwnedGroupContact.value ? 4 : 3) : 1}, minmax(0, 1fr))`
 }));
-const showProfileTabActions = computed(() => props.showHeader || props.showPublishAction);
+const showProfileTabActions = computed(() => {
+  return props.showHeader || props.showShareAction || props.showPublishAction;
+});
 const showMembersTabActions = computed(() => {
   return canEditGroupMembers.value && (props.showHeader || props.showPublishAction);
 });
@@ -2609,6 +2692,26 @@ function handleOpenChat(): void {
   }
 }
 
+function handleOpenShareDialog(): void {
+  try {
+    if (!shareNostrAddress.value) {
+      return;
+    }
+
+    isShareDialogOpen.value = true;
+  } catch (error) {
+    reportUiError('Failed to open contact share dialog', error, 'Failed to open share dialog.');
+  }
+}
+
+function closeShareDialog(isOpen = false): void {
+  if (isOpen) {
+    return;
+  }
+
+  isShareDialogOpen.value = false;
+}
+
 async function copyText(value: string): Promise<void> {
   const text = value.trim();
   if (!text) {
@@ -3209,6 +3312,31 @@ body.body--dark .profile-header__action {
   justify-content: flex-end;
   gap: 4px;
   padding-left: 8px;
+}
+
+.profile-share {
+  display: grid;
+  gap: 16px;
+}
+
+.profile-share__qr-shell {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 2px;
+}
+
+.profile-share__qr {
+  width: min(100%, 248px);
+  height: auto;
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--tg-border) 86%, #d8e2f0 14%);
+  background: #fff;
+  padding: 14px;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+}
+
+.profile-share__address {
+  width: 100%;
 }
 
 .mobile-nav {

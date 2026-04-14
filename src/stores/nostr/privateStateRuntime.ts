@@ -1098,21 +1098,38 @@ export function createPrivateStateRuntime({
     }
 
     let didChange = false;
+    const contactMeta =
+      contact.meta && typeof contact.meta === 'object' && !Array.isArray(contact.meta)
+        ? (contact.meta as ContactMetadata)
+        : {};
+    const existingContactCursor: ContactCursorContent | null = normalizeTimestamp(
+      contactMeta.last_seen_incoming_activity_at
+    )
+      ? {
+          version: '0.1',
+          last_seen_incoming_activity_at: contactMeta.last_seen_incoming_activity_at,
+          last_seen_incoming_activity_event_id:
+            normalizeEventId(contactMeta.last_seen_incoming_activity_event_id) ?? null,
+        }
+      : null;
+    const shouldAdvanceContactCursor = compareContactCursorState(cursor, existingContactCursor) > 0;
     const nextContactMeta: ContactMetadata = {
-      ...(contact.meta ?? {}),
-      last_seen_incoming_activity_at: cursor.last_seen_incoming_activity_at,
+      ...contactMeta,
+      last_seen_incoming_activity_at: shouldAdvanceContactCursor
+        ? cursor.last_seen_incoming_activity_at
+        : contactMeta.last_seen_incoming_activity_at,
     };
-    if (cursor.last_seen_incoming_activity_event_id) {
+    if (shouldAdvanceContactCursor && cursor.last_seen_incoming_activity_event_id) {
       nextContactMeta.last_seen_incoming_activity_event_id =
         cursor.last_seen_incoming_activity_event_id;
-    } else {
+    } else if (shouldAdvanceContactCursor) {
       delete nextContactMeta.last_seen_incoming_activity_event_id;
     }
 
     const didChangeLastSeenIncomingActivityAt =
-      contact.meta.last_seen_incoming_activity_at !==
+      contactMeta.last_seen_incoming_activity_at !==
         nextContactMeta.last_seen_incoming_activity_at ||
-      (contact.meta.last_seen_incoming_activity_event_id ?? null) !==
+      (contactMeta.last_seen_incoming_activity_event_id ?? null) !==
         (nextContactMeta.last_seen_incoming_activity_event_id ?? null);
 
     if (didChangeLastSeenIncomingActivityAt) {
@@ -1128,7 +1145,19 @@ export function createPrivateStateRuntime({
     }
 
     const messageRows = await chatDataService.listMessages(normalizedContactPubkey);
-    const cursorTimestamp = toComparableTimestamp(cursor.last_seen_incoming_activity_at);
+    const currentChatLastSeenReceivedActivityAt =
+      typeof chatRow.meta?.[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY] === 'string'
+        ? chatRow.meta[LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY].trim()
+        : '';
+    const effectiveCursorAt =
+      [
+        cursor.last_seen_incoming_activity_at,
+        contactMeta.last_seen_incoming_activity_at,
+        currentChatLastSeenReceivedActivityAt,
+      ].reduce((latest, candidate) =>
+        toComparableTimestamp(candidate) > toComparableTimestamp(latest) ? candidate : latest
+      ) || '';
+    const cursorTimestamp = toComparableTimestamp(effectiveCursorAt);
     const nextUnreadMessageCount = messageRows.reduce((count, messageRow) => {
       if (
         inputSanitizerService.normalizeHexKey(messageRow.author_public_key) === loggedInPubkeyHex
@@ -1164,7 +1193,7 @@ export function createPrivateStateRuntime({
 
           return {
             ...reaction,
-            viewedByAuthorAt: cursor.last_seen_incoming_activity_at,
+            viewedByAuthorAt: effectiveCursorAt,
           };
         }
 
@@ -1198,7 +1227,7 @@ export function createPrivateStateRuntime({
     const nextChatMeta = buildChatMetaWithUnseenReactionCount(
       {
         ...chatRow.meta,
-        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: cursor.last_seen_incoming_activity_at,
+        [LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY]: effectiveCursorAt,
       },
       nextUnseenReactionCount
     );

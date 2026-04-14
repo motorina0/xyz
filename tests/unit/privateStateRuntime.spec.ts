@@ -638,6 +638,84 @@ describe('privateStateRuntime', () => {
     expect(deps.scheduleChatChecks).toHaveBeenCalledWith([contactPublicKey]);
   });
 
+  it('does not move the local read boundary backward when the relay cursor is older than chat state', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateStateRuntime(deps);
+    const contactPublicKey = 'a'.repeat(64);
+    const loggedInPublicKey = 'f'.repeat(64);
+
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: contactPublicKey,
+      public_key: contactPublicKey,
+      type: 'user',
+      name: 'Alice',
+      last_message: 'Latest',
+      last_message_at: '2026-01-06T00:00:00.000Z',
+      unread_count: 5,
+      meta: {
+        last_seen_received_activity_at: '2026-01-05T00:00:00.000Z',
+      },
+    });
+    serviceMocks.chatDataService.listMessages.mockResolvedValue([
+      {
+        id: 11,
+        chat_public_key: contactPublicKey,
+        author_public_key: contactPublicKey,
+        created_at: '2026-01-04T00:00:00.000Z',
+        meta: {},
+      },
+      {
+        id: 12,
+        chat_public_key: contactPublicKey,
+        author_public_key: contactPublicKey,
+        created_at: '2026-01-06T00:00:00.000Z',
+        meta: {},
+      },
+      {
+        id: 13,
+        chat_public_key: contactPublicKey,
+        author_public_key: loggedInPublicKey,
+        created_at: '2026-01-07T00:00:00.000Z',
+        meta: {},
+      },
+    ]);
+
+    await expect(
+      runtime.applyContactCursorStateToContact(
+        {
+          id: 7,
+          public_key: contactPublicKey,
+          type: 'user',
+          name: 'Alice',
+          given_name: null,
+          meta: {
+            last_seen_incoming_activity_at: '2026-01-01T00:00:00.000Z',
+            last_seen_incoming_activity_event_id: 'older-event',
+          },
+          relays: [],
+          sendMessagesToAppRelays: false,
+        },
+        {
+          version: '0.1',
+          last_seen_incoming_activity_at: '2026-01-03T00:00:00.000Z',
+          last_seen_incoming_activity_event_id: 'cursor-event',
+        }
+      )
+    ).resolves.toBe(true);
+
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledWith(7, {
+      meta: {
+        last_seen_incoming_activity_at: '2026-01-03T00:00:00.000Z',
+        last_seen_incoming_activity_event_id: 'cursor-event',
+      },
+    });
+    expect(serviceMocks.chatDataService.updateChatMeta).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.updateChatUnreadCount).toHaveBeenCalledWith(
+      contactPublicKey,
+      1
+    );
+  });
+
   it('treats missing private preferences as a no-op contact-cursor restore', async () => {
     const deps = createDeps({
       getStartupStepSnapshot: vi.fn(() => ({

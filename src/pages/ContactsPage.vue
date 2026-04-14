@@ -171,6 +171,7 @@
               v-model:pubkey="selectedContactPubkey"
               :read-only="!canPublishSelectedGroupProfile"
               :show-header="true"
+              :show-share-action="true"
               :show-publish-action="canPublishSelectedGroupProfile"
               :is-publishing="isPublishingSelectedGroupProfile"
               @update:send-messages-to-app-relays="handleSendMessagesToAppRelaysUpdate"

@@ -102,12 +102,26 @@ test('hard reload restores accepted DM chat list, unread count, and thread histo
     await waitForThreadMessage(bob.page, thirdMessage, {
       chatId: alice.session.publicKey,
     });
+    await expect(
+      bob
+        .page
+        .getByTestId('chat-item')
+        .filter({ hasText: TEST_ACCOUNTS.startupRestoreAlice.displayName })
+        .locator('.chat-item__meta .q-badge')
+    ).toHaveCount(0);
 
     await reloadAndWaitForApp(bob.page);
     await expect(bob.page).toHaveURL(new RegExp(`#\\/chats\\/${alice.session.publicKey}$`));
     await waitForThreadMessage(bob.page, thirdMessage, {
       chatId: alice.session.publicKey,
     });
+    await expect(
+      bob
+        .page
+        .getByTestId('chat-item')
+        .filter({ hasText: TEST_ACCOUNTS.startupRestoreAlice.displayName })
+        .locator('.chat-item__meta .q-badge')
+    ).toHaveCount(0);
 
     await sendMessage(bob.page, replyAfterReload, {
       chatId: alice.session.publicKey,
