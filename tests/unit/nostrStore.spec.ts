@@ -1,4 +1,4 @@
-import { __nostrStoreTestUtils } from 'src/stores/nostrStore';
+import { __nostrStoreTestUtils } from 'src/stores/nostr/testUtils';
 import { describe, expect, it } from 'vitest';
 
 const {

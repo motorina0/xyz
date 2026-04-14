@@ -1,0 +1,673 @@
+import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
+import { ref } from 'vue';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const chatDataServiceMock = vi.hoisted(() => ({
+  init: vi.fn(async () => {}),
+  getMessageById: vi.fn(async () => null),
+  updateMessageEventId: vi.fn(async () => {}),
+  getChatByPublicKey: vi.fn(async () => null),
+  createChat: vi.fn(async () => null),
+  updateChat: vi.fn(async () => null),
+  updateChatPreview: vi.fn(async () => {}),
+  listChats: vi.fn(async () => []),
+}));
+
+const contactsServiceMock = vi.hoisted(() => ({
+  init: vi.fn(async () => {}),
+  getContactByPublicKey: vi.fn(async () => null),
+  createContact: vi.fn(async () => null),
+  updateContact: vi.fn(async () => null),
+}));
+
+const nostrEventDataServiceMock = vi.hoisted(() => ({
+  appendRelayStatuses: vi.fn(async () => {}),
+}));
+
+const messageStoreMock = vi.hoisted(() => ({
+  refreshPersistedMessage: vi.fn(async () => {}),
+  reloadLoadedMessages: vi.fn(async () => {}),
+  syncChatUnseenReactionCount: vi.fn(async () => {}),
+  syncChatsReadStateFromSeenBoundary: vi.fn(async () => {}),
+}));
+
+const logoutCleanupMock = vi.hoisted(() => ({
+  clearPersistedAppState: vi.fn(async () => {}),
+}));
+
+vi.mock('src/services/chatDataService', () => ({
+  chatDataService: chatDataServiceMock,
+}));
+
+vi.mock('src/services/contactsService', () => ({
+  contactsService: contactsServiceMock,
+}));
+
+vi.mock('src/services/nostrEventDataService', () => ({
+  nostrEventDataService: nostrEventDataServiceMock,
+}));
+
+vi.mock('src/stores/messageStore', () => ({
+  useMessageStore: () => messageStoreMock,
+}));
+
+vi.mock('src/utils/logoutCleanup', () => ({
+  clearPersistedAppState: logoutCleanupMock.clearPersistedAppState,
+}));
+
+import {
+  AUTH_METHOD_STORAGE_KEY,
+  PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY,
+  PRIVATE_KEY_STORAGE_KEY,
+  PUBLIC_KEY_STORAGE_KEY,
+} from 'src/stores/nostr/constants';
+import { createAuthSessionRuntime } from 'src/stores/nostr/authSessionRuntime';
+import { createGroupInviteRuntime } from 'src/stores/nostr/groupInviteRuntime';
+import { createMessageRelayRuntime } from 'src/stores/nostr/messageRelayRuntime';
+import { createPrivateContactMembershipRuntime } from 'src/stores/nostr/privateContactMembershipRuntime';
+import { createPrivateMessagesUiRuntime } from 'src/stores/nostr/privateMessagesUiRuntime';
+
+const PUBKEY_A = 'a'.repeat(64);
+const PUBKEY_B = 'b'.repeat(64);
+const GROUP_KEY = 'c'.repeat(64);
+const EVENT_ID_A = 'd'.repeat(64);
+const EVENT_ID_B = 'e'.repeat(64);
+
+function createMockStorage(initial: Record<string, string> = {}) {
+  const store = new Map(Object.entries(initial));
+
+  return {
+    store,
+    api: {
+      getItem: vi.fn((key: string) => store.get(key) ?? null),
+      setItem: vi.fn((key: string, value: string) => {
+        store.set(key, String(value));
+      }),
+      removeItem: vi.fn((key: string) => {
+        store.delete(key);
+      }),
+      clear: vi.fn(() => {
+        store.clear();
+      }),
+    },
+  };
+}
+
+function normalizeEventId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : null;
+}
+
+function normalizeRelayStatusUrls(relayUrls: string[]): string[] {
+  return Array.from(
+    new Set(
+      relayUrls
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .map((value) => (value.endsWith('/') ? value : `${value}/`))
+    )
+  );
+}
+
+function normalizeThrottleMs(value: number | undefined): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(Number(value))) : 0;
+}
+
+async function flushPromises() {
+  await Promise.resolve();
+  await Promise.resolve();
+  await vi.dynamicImportSettled();
+}
+
+function createAuthSessionHarness() {
+  const ndk = new NDK();
+  const pendingContactCursorPublishTimers = new Map<string, ReturnType<typeof globalThis.setTimeout>>();
+  pendingContactCursorPublishTimers.set('chat', globalThis.setTimeout(() => {}, 1000));
+  let refreshTimerId: ReturnType<typeof globalThis.setTimeout> | null = globalThis.setTimeout(
+    () => {},
+    1000
+  );
+
+  const refs = {
+    contactListVersion: ref(4),
+    eventSince: ref(88),
+    isRestoringStartupState: ref(true),
+    relayStatusVersion: ref(2),
+  };
+  const restoreRuntimeState = {
+    restoreContactCursorStatePromise: Promise.resolve(),
+    restoreGroupIdentitySecretsPromise: Promise.resolve(),
+    restorePrivatePreferencesPromise: Promise.resolve(),
+  };
+
+  const deps = {
+    authenticatedRelayUrls: { clear: vi.fn() },
+    backgroundGroupContactRefreshStartedAt: { clear: vi.fn() },
+    bumpDeveloperDiagnosticsVersion: vi.fn(),
+    chatStoreClearAllComposerDrafts: vi.fn(),
+    clearDeveloperTraceEntries: vi.fn(async () => {}),
+    clearNip65RelayStoreState: vi.fn(),
+    clearPrivateMessagesBackfillState: vi.fn(),
+    clearPrivatePreferencesStorage: vi.fn(),
+    clearRelayStoreState: vi.fn(),
+    clearStoredPrivateMessagesLastReceivedCreatedAt: vi.fn(),
+    configuredRelayUrls: { clear: vi.fn() },
+    contactListVersion: refs.contactListVersion,
+    eventSince: refs.eventSince,
+    getPrivateMessagesEpochSubscriptionRefreshTimerId: () => refreshTimerId,
+    groupContactRefreshPromises: { clear: vi.fn() },
+    hasNip07Extension: () => false,
+    isRestoringStartupState: refs.isRestoringStartupState,
+    loggedInvalidGroupEpochConflictKeys: { clear: vi.fn() },
+    ndk,
+    pendingContactCursorPublishStates: { clear: vi.fn() },
+    pendingContactCursorPublishTimers,
+    pendingEventSinceState: {
+      pendingEventSinceUpdate: 9,
+    },
+    pendingIncomingDeletions: { clear: vi.fn() },
+    pendingIncomingReactions: { clear: vi.fn() },
+    relayConnectFailureCooldownUntilByUrl: { clear: vi.fn() },
+    relayConnectPromises: { clear: vi.fn() },
+    relayStatusVersion: refs.relayStatusVersion,
+    resetContactSubscriptionsRuntimeState: vi.fn(),
+    resetEventSinceForFreshLogin: vi.fn(),
+    resetMyRelayListRuntimeState: vi.fn(),
+    resetPrivateContactListRuntimeState: vi.fn(),
+    resetPrivateMessagesIngestRuntimeState: vi.fn(),
+    resetPrivateMessagesSubscriptionRuntimeState: vi.fn(),
+    resetPrivateMessagesUiRuntimeState: vi.fn(),
+    resetStartupStepTracking: vi.fn(),
+    resetTrackedContactEventState: vi.fn(),
+    restoreRuntimeState,
+    setCachedSigner: vi.fn(),
+    setCachedSignerSessionKey: vi.fn(),
+    setPendingPrivateMessagesEpochSubscriptionRefreshOptions: vi.fn(),
+    setPrivateMessagesEpochSubscriptionRefreshQueue: vi.fn(),
+    setPrivateMessagesEpochSubscriptionRefreshTimerId: vi.fn((timerId) => {
+      refreshTimerId = timerId;
+    }),
+    setRestoreStartupStatePromise: vi.fn(),
+    setSyncLoggedInContactProfilePromise: vi.fn(),
+    setSyncRecentChatContactsPromise: vi.fn(),
+    stopPrivateMessagesSubscription: vi.fn(),
+  };
+
+  const runtime = createAuthSessionRuntime(deps);
+
+  return {
+    deps,
+    ndk,
+    refs,
+    restoreRuntimeState,
+    runtime,
+  };
+}
+
+describe('nostr runtime messaging logic', () => {
+  const originalWindow = (globalThis as Record<string, unknown>).window;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    chatDataServiceMock.getMessageById.mockResolvedValue(null);
+    chatDataServiceMock.getChatByPublicKey.mockResolvedValue(null);
+    chatDataServiceMock.listChats.mockResolvedValue([]);
+    contactsServiceMock.getContactByPublicKey.mockResolvedValue(null);
+    (globalThis as Record<string, unknown>).window = undefined;
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+    if (originalWindow === undefined) {
+      delete (globalThis as Record<string, unknown>).window;
+    } else {
+      (globalThis as Record<string, unknown>).window = originalWindow;
+    }
+  });
+
+  it('appends relay statuses and manages pending message diagnostics state', async () => {
+    const pendingIncomingReactions = new Map<string, unknown[]>();
+    const pendingIncomingDeletions = new Map<string, unknown[]>();
+    const bumpDeveloperDiagnosticsVersion = vi.fn();
+    const logMessageRelayDiagnostics = vi.fn();
+    const queuePrivateMessagesUiRefresh = vi.fn();
+    const runtime = createMessageRelayRuntime({
+      bumpDeveloperDiagnosticsVersion,
+      formatSubscriptionLogValue: (value) => value?.trim() ?? null,
+      logMessageRelayDiagnostics,
+      normalizeEventId,
+      normalizeRelayStatusUrls,
+      normalizeThrottleMs,
+      pendingIncomingDeletions: pendingIncomingDeletions as never,
+      pendingIncomingReactions: pendingIncomingReactions as never,
+      queuePrivateMessagesUiRefresh,
+    });
+    const relayStatuses = [
+      {
+        relay_url: 'wss://relay.example/',
+        direction: 'outbound',
+        status: 'sent',
+        scope: 'publish',
+        updated_at: '2026-01-01T00:00:00.000Z',
+      },
+    ] as never;
+
+    await runtime.appendRelayStatusesToMessageEvent(0, relayStatuses);
+    chatDataServiceMock.getMessageById.mockResolvedValueOnce(null);
+    await runtime.appendRelayStatusesToMessageEvent(1, relayStatuses, {
+      eventId: EVENT_ID_A,
+    });
+    chatDataServiceMock.getMessageById.mockResolvedValueOnce({
+      id: 2,
+      event_id: null,
+    } as never);
+    await runtime.appendRelayStatusesToMessageEvent(2, relayStatuses);
+
+    chatDataServiceMock.getMessageById.mockResolvedValueOnce({
+      id: 3,
+      event_id: EVENT_ID_A,
+    } as never);
+    await runtime.appendRelayStatusesToMessageEvent(3, relayStatuses, {
+      eventId: EVENT_ID_B,
+      direction: 'outbound',
+      uiThrottleMs: 25,
+    });
+    chatDataServiceMock.getMessageById.mockResolvedValueOnce({
+      id: 4,
+      event_id: EVENT_ID_B,
+    } as never);
+    await runtime.appendRelayStatusesToMessageEvent(4, relayStatuses, {
+      eventId: EVENT_ID_B,
+    });
+
+    expect(chatDataServiceMock.updateMessageEventId).toHaveBeenCalledWith(3, EVENT_ID_B);
+    expect(nostrEventDataServiceMock.appendRelayStatuses).toHaveBeenNthCalledWith(
+      1,
+      EVENT_ID_B,
+      relayStatuses,
+      {
+        event: undefined,
+        direction: 'outbound',
+      }
+    );
+    expect(queuePrivateMessagesUiRefresh).toHaveBeenCalledWith({
+      throttleMs: 25,
+      reloadMessages: true,
+    });
+    expect(messageStoreMock.refreshPersistedMessage).toHaveBeenCalledWith(4);
+    expect(
+      runtime.buildInboundRelayStatuses(['wss://relay.example', 'wss://relay.example/'])
+    ).toEqual([
+      expect.objectContaining({
+        relay_url: 'wss://relay.example/',
+        direction: 'inbound',
+        status: 'received',
+      }),
+    ]);
+    expect(logMessageRelayDiagnostics).toHaveBeenCalledWith(
+      'skip',
+      expect.objectContaining({
+        reason: 'invalid-message-id',
+      })
+    );
+
+    runtime.queuePendingIncomingReaction(EVENT_ID_A, {
+      chatPublicKey: PUBKEY_A,
+      targetAuthorPublicKey: PUBKEY_B,
+      reaction: {
+        emoji: '👍',
+        reactorPublicKey: PUBKEY_A,
+        eventId: EVENT_ID_B,
+      },
+    } as never);
+    runtime.queuePendingIncomingReaction(EVENT_ID_A, {
+      chatPublicKey: PUBKEY_A,
+      targetAuthorPublicKey: PUBKEY_B,
+      reaction: {
+        emoji: '👍',
+        reactorPublicKey: PUBKEY_A,
+        eventId: EVENT_ID_B,
+      },
+    } as never);
+    runtime.queuePendingIncomingDeletion(EVENT_ID_A, {
+      deletionAuthorPublicKey: PUBKEY_A,
+      targetKind: 7,
+    } as never);
+    runtime.queuePendingIncomingDeletion(EVENT_ID_A, {
+      deletionAuthorPublicKey: PUBKEY_A,
+      targetKind: 7,
+    } as never);
+    expect(runtime.consumePendingIncomingReactions(EVENT_ID_A)).toHaveLength(1);
+    expect(runtime.consumePendingIncomingDeletions(EVENT_ID_A)).toHaveLength(1);
+
+    runtime.queuePendingIncomingReaction(EVENT_ID_A, {
+      chatPublicKey: PUBKEY_A,
+      targetAuthorPublicKey: PUBKEY_B,
+      reaction: {
+        emoji: '🔥',
+        reactorPublicKey: PUBKEY_A,
+        eventId: EVENT_ID_B,
+      },
+    } as never);
+    runtime.removePendingIncomingReaction(EVENT_ID_A, EVENT_ID_B.toUpperCase(), PUBKEY_A.toUpperCase());
+    expect(runtime.consumePendingIncomingReactions(EVENT_ID_A)).toEqual([]);
+    expect(bumpDeveloperDiagnosticsVersion).toHaveBeenCalled();
+  });
+
+  it('creates and accepts group invite chats with refresh and publish fallbacks', async () => {
+    const chatStore = {
+      init: vi.fn(async () => {}),
+      reload: vi.fn(async () => {}),
+      syncContactProfile: vi.fn(async () => {}),
+    };
+    const ensureContactStoredAsGroup = vi.fn(async () => ({
+      public_key: GROUP_KEY,
+    }));
+    const ensureContactListedInPrivateContactList = vi.fn(async () => ({
+      contact: {
+        public_key: GROUP_KEY,
+      },
+      didChange: true,
+    }));
+    const subscribePrivateMessagesForLoggedInUser = vi.fn(async () => {});
+    const refreshGroupContactByPublicKey = vi.fn(async () => null);
+    const publishPrivateContactList = vi.fn(async () => {});
+    const runtime = createGroupInviteRuntime({
+      bumpContactListVersion: vi.fn(),
+      chatStore,
+      ensureContactListedInPrivateContactList,
+      ensureContactStoredAsGroup,
+      getAppRelayUrls: () => ['wss://relay.example/'],
+      getLoggedInPublicKeyHex: () => PUBKEY_A,
+      publishPrivateContactList,
+      refreshGroupContactByPublicKey,
+      subscribePrivateMessagesForLoggedInUser,
+    });
+
+    chatDataServiceMock.getChatByPublicKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        public_key: GROUP_KEY,
+        type: 'group',
+        name: 'Existing Group',
+        meta: {
+          inbox_state: 'request',
+          request_type: 'group_invite',
+          request_message: 'This is an invitation to a group.',
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        public_key: GROUP_KEY,
+        type: 'group',
+        name: 'Pending Group',
+        meta: {
+          inbox_state: 'request',
+          request_type: 'group_invite',
+          request_message: 'This is an invitation to a group.',
+        },
+      } as never);
+
+    await runtime.upsertIncomingGroupInviteRequestChat(GROUP_KEY, '2026-01-05T00:00:00.000Z', {
+      name: 'Preview Name',
+      meta: {
+        display_name: 'Preview Display',
+      },
+    } as never);
+    await runtime.upsertIncomingGroupInviteRequestChat(GROUP_KEY, '2026-01-06T00:00:00.000Z', {
+      name: 'Ignored',
+      meta: {
+        display_name: 'Updated Display',
+      },
+    } as never);
+
+    subscribePrivateMessagesForLoggedInUser.mockRejectedValueOnce(new Error('subscription failed'));
+    refreshGroupContactByPublicKey.mockRejectedValueOnce(new Error('profile failed'));
+    publishPrivateContactList.mockRejectedValueOnce(new Error('publish failed'));
+    await runtime.ensureGroupInvitePubkeyIsContact(GROUP_KEY, 'Accepted Group');
+
+    expect(chatDataServiceMock.createChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        public_key: GROUP_KEY,
+        type: 'group',
+        name: 'Preview Display',
+      })
+    );
+    expect(chatDataServiceMock.updateChat).toHaveBeenCalledWith(
+      GROUP_KEY,
+      expect.objectContaining({
+        type: 'group',
+      })
+    );
+    expect(chatDataServiceMock.updateChatPreview).toHaveBeenCalledWith(
+      GROUP_KEY,
+      'This is an invitation to a group.',
+      '2026-01-06T00:00:00.000Z',
+      expect.any(Number)
+    );
+    expect(ensureContactStoredAsGroup).toHaveBeenCalledWith(GROUP_KEY, {
+      fallbackName: 'Accepted Group',
+    });
+    expect(ensureContactListedInPrivateContactList).toHaveBeenCalledWith(GROUP_KEY, {
+      fallbackName: 'Accepted Group',
+      type: 'group',
+    });
+    expect(chatStore.syncContactProfile).toHaveBeenCalledWith(GROUP_KEY);
+    expect(publishPrivateContactList).toHaveBeenCalledWith(['wss://relay.example/']);
+    expect(chatStore.reload).toHaveBeenCalled();
+  });
+
+  it('maintains private contact list membership and reconciles accepted chats', async () => {
+    const chatStore = {
+      acceptChat: vi.fn(async () => {}),
+      init: vi.fn(async () => {}),
+    };
+    const bumpContactListVersion = vi.fn();
+    const runtime = createPrivateContactMembershipRuntime({
+      bumpContactListVersion,
+      chatStore,
+    });
+
+    contactsServiceMock.getContactByPublicKey
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 10,
+        public_key: PUBKEY_A,
+        type: 'user',
+        name: 'Alice',
+        meta: {},
+      } as never)
+      .mockResolvedValueOnce({
+        id: 11,
+        public_key: PUBKEY_A,
+        type: 'group',
+        name: 'Alice',
+        meta: {
+          [PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY]: true,
+        },
+      } as never);
+    contactsServiceMock.createContact.mockResolvedValueOnce({
+      id: 9,
+      public_key: PUBKEY_A,
+    } as never);
+    contactsServiceMock.updateContact.mockResolvedValueOnce({
+      id: 10,
+      public_key: PUBKEY_A,
+      type: 'group',
+      meta: {
+        [PRIVATE_CONTACT_LIST_MEMBER_CONTACT_META_KEY]: true,
+      },
+    } as never);
+
+    expect(
+      await runtime.ensureContactListedInPrivateContactList(PUBKEY_A, {
+        fallbackName: 'Alice',
+      })
+    ).toMatchObject({
+      didChange: true,
+    });
+    expect(
+      await runtime.ensureContactListedInPrivateContactList(PUBKEY_A, {
+        type: 'group',
+      })
+    ).toMatchObject({
+      didChange: true,
+    });
+    expect(
+      await runtime.ensureContactListedInPrivateContactList(PUBKEY_A, {
+        type: 'group',
+      })
+    ).toMatchObject({
+      didChange: false,
+    });
+
+    chatDataServiceMock.getChatByPublicKey
+      .mockResolvedValueOnce({
+        public_key: PUBKEY_A,
+        meta: {},
+      } as never)
+      .mockResolvedValueOnce({
+        public_key: PUBKEY_A,
+        meta: {
+          inbox_state: 'accepted',
+          accepted_at: '2026-01-01T00:00:00.000Z',
+        },
+      } as never);
+    await runtime.reconcileAcceptedChatFromPrivateContactList(PUBKEY_A);
+    await runtime.reconcileAcceptedChatFromPrivateContactList(PUBKEY_A);
+
+    expect(chatStore.acceptChat).toHaveBeenCalledWith(PUBKEY_A, {
+      acceptedAt: expect.any(String),
+    });
+    expect(bumpContactListVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it('clears and persists auth session state for direct key logins and logout', async () => {
+    const localStorage = createMockStorage({
+      [AUTH_METHOD_STORAGE_KEY]: 'nsec',
+      [PRIVATE_KEY_STORAGE_KEY]: 'f'.repeat(64),
+      [PUBLIC_KEY_STORAGE_KEY]: PUBKEY_A,
+    });
+    (globalThis as Record<string, unknown>).window = {
+      localStorage: localStorage.api,
+    };
+
+    const { deps, ndk, refs, restoreRuntimeState, runtime } = createAuthSessionHarness();
+    const privateKey = NDKPrivateKeySigner.generate().privateKey;
+    const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
+
+    expect(runtime.getPrivateKeyHex()).toBe('f'.repeat(64));
+    expect(runtime.savePrivateKeyHex('invalid')).toBe(false);
+    expect(runtime.savePrivateKeyHex(privateKey)).toBe(true);
+    expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBe('nsec');
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBe(privateKey);
+    expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBe(expectedPubkey);
+    expect(deps.resetEventSinceForFreshLogin).toHaveBeenCalledTimes(1);
+    expect(deps.setCachedSignerSessionKey).toHaveBeenCalledWith(`nsec:${expectedPubkey}`);
+    expect(ndk.signer).toBeTruthy();
+
+    runtime.clearPrivateKey();
+    expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBeUndefined();
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(deps.resetPrivateMessagesSubscriptionRuntimeState).toHaveBeenCalledWith({
+      clearLastEventState: true,
+    });
+    expect(deps.resetPrivateMessagesUiRuntimeState).toHaveBeenCalled();
+    expect(deps.clearPrivatePreferencesStorage).toHaveBeenCalled();
+    expect(deps.stopPrivateMessagesSubscription).toHaveBeenCalled();
+    expect(deps.clearPrivateMessagesBackfillState).toHaveBeenCalled();
+
+    await runtime.logout();
+    expect(refs.eventSince.value).toBe(0);
+    expect(refs.isRestoringStartupState.value).toBe(false);
+    expect(refs.contactListVersion.value).toBe(0);
+    expect(refs.relayStatusVersion.value).toBe(3);
+    expect(deps.setRestoreStartupStatePromise).toHaveBeenCalledWith(null);
+    expect(deps.setSyncLoggedInContactProfilePromise).toHaveBeenCalledWith(null);
+    expect(deps.setSyncRecentChatContactsPromise).toHaveBeenCalledWith(null);
+    expect(restoreRuntimeState.restoreContactCursorStatePromise).toBeNull();
+    expect(restoreRuntimeState.restoreGroupIdentitySecretsPromise).toBeNull();
+    expect(restoreRuntimeState.restorePrivatePreferencesPromise).toBeNull();
+    expect(deps.clearRelayStoreState).toHaveBeenCalledTimes(1);
+    expect(deps.clearNip65RelayStoreState).toHaveBeenCalledTimes(1);
+    expect(logoutCleanupMock.clearPersistedAppState).toHaveBeenCalledTimes(1);
+  });
+
+  it('queues UI refreshes, chat checks, and post-EOSE work for private messages', async () => {
+    vi.useFakeTimers();
+
+    const chatStore = {
+      reload: vi.fn(async () => {}),
+    };
+    const refreshDeveloperPendingQueues = vi.fn(async () => {});
+    const waitForPrivateMessagesIngestQueue = vi.fn(async () => {});
+    const runtime = createPrivateMessagesUiRuntime({
+      chatStore,
+      normalizeThrottleMs,
+      refreshDeveloperPendingQueues,
+      waitForPrivateMessagesIngestQueue,
+    });
+
+    runtime.queuePrivateMessagesUiRefresh({
+      reloadChats: true,
+      reloadMessages: true,
+    });
+    runtime.flushPrivateMessagesUiRefreshNow();
+    await flushPromises();
+    expect(chatStore.reload).toHaveBeenCalledTimes(1);
+    expect(messageStoreMock.reloadLoadedMessages).toHaveBeenCalledTimes(1);
+
+    runtime.queuePrivateMessagesUiRefresh({
+      reloadChats: true,
+      throttleMs: 20,
+    });
+    runtime.queuePrivateMessagesUiRefresh({
+      reloadMessages: true,
+      throttleMs: 20,
+    });
+    await vi.advanceTimersByTimeAsync(20);
+    runtime.flushPrivateMessagesUiRefreshNow();
+    await flushPromises();
+    expect(chatStore.reload).toHaveBeenCalledTimes(2);
+    expect(messageStoreMock.reloadLoadedMessages).toHaveBeenCalledTimes(2);
+
+    runtime.scheduleChatChecks([PUBKEY_A, 'invalid']);
+    await vi.advanceTimersByTimeAsync(0);
+    await flushPromises();
+    expect(chatStore.reload).toHaveBeenCalledTimes(3);
+    expect(messageStoreMock.syncChatUnseenReactionCount).toHaveBeenCalledWith(PUBKEY_A);
+
+    chatDataServiceMock.listChats.mockResolvedValueOnce([
+      {
+        public_key: PUBKEY_A,
+      },
+      {
+        public_key: PUBKEY_B,
+      },
+    ] as never);
+    runtime.schedulePostPrivateMessagesEoseChecks();
+    await vi.runAllTimersAsync();
+    await flushPromises();
+    await vi.runAllTimersAsync();
+    await flushPromises();
+
+    expect(waitForPrivateMessagesIngestQueue).toHaveBeenCalledTimes(1);
+    expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
+    expect(messageStoreMock.syncChatsReadStateFromSeenBoundary).toHaveBeenCalledTimes(1);
+    expect(messageStoreMock.syncChatUnseenReactionCount).toHaveBeenCalledWith(PUBKEY_A);
+    expect(messageStoreMock.syncChatUnseenReactionCount).toHaveBeenCalledWith(PUBKEY_B);
+
+    runtime.queuePrivateMessagesUiRefresh({
+      reloadChats: true,
+      throttleMs: 50,
+    });
+    runtime.resetPrivateMessagesUiRuntimeState({
+      includeRefreshQueue: true,
+    });
+    await vi.advanceTimersByTimeAsync(50);
+    expect(chatStore.reload).toHaveBeenCalledTimes(4);
+  });
+});
