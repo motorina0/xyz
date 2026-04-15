@@ -10,6 +10,7 @@ declare namespace NodeJS {
 interface DesktopRuntimeInfo {
   isElectron: true;
   platform: NodeJS.Platform;
+  setUnreadChatBadge: (count: number, label: string) => void;
 }
 
 interface Window {

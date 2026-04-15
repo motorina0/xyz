@@ -31,6 +31,7 @@
 import { computed } from 'vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
 import { useChatStore } from 'src/stores/chatStore';
+import { formatUnreadChatBadgeLabel } from 'src/utils/unreadChatBadge';
 
 const navItems = [
   { key: 'chats', label: 'Chats', icon: 'chat' },
@@ -49,9 +50,7 @@ defineEmits<{
 }>();
 
 const unreadChatCount = computed(() => chatStore.unreadChatCount);
-const unreadChatBadgeLabel = computed(() =>
-  unreadChatCount.value > 99 ? '99+' : String(unreadChatCount.value)
-);
+const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadChatCount.value));
 </script>
 
 <style scoped>

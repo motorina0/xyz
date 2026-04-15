@@ -78,6 +78,7 @@ import {
   loadSettingsPage
 } from 'src/router/pageLoaders';
 import { useChatStore } from 'src/stores/chatStore';
+import { formatUnreadChatBadgeLabel } from 'src/utils/unreadChatBadge';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
@@ -111,9 +112,7 @@ const routeLoaders: Record<NavigationSection, RouteLoader> = {
   settings: loadSettingsPage
 };
 const unreadChatCount = computed(() => chatStore.unreadChatCount);
-const unreadChatBadgeLabel = computed(() =>
-  unreadChatCount.value > 99 ? '99+' : String(unreadChatCount.value)
-);
+const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadChatCount.value));
 
 function hasActivePubkeyParam(value: unknown): boolean {
   if (Array.isArray(value)) {
@@ -160,6 +159,18 @@ watch(
   visibleChatId,
   (chatId) => {
     chatStore.setVisibleChatId(chatId);
+  },
+  { immediate: true }
+);
+
+watch(
+  [unreadChatCount, unreadChatBadgeLabel],
+  ([count, label]) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.desktopRuntime?.setUnreadChatBadge(count, label);
   },
   { immediate: true }
 );
