@@ -363,13 +363,18 @@ test('deleting a first-contact DM request keeps later messages in requests inste
   try {
     const openingMessage = `deleted-request-open-${Date.now()}`;
     const followupMessage = `deleted-request-followup-${Date.now()}`;
+    const openingCreatedAt = new Date(Date.now() - 10_000).toISOString();
+    const followupCreatedAt = new Date(Date.parse(openingCreatedAt) + 5_000).toISOString();
 
     await openDirectChatFromIdentifier(
       alice.page,
       bob.session.publicKey,
       TEST_ACCOUNTS.blockBob.displayName
     );
-    await sendMessage(alice.page, openingMessage, {
+    await sendMessagesViaBridge(alice.page, bob.session.publicKey, [openingMessage], {
+      createdAts: [openingCreatedAt],
+    });
+    await waitForThreadMessage(alice.page, openingMessage, {
       chatId: bob.session.publicKey,
     });
 
@@ -378,7 +383,10 @@ test('deleting a first-contact DM request keeps later messages in requests inste
     await deleteFirstRequest(bob.page);
     await waitForNoRequests(bob.page);
 
-    await sendMessage(alice.page, followupMessage, {
+    await sendMessagesViaBridge(alice.page, bob.session.publicKey, [followupMessage], {
+      createdAts: [followupCreatedAt],
+    });
+    await waitForThreadMessage(alice.page, followupMessage, {
       chatId: bob.session.publicKey,
     });
     await openRequests(bob.page);

@@ -81,6 +81,10 @@ export const TEST_ACCOUNTS = {
     privateKey: '84fd8f703d01d4f3d724861dd092f6c9c0d9301c56bfda7051be388d6c183ff8',
     displayName: 'Bob Reactions Reload',
   },
+  reactionReloadCharlie: {
+    privateKey: '31fddc6cddc81e1558b99f4824a0e937da76e2cbf6805ae0e21978b5de29ea11',
+    displayName: 'Charlie Reactions Reload',
+  },
   profileRefreshAlice: {
     privateKey: 'efe5f8abdf1e13ca96afd16c73bf39c518a98bb4215903b4c64e29ccde36f37c',
     displayName: 'Alice Contact Refresh',
@@ -492,23 +496,45 @@ export async function bootstrapSessionOnPage(
   await page.goto('/#/login');
   await page.waitForFunction(() => Boolean(window.__appE2E__));
 
-  const session = await page.evaluate(
+  const bootstrapResult = await page.evaluate(
     async ({ privateKey, relayUrls }) => {
       const bridge = window.__appE2E__;
       if (!bridge) {
-        throw new Error('E2E bridge is not available.');
+        return { ok: false, message: 'E2E bridge is not available.' };
       }
 
-      return bridge.bootstrapSession({
-        privateKey,
-        relayUrls,
-      });
+      try {
+        await bridge.bootstrapSession({
+          privateKey,
+          relayUrls,
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          message: error instanceof Error ? error.message : String(error),
+        };
+      }
+
+      return { ok: true };
     },
     {
       privateKey: account.privateKey,
       relayUrls,
     }
   );
+
+  if (!bootstrapResult.ok) {
+    throw new Error(`E2E bootstrap failed: ${bootstrapResult.message}`);
+  }
+
+  const session = await page.evaluate(async () => {
+    const bridge = window.__appE2E__;
+    if (!bridge) {
+      throw new Error('E2E bridge is not available.');
+    }
+
+    return bridge.getSessionSnapshot();
+  });
 
   await page.goto('/#/chats');
   await expect(page.getByTestId('start-new-chat-button')).toBeVisible();

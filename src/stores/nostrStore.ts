@@ -677,6 +677,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     pendingIncomingDeletions,
     pendingIncomingReactions,
     queuePrivateMessagesUiRefresh,
+    refreshPendingIncomingQueues: async () => {
+      await refreshDeveloperPendingQueuesRuntime();
+    },
   });
 
   async function resolveStalePendingOutboundMessageRelayStatuses(): Promise<void> {

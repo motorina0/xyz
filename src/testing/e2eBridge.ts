@@ -44,6 +44,24 @@ function normalizeRelayUrls(relayUrls: string[]): string[] {
   return inputSanitizerService.normalizeRelayEntriesFromUrls(relayUrls).map((entry) => entry.url);
 }
 
+function createSessionSnapshot(
+  publicKey: string,
+  encodeNpub: (publicKeyHex: string) => string | null,
+  relayUrls: string[]
+): AppE2ESessionSnapshot {
+  const normalizedRelayUrls = Array.isArray(relayUrls)
+    ? relayUrls.filter((url): url is string => typeof url === 'string')
+    : [];
+
+  return JSON.parse(
+    JSON.stringify({
+      publicKey,
+      npub: encodeNpub(publicKey),
+      relayUrls: normalizedRelayUrls,
+    })
+  );
+}
+
 async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot> {
   const privateKey = options.privateKey.trim();
   const relayUrls = normalizeRelayUrls(options.relayUrls);
@@ -105,11 +123,11 @@ async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2E
     throw new Error('Failed to restore the logged-in public key.');
   }
 
-  return {
+  return createSessionSnapshot(
     publicKey,
-    npub: nostrStore.encodeNpub(publicKey),
-    relayUrls,
-  };
+    (candidatePublicKey) => nostrStore.encodeNpub(candidatePublicKey),
+    relayUrls
+  );
 }
 
 async function getSessionSnapshot(): Promise<AppE2ESessionSnapshot> {
@@ -126,11 +144,11 @@ async function getSessionSnapshot(): Promise<AppE2ESessionSnapshot> {
     throw new Error('Failed to read the logged-in public key.');
   }
 
-  return {
+  return createSessionSnapshot(
     publicKey,
-    npub: nostrStore.encodeNpub(publicKey),
-    relayUrls: relayStore.relays,
-  };
+    (candidatePublicKey) => nostrStore.encodeNpub(candidatePublicKey),
+    relayStore.relays
+  );
 }
 
 async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void> {

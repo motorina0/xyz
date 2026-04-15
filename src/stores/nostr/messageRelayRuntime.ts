@@ -23,6 +23,7 @@ interface MessageRelayRuntimeDeps {
   pendingIncomingDeletions: Map<string, PendingIncomingDeletion[]>;
   pendingIncomingReactions: Map<string, PendingIncomingReaction[]>;
   queuePrivateMessagesUiRefresh: (options?: QueuePrivateMessageUiRefreshOptions) => void;
+  refreshPendingIncomingQueues: () => Promise<void>;
 }
 
 export function createMessageRelayRuntime({
@@ -35,6 +36,7 @@ export function createMessageRelayRuntime({
   pendingIncomingDeletions,
   pendingIncomingReactions,
   queuePrivateMessagesUiRefresh,
+  refreshPendingIncomingQueues,
 }: MessageRelayRuntimeDeps) {
   async function refreshMessageInLiveState(messageId: number): Promise<void> {
     try {
@@ -94,8 +96,17 @@ export function createMessageRelayRuntime({
       return;
     }
 
-    if (currentMessage.event_id !== normalizedStoredEventId) {
+    const didBindPersistedEventId = currentMessage.event_id !== normalizedStoredEventId;
+    if (didBindPersistedEventId) {
       await chatDataService.updateMessageEventId(currentMessage.id, normalizedStoredEventId);
+    }
+
+    if (
+      didBindPersistedEventId &&
+      (pendingIncomingReactions.has(normalizedStoredEventId) ||
+        pendingIncomingDeletions.has(normalizedStoredEventId))
+    ) {
+      await refreshPendingIncomingQueues();
     }
 
     await nostrEventDataService.appendRelayStatuses(normalizedStoredEventId, relayStatuses, {

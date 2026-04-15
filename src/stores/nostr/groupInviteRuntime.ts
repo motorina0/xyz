@@ -130,6 +130,10 @@ export function createGroupInviteRuntime({
     });
 
     const existingChat = await chatDataService.getChatByPublicKey(normalizedTargetPubkey);
+    const hadTrackedGroupEpochBeforeAccept =
+      existingChat?.type === 'group' &&
+      typeof existingChat.meta?.current_epoch_public_key === 'string' &&
+      existingChat.meta.current_epoch_public_key.trim().length > 0;
     if (existingChat) {
       const acceptedChatPlan = buildAcceptedGroupInviteChatPlanValue({
         groupPublicKey: normalizedTargetPubkey,
@@ -149,14 +153,16 @@ export function createGroupInviteRuntime({
       }
     }
 
-    try {
-      await subscribePrivateMessagesForLoggedInUser(true);
-    } catch (error) {
-      console.warn(
-        'Failed to refresh private messages after accepting group invite',
-        normalizedTargetPubkey,
-        error
-      );
+    if (!hadTrackedGroupEpochBeforeAccept) {
+      try {
+        await subscribePrivateMessagesForLoggedInUser(true);
+      } catch (error) {
+        console.warn(
+          'Failed to refresh private messages after accepting group invite',
+          normalizedTargetPubkey,
+          error
+        );
+      }
     }
 
     try {
