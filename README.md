@@ -1,87 +1,196 @@
-# Nostr chat
+# Nostr Chat
 
-Chat app for nostr.
+Nostr Chat is a Quasar/Vue web and Electron client for Nostr private messaging. The current app supports direct chats, group chats, contact and profile management, relay controls, browser notifications, developer diagnostics, and local packaging for desktop builds.
 
-## Features
+## Current Features
 
-- Left chat list with avatar, last message preview, unread badge
-- Main chat thread with sent/received rounded bubbles
-- Message composer with send button
-- Pinia stores: `chatStore` and `messageStore`
-- Local mock data for chats/messages
-- Chat selection updates thread
-- Sending messages appends to current chat
-- Auto-scrolls to latest message
-- Responsive behavior:
-  - Desktop: sidebar + thread side by side
-  - Mobile: route-based navigation (`/` list, `/chat/:chatId` thread)
-- Bonus:
-  - Dark mode toggle
-  - Search input placeholder (no filtering logic yet)
+- Account creation in the app, with generated `npub` and `nsec` export
+- Login with a NIP-07 browser extension
+- Local private-key login for `nsec` or raw hex keys
+- Direct-message threads with search, reactions, deletions, unread tracking, and relay delivery status
+- First-contact request inbox with accept, block, delete, and review flows
+- Group chats with invite handling and epoch rotation support
+- Contact list management, profile refresh, profile publishing, and contact lookup by identifier or pubkey
+- Relay management for:
+  - app relays
+  - published NIP-65 relays
+  - discovered contact relays
+  - relay metadata and connection-state inspection
+- Settings for profile, relays, theme, notifications, status, and developer diagnostics
+- Startup and sync history view
+- Browser-notification opt-in flow
+- Developer tools for relay diagnostics, trace export, reconnects, and subscription restart
+- Web and Electron build targets
 
-## Run
+## Protocol Notes
 
-Node.js 18+ is recommended for current Quasar + `@quasar/app-vite`.
+The app currently uses the Nostr flows documented in [NIPS_USED.md](./NIPS_USED.md), including:
 
-1. Install dependencies:
+- NIP-05 identifier lookup
+- NIP-07 extension login
+- NIP-11 relay metadata
+- NIP-17 private messaging
+- NIP-19 key and profile encoding
+- NIP-24 profile metadata fields
+- NIP-44 encryption
+- NIP-51 private follow-set style group membership data
+- NIP-59 gift wrapping
+- NIP-65 relay lists
+- NIP-78 private app storage
+- repo-local NIP-171 draft notes for group messaging in [nip171.md](./nip171.md) and [nip171b.md](./nip171b.md)
+
+## Tech Stack
+
+- Quasar 2
+- Vue 3.5
+- Pinia 2
+- TypeScript 5
+- `@nostr-dev-kit/ndk`
+- Vitest for unit tests
+- Playwright for end-to-end tests
+- Electron Builder for desktop packaging
+- Biome for formatting and linting
+
+## Getting Started
+
+Node.js 20 is recommended. The repo currently declares support for Node.js 18+ and npm 8+.
+
+Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. Start dev server:
+Start the web app in development mode:
 
 ```bash
 npm run dev
 ```
 
-This runs `quasar dev` via the npm script.
+Start the Electron app in development mode:
 
-## End-to-end tests
+```bash
+npm run dev:electron
+```
 
-Core DM e2e coverage uses Playwright plus a local `nostr-rs-relay` Docker container.
+## Quality Checks
 
-Run the suite locally:
+Typecheck:
+
+```bash
+npm run typecheck
+```
+
+Format check:
+
+```bash
+npm run format:check
+```
+
+Lint:
+
+```bash
+npm run lint
+```
+
+Full local quality sweep:
+
+```bash
+npm run quality:all
+```
+
+## Testing
+
+Run unit tests:
+
+```bash
+npm run test:unit
+```
+
+Run unit tests with coverage:
+
+```bash
+npm run test:unit:coverage
+```
+
+Run the full local Playwright suite:
 
 ```bash
 npm run test:e2e:local
 ```
 
-This resets the relay volume before and after the run so each local run starts clean.
-Playwright now keeps traces, screenshots, and video for passing runs too. You can inspect them in `test-results/` and open the HTML summary from `playwright-report/`.
+Targeted local e2e smoke suites are also available:
+
+- `npm run test:e2e:local:auth-smoke`
+- `npm run test:e2e:local:contacts-smoke`
+- `npm run test:e2e:local:dm-smoke`
+- `npm run test:e2e:local:groups-smoke`
+- `npm run test:e2e:local:relays-smoke`
+- `npm run test:e2e:local:session-smoke`
+
+### Local e2e environment
+
+The local e2e runner uses Playwright plus the Docker stack in `docker-compose.e2e.yml`. `scripts/run-e2e-local.cjs` starts the relays, waits for ports `7000` and `7001`, runs Playwright, and tears the stack down again. Each run resets the relay volume so local runs start clean.
+
+Playwright traces, screenshots, and videos are retained by default. After a run, inspect `test-results/` and `playwright-report/` for artifacts.
+
+## Build
+
+Build the web app:
+
+```bash
+npm run build
+```
+
+Build Electron output without packaging into an installer:
+
+```bash
+npm run build:electron:dir
+```
+
+Build Electron packages:
+
+```bash
+npm run build:electron:mac
+npm run build:electron:win
+npm run build:electron:linux
+```
 
 ## Project Structure
 
 ```text
-index.html
-package.json
-quasar.config.ts
-tsconfig.json
 src/
-  components/
-    ChatItem.vue
-    ChatList.vue
-    ChatThread.vue
-    MessageBubble.vue
-    MessageComposer.vue
-  data/
-    mockData.ts
-  layouts/
-    MainLayout.vue
-  pages/
-    IndexPage.vue
-    ChatPage.vue
-    ErrorNotFound.vue
-  router/
-    index.ts
-    routes.ts
-  stores/
-    index.ts
-    chatStore.ts
-    messageStore.ts
-  types/
-    chat.ts
-  css/
-    app.css
-  App.vue
+  components/        Shared chat, profile, dialog, relay, and settings UI
+  composables/       Reusable UI and layout behavior
+  constants/         Default relay and app constants
+  pages/             Auth, chats, contacts, and settings routes
+  router/            Route definitions and lazy page loaders
+  services/          IndexedDB and runtime-facing services
+  stores/            Pinia stores and the modular Nostr runtime
+  testing/           Browser e2e bridge helpers
+  types/             App-level TypeScript types
+  utils/             Small logic helpers used across stores and UI
+src-electron/        Electron main/preload entrypoints and assets
+e2e/                 Playwright specs
+tests/unit/          Vitest specs
+scripts/             Dev and test helper scripts
 ```
+
+## Architecture Notes
+
+- `src/stores/nostrStore.ts` is the main composition root for auth, relay, startup, message-ingest, and group runtimes.
+- `src/stores/nostr/*.ts` contains the focused runtime modules used by the root store.
+- `src/stores/chatStore.ts` and `src/stores/messageStore.ts` are the main UI-facing state layers.
+- `src/services/chatDataService.ts` is the IndexedDB boundary for chats and messages.
+- `src/testing/e2eBridge.ts` exposes deterministic browser helpers used by the Playwright suite.
+
+## Codex Helpers
+
+This repo now includes project-specific guidance for coding agents:
+
+- [AGENTS.md](./AGENTS.md) for always-on repo guidance
+- [SKILLS.md](./SKILLS.md) for task routing and architecture notes
+- `skills/` for repo-local Codex skills:
+  - `nostr-runtime`
+  - `chat-surface`
+  - `validation`
