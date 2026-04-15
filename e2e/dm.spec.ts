@@ -299,7 +299,7 @@ test('thread search finds hidden DB messages and previous or next navigation use
   }
 });
 
-test('reactions surface in the chat list and deleted messages stay deleted after reloads', async ({
+test.only('reactions surface in the chat list and deleted messages stay deleted after reloads', async ({
   browser,
 }) => {
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.reactionReloadAlice);

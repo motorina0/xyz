@@ -9,6 +9,18 @@ const currentDir = fileURLToPath(new URL('.', import.meta.url));
 
 let mainWindow: BrowserWindow | null = null;
 
+function shouldToggleDevTools(input: Electron.Input): boolean {
+  if (input.type !== 'keyDown') {
+    return false;
+  }
+
+  const key = input.key.toLowerCase();
+  const isMacShortcut = input.meta && input.alt && key === 'i';
+  const isCrossPlatformShortcut = input.control && input.shift && key === 'i';
+
+  return key === 'f12' || isMacShortcut || isCrossPlatformShortcut;
+}
+
 function getPreloadPath(): string {
   return path.resolve(
     currentDir,
@@ -46,6 +58,15 @@ async function createWindow(): Promise<void> {
     return { action: 'deny' };
   });
 
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (!shouldToggleDevTools(input)) {
+      return;
+    }
+
+    event.preventDefault();
+    mainWindow?.webContents.toggleDevTools();
+  });
+
   if (process.env.DEV) {
     await mainWindow.loadURL(process.env.APP_URL);
   } else {
@@ -54,10 +75,6 @@ async function createWindow(): Promise<void> {
 
   if (process.env.DEBUGGING) {
     mainWindow.webContents.openDevTools();
-  } else {
-    mainWindow.webContents.on('devtools-opened', () => {
-      mainWindow?.webContents.closeDevTools();
-    });
   }
 
   mainWindow.on('closed', () => {

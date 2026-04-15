@@ -20,7 +20,6 @@ Repo-local skill files live here:
 ## Current Reality
 
 - Stack: Quasar 2, Vue 3.5, Pinia 2, TypeScript 5, NDK 3, Vitest, Playwright, Electron Builder
-- The current app is a real Nostr client, not the older mock-data chat app described in `README.md`
 - The most reliable source of truth is the code under `src/`, the Nostr notes in `NIPS_USED.md`, and the existing unit/e2e tests
 
 ## Architecture Map
