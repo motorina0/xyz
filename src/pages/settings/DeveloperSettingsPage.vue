@@ -956,7 +956,7 @@ async function handleRestartSubscription(): Promise<void> {
     $q.notify({
       type: 'positive',
       message: 'Private messages subscription restarted.',
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to restart private messages subscription', error, 'Failed to restart DM subscription.');
@@ -976,7 +976,7 @@ async function handleReconnectAllRelays(): Promise<void> {
     $q.notify({
       type: 'positive',
       message: 'Reconnect attempt started for all relays.',
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to reconnect all relays', error, 'Failed to reconnect relays.');
@@ -996,7 +996,7 @@ async function handleReconnectRelay(relayUrl: string): Promise<void> {
     $q.notify({
       type: 'positive',
       message: `Reconnect attempt started for ${relayUrl}.`,
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to reconnect relay', error, 'Failed to reconnect relay.');
@@ -1021,7 +1021,7 @@ async function handleReloadFromLookback(): Promise<void> {
     $q.notify({
       type: 'positive',
       message: `DM reload started from the last ${Math.max(1, Math.floor(replayLookbackMinutes.value || 0))} minutes.`,
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to replay private messages from lookback', error, 'Failed to reload messages from lookback.');
@@ -1044,7 +1044,7 @@ async function handleRefreshPendingQueues(): Promise<void> {
       $q.notify({
         type: 'info',
         message: 'No pending queue items to refresh.',
-        position: 'top-right'
+        position: 'top'
       });
       return;
     }
@@ -1061,7 +1061,7 @@ async function handleRefreshPendingQueues(): Promise<void> {
         summary.remainingEntryCount === 0
           ? `Pending queues refreshed. Cleared ${clearedEntryCount} ${clearedEntryLabel}.`
           : `Pending queues refreshed. Checked ${summary.initialTargetCount} ${checkedTargetLabel}; ${summary.remainingEntryCount} ${pendingEntryLabel} still pending.`,
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to refresh pending queues', error, 'Failed to refresh pending queues.');
@@ -1117,7 +1117,7 @@ async function handleCopyDiagnostics(): Promise<void> {
     $q.notify({
       type: 'positive',
       message: 'Developer diagnostics copied to the clipboard.',
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to copy developer diagnostics', error, 'Failed to copy developer diagnostics.');

@@ -463,7 +463,7 @@ export function createPrivateMessagesSubscriptionRuntime({
       const requiresBroaderSinceWindow =
         currentSubscriptionSince === null || filterSince < currentSubscriptionSince;
 
-      if (hasMatchingActiveSubscription && (!force || !requiresBroaderSinceWindow)) {
+      if (hasMatchingActiveSubscription && !force && !requiresBroaderSinceWindow) {
         setPrivateMessagesRestoreThrottleMs(
           Math.max(
             getPrivateMessagesRestoreThrottleMs(),
@@ -472,7 +472,7 @@ export function createPrivateMessagesSubscriptionRuntime({
         );
         syncPrivateMessagesWatchdogRelayConnectionStates(relayUrls);
         logSubscription('private-messages', 'skip', {
-          reason: force ? 'already-active-force-no-change' : 'already-active',
+          reason: 'already-active',
           signature,
           pubkey: formatSubscriptionLogValue(loggedInPubkeyHex),
           authMethod,

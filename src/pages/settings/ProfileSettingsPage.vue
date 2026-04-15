@@ -58,7 +58,7 @@ async function handlePublish(): Promise<void> {
     $q.notify({
       type: 'positive',
       message: 'Profile metadata published.',
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to publish profile metadata', error, 'Failed to publish profile metadata.');

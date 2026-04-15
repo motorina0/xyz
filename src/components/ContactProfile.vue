@@ -2172,7 +2172,7 @@ async function handleRefreshGroupMembersFromFollowSet(): Promise<void> {
         fallbackProfileCount > 0
           ? `${fallbackProfileCount} profile${fallbackProfileCount === 1 ? '' : 's'} kept local fallback data.`
           : 'Fetched from the latest NIP-51 member list.',
-      position: 'top-right',
+      position: 'top',
       timeout: fallbackProfileCount > 0 ? 6000 : 3000
     });
   } catch (error) {
@@ -2222,7 +2222,7 @@ async function handleMembersPublish(): Promise<void> {
               ? `Epoch ${publishResult.epochNumber} created locally. No members to notify.`
               : `No members to notify for epoch ${publishResult.epochNumber}.`,
         caption: `Published to ${publishResult.publishedRelayUrls.length} relay${publishResult.publishedRelayUrls.length === 1 ? '' : 's'}.`,
-        position: 'top-right'
+        position: 'top'
       });
       return;
     }
@@ -2233,7 +2233,7 @@ async function handleMembersPublish(): Promise<void> {
         ? `Epoch ${publishResult.epochNumber} published with partial delivery.`
         : `Invitations for epoch ${publishResult.epochNumber} were sent with partial delivery.`,
       caption: `${publishResult.deliveredMemberCount} delivered, ${publishResult.failedMemberPubkeys.length} failed, ${publishResult.publishedRelayUrls.length} relay${publishResult.publishedRelayUrls.length === 1 ? '' : 's'}.`,
-      position: 'top-right',
+      position: 'top',
       timeout: 6000
     });
   } catch (error) {
@@ -2394,7 +2394,7 @@ async function handlePublishGroupRelays(): Promise<void> {
         type: 'positive',
         message: 'Group relays published.',
         caption: `Published to ${relaySaveStatus.publishedRelayUrls.length} relay${relaySaveStatus.publishedRelayUrls.length === 1 ? '' : 's'}.`,
-        position: 'top-right'
+        position: 'top'
       });
       return;
     }
@@ -2408,7 +2408,7 @@ async function handlePublishGroupRelays(): Promise<void> {
       caption:
         `Published to ${relaySaveStatus.publishedRelayUrls.length} relay${relaySaveStatus.publishedRelayUrls.length === 1 ? '' : 's'}.` +
         (relaySaveStatus.errorMessage ? ` ${relaySaveStatus.errorMessage}` : ''),
-      position: 'top-right',
+      position: 'top',
       timeout: 6000
     });
   } catch (error) {
@@ -2745,7 +2745,7 @@ async function handleCopyProfileValue(value: string, label: string): Promise<voi
     $q.notify({
       type: 'positive',
       message: `${label} copied.`,
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError(

@@ -81,7 +81,7 @@ async function handleBrowserNotificationsToggle(nextValue: boolean): Promise<voi
     $q.notify({
       type: 'warning',
       message: 'Browser notifications are not supported here.',
-      position: 'top-right',
+      position: 'top',
       timeout: 3000
     });
     return;
@@ -108,7 +108,7 @@ async function handleBrowserNotificationsToggle(nextValue: boolean): Promise<voi
         permission === 'denied'
           ? 'Browser notifications were blocked. Allow them in browser settings to enable this.'
           : 'Browser notification permission was not granted.',
-      position: 'top-right',
+      position: 'top',
       timeout: 3200
     });
   } catch (error) {

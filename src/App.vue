@@ -4,11 +4,24 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
-import { useQuasar } from 'quasar';
+import { Notify, useQuasar } from 'quasar';
 import { installAppE2EBridge } from 'src/testing/e2eBridge';
 import { readDarkModePreference } from 'src/utils/themeStorage';
 
 const $q = useQuasar();
+Notify.setDefaults({
+  position: 'top',
+  actions: [
+    {
+      icon: 'close',
+      round: true,
+      dense: true,
+      flat: true,
+      color: 'white',
+      'aria-label': 'Dismiss',
+    },
+  ],
+});
 const savedDarkMode = readDarkModePreference();
 
 if (savedDarkMode !== null) {

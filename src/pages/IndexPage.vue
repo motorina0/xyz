@@ -404,7 +404,7 @@ function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGrou
       type: 'positive',
       message: 'Group created.',
       caption: `Identity secret saved to ${formatRelayList(publishedRelayUrls)}.`,
-      position: 'top-right',
+      position: 'top',
       timeout: 5000
     });
     return;
@@ -415,7 +415,7 @@ function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGrou
       type: 'warning',
       message: 'Group created with partial relay backup.',
       caption: `Saved to ${formatRelayList(publishedRelayUrls)}. Failed on ${formatRelayList(failedRelayUrls)}.`,
-      position: 'top-right',
+      position: 'top',
       timeout: 6500
     });
     return;
@@ -429,7 +429,7 @@ function notifyGroupSecretSave(result: Awaited<ReturnType<NostrStore['createGrou
       (relayUrls.length > 0
         ? `Failed to save the identity secret to ${formatRelayList(relayUrls)}.`
         : 'Failed to save the identity secret to relays.'),
-    position: 'top-right',
+    position: 'top',
     timeout: 6500
   });
 }
@@ -512,7 +512,7 @@ async function handleConfirmNewGroup(): Promise<void> {
         type: 'warning',
         message: 'Group created, but member list sync failed.',
         caption: createdGroup.memberListSyncError,
-        position: 'top-right',
+        position: 'top',
         timeout: 6500
       });
     }
@@ -522,7 +522,7 @@ async function handleConfirmNewGroup(): Promise<void> {
         type: 'warning',
         message: 'Group created, but contact list sync failed.',
         caption: createdGroup.contactListSyncError,
-        position: 'top-right',
+        position: 'top',
         timeout: 6500
       });
     }
@@ -772,7 +772,7 @@ async function handleRefreshChatsForRange(option: ChatRefreshRangeOption): Promi
       type: 'info',
       message: 'Custom chat refresh range is not implemented yet.',
       caption: refreshToastCaption,
-      position: 'top-right'
+      position: 'top'
     });
     return;
   }
@@ -789,7 +789,7 @@ async function handleRefreshChatsForRange(option: ChatRefreshRangeOption): Promi
       type: 'positive',
       message: `Chat refresh started for ${option.label.toLowerCase()}.`,
       caption: refreshToastCaption,
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to refresh chats for selected range', error, 'Failed to refresh chats.');

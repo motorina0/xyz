@@ -880,7 +880,7 @@ async function handlePublishSelectedGroupProfile(): Promise<void> {
     $q.notify({
       type: 'positive',
       message: 'Group profile published.',
-      position: 'top-right'
+      position: 'top'
     });
   } catch (error) {
     reportUiError('Failed to publish group profile metadata', error, 'Failed to publish group profile.');

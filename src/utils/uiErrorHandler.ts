@@ -21,7 +21,7 @@ export function reportUiError(
   Notify.create({
     type: 'negative',
     message: resolveErrorMessage(error, fallbackMessage),
-    position: 'top-right',
+    position: 'top',
     timeout: 3200,
   });
 }
