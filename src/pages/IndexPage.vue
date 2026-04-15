@@ -41,13 +41,6 @@
                     <q-item-section>
                       <q-item-label>{{ option.label }}</q-item-label>
                     </q-item-section>
-                    <q-item-section side>
-                      <q-icon
-                        v-if="option.id === selectedChatRefreshRangeId"
-                        name="check"
-                        size="18px"
-                      />
-                    </q-item-section>
                   </q-item>
                 </q-list>
               </q-btn-dropdown>
@@ -280,24 +273,28 @@ const isCreateGroupDialogOpen = ref(false);
 const isCreatingGroup = ref(false);
 const newGroupName = ref('');
 const newGroupAbout = ref('');
-type ChatRefreshRangeId = 'last-24-hours' | 'last-2-days' | 'last-week' | 'last-month' | 'custom';
+type ChatRefreshRangeId =
+  | 'since-last-message'
+  | 'last-24-hours'
+  | 'last-week'
+  | 'last-month'
+  | 'custom';
 
 interface ChatRefreshRangeOption {
   id: ChatRefreshRangeId;
   label: string;
-  lookbackMinutes: number | null;
+  lookbackMinutes?: number;
 }
 
 const chatRefreshRangeOptions: ChatRefreshRangeOption[] = [
   {
+    id: 'since-last-message',
+    label: 'Since last message'
+  },
+  {
     id: 'last-24-hours',
     label: 'Last 24 hours',
     lookbackMinutes: 24 * 60
-  },
-  {
-    id: 'last-2-days',
-    label: 'Last 2 days',
-    lookbackMinutes: 2 * 24 * 60
   },
   {
     id: 'last-week',
@@ -311,12 +308,9 @@ const chatRefreshRangeOptions: ChatRefreshRangeOption[] = [
   },
   {
     id: 'custom',
-    label: 'Custom',
-    lookbackMinutes: null
+    label: 'Custom'
   }
 ];
-
-const selectedChatRefreshRangeId = ref<ChatRefreshRangeId>('last-24-hours');
 const isRequestsRoute = computed(() => route.name === 'chat-requests');
 const activeChatId = computed(() => {
   const rawChatId = route.params.pubkey;
@@ -755,28 +749,90 @@ async function handleRefreshChat(chatId: string): Promise<void> {
 }
 
 async function handleRefreshChatsForRange(option: ChatRefreshRangeOption): Promise<void> {
-  if (option.id === 'custom' || option.lookbackMinutes === null) {
+  const refreshToastCaption = getRefreshToastCaption(option, activeChat.value);
+
+  if (option.id === 'custom') {
     $q.notify({
       type: 'info',
       message: 'Custom chat refresh range is not implemented yet.',
+      caption: refreshToastCaption,
       position: 'top-right'
     });
     return;
   }
 
   try {
-    selectedChatRefreshRangeId.value = option.id;
-    await refreshChats('', {
-      lookbackMinutes: option.lookbackMinutes
-    });
+    if (option.id === 'since-last-message' || typeof option.lookbackMinutes !== 'number') {
+      await refreshChats('');
+    } else {
+      await refreshChats('', {
+        lookbackMinutes: option.lookbackMinutes
+      });
+    }
     $q.notify({
       type: 'positive',
       message: `Chat refresh started for ${option.label.toLowerCase()}.`,
+      caption: refreshToastCaption,
       position: 'top-right'
     });
   } catch (error) {
     reportUiError('Failed to refresh chats for selected range', error, 'Failed to refresh chats.');
   }
+}
+
+function getRefreshToastCaption(option: ChatRefreshRangeOption, chat: {
+  lastMessageAt?: string;
+} | null): string {
+  const sinceValue = getChatRefreshSinceValue(option, chat);
+  const sinceCaption = getSinceValueCaption(sinceValue);
+  if (sinceCaption) {
+    return sinceCaption;
+  }
+
+  return 'Since date unavailable.';
+}
+
+function getSinceValueCaption(sinceValue: number | null): string {
+  if (!Number.isInteger(sinceValue) || sinceValue <= 0) {
+    return '';
+  }
+
+  return `Since ${new Intl.DateTimeFormat(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  }).format(new Date(sinceValue * 1000))}`;
+}
+
+function getChatRefreshSinceValue(
+  option: ChatRefreshRangeOption,
+  chat: {
+    lastMessageAt?: string;
+  } | null
+): number | null {
+  if (option.id === 'since-last-message') {
+    const lastMessageAt = chat?.lastMessageAt?.trim();
+    if (!lastMessageAt) {
+      return null;
+    }
+
+    const parsed = new Date(lastMessageAt);
+    if (Number.isNaN(parsed.valueOf())) {
+      return null;
+    }
+
+    return Math.floor(parsed.valueOf() / 1000);
+  }
+
+  if (typeof option.lookbackMinutes !== 'number') {
+    return null;
+  }
+
+  const boundedLookbackMinutes = Math.floor(option.lookbackMinutes);
+  if (!Number.isFinite(boundedLookbackMinutes) || boundedLookbackMinutes <= 0) {
+    return null;
+  }
+
+  return Math.floor(Date.now() / 1000 - boundedLookbackMinutes * 60);
 }
 
 async function handleAcceptRequest(chatId: string): Promise<void> {
