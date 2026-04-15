@@ -325,7 +325,7 @@ describe('nostr runtime messaging logic', () => {
     ).toEqual([
       expect.objectContaining({
         relay_url: 'wss://relay.example/',
-        direction: 'in',
+        direction: 'inbound',
         status: 'received',
       }),
     ]);
