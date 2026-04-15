@@ -106,7 +106,6 @@ export function createGroupEpochStateRuntime({
   getLoggedInPublicKeyHex,
   getPrivateMessagesEpochSwitchSince,
   logConflictingIncomingEpochNumber,
-  logInvalidIncomingEpochNumber,
   publishGroupIdentitySecret,
   queueEpochDrivenPrivateMessagesSubscriptionRefresh,
   restoreGroupEpochHistory,

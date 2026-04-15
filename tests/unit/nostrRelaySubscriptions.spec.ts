@@ -4,6 +4,7 @@ import NDK, {
   NDKRelayList,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
+  NDKUser,
 } from '@nostr-dev-kit/ndk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -121,7 +122,7 @@ describe('relay and subscription runtimes', () => {
       logDeveloperTrace,
       normalizeEventId,
       resolveGroupChatEpochEntries: (chat) =>
-        chat.public_key === GROUP_KEY
+        (chat as { public_key?: string }).public_key === GROUP_KEY
           ? [
               {
                 epoch_number: 2,
@@ -272,9 +273,7 @@ describe('relay and subscription runtimes', () => {
     const completeStartupStep = vi.fn();
     const failStartupStep = vi.fn();
     const ensureRelayConnections = vi.fn(async () => {});
-    const getLoggedInSignerUser = vi.fn(async () => ({
-      pubkey: PUBKEY_A,
-    }));
+    const getLoggedInSignerUser = vi.fn(async () => new NDKUser({ pubkey: PUBKEY_A }));
     const logSubscription = vi.fn();
     const queueTrackedContactSubscriptionsRefresh = vi.fn();
     const subscribePrivateMessagesForLoggedInUser = vi.fn(async () => {});

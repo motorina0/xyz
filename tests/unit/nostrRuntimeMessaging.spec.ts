@@ -1,4 +1,5 @@
 import NDK, { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
+import type { ContactRecord } from 'src/types/contact';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
@@ -110,6 +111,21 @@ function normalizeRelayStatusUrls(relayUrls: string[]): string[] {
 
 function normalizeThrottleMs(value: number | undefined): number {
   return Number.isFinite(value) ? Math.max(0, Math.floor(Number(value))) : 0;
+}
+
+function buildContactRecord(
+  overrides: Partial<ContactRecord> & Pick<ContactRecord, 'public_key'>
+): ContactRecord {
+  return {
+    id: overrides.id ?? 1,
+    public_key: overrides.public_key,
+    type: overrides.type ?? 'user',
+    name: overrides.name ?? 'Contact',
+    given_name: overrides.given_name ?? null,
+    meta: overrides.meta ?? {},
+    ...(overrides.relays ? { relays: overrides.relays } : {}),
+    sendMessagesToAppRelays: overrides.sendMessagesToAppRelays ?? false,
+  };
 }
 
 async function flushPromises() {
@@ -254,7 +270,7 @@ describe('nostr runtime messaging logic', () => {
     const relayStatuses = [
       {
         relay_url: 'wss://relay.example/',
-        direction: 'outbound',
+        direction: 'out',
         status: 'sent',
         scope: 'publish',
         updated_at: '2026-01-01T00:00:00.000Z',
@@ -278,7 +294,7 @@ describe('nostr runtime messaging logic', () => {
     } as never);
     await runtime.appendRelayStatusesToMessageEvent(3, relayStatuses, {
       eventId: EVENT_ID_B,
-      direction: 'outbound',
+      direction: 'out',
       uiThrottleMs: 25,
     });
     chatDataServiceMock.getMessageById.mockResolvedValueOnce({
@@ -296,7 +312,7 @@ describe('nostr runtime messaging logic', () => {
       relayStatuses,
       {
         event: undefined,
-        direction: 'outbound',
+        direction: 'out',
       }
     );
     expect(queuePrivateMessagesUiRefresh).toHaveBeenCalledWith({
@@ -309,7 +325,7 @@ describe('nostr runtime messaging logic', () => {
     ).toEqual([
       expect.objectContaining({
         relay_url: 'wss://relay.example/',
-        direction: 'inbound',
+        direction: 'in',
         status: 'received',
       }),
     ]);
@@ -373,13 +389,26 @@ describe('nostr runtime messaging logic', () => {
       reload: vi.fn(async () => {}),
       syncContactProfile: vi.fn(async () => {}),
     };
-    const ensureContactStoredAsGroup = vi.fn(async () => ({
-      public_key: GROUP_KEY,
-    }));
-    const ensureContactListedInPrivateContactList = vi.fn(async () => ({
-      contact: {
+    const ensureContactStoredAsGroup = vi.fn<
+      (groupPublicKey: string, options?: { fallbackName?: string }) => Promise<ContactRecord | null>
+    >(async () =>
+      buildContactRecord({
         public_key: GROUP_KEY,
-      },
+        type: 'group',
+        name: 'Accepted Group',
+      })
+    );
+    const ensureContactListedInPrivateContactList = vi.fn<
+      (
+        targetPubkeyHex: string,
+        options?: { fallbackName?: string; type?: 'user' | 'group' }
+      ) => Promise<{ contact: ContactRecord; didChange: boolean }>
+    >(async () => ({
+      contact: buildContactRecord({
+        public_key: GROUP_KEY,
+        type: 'group',
+        name: 'Accepted Group',
+      }),
       didChange: true,
     }));
     const subscribePrivateMessagesForLoggedInUser = vi.fn(async () => {});
