@@ -132,7 +132,11 @@ export function createInboundPresentationRuntime({
     const encodedChatPubkey = encodeURIComponent(chatPubkey);
 
     if (process.env.VUE_ROUTER_MODE === 'hash') {
-      return `${window.location.origin}${normalizedBase}#/chats/${encodedChatPubkey}`;
+      const currentHref = window.location.href;
+      const hashIndex = currentHref.indexOf('#');
+      const baseHref =
+        hashIndex === -1 ? `${window.location.origin}${normalizedBase}` : currentHref.slice(0, hashIndex);
+      return `${baseHref}#/chats/${encodedChatPubkey}`;
     }
 
     return `${window.location.origin}${normalizedBase}chats/${encodedChatPubkey}`;

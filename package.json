@@ -1,11 +1,19 @@
 {
   "name": "quasar-telegram-ui",
+  "productName": "Nostr Chat",
   "version": "0.1.0",
+  "description": "Desktop and web Nostr chat client.",
   "private": true,
   "scripts": {
-    "dev": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar dev",
-    "dev:e2e": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar dev --port 4100 --hostname 127.0.0.1",
-    "build": "NODE_OPTIONS=--require=./scripts/crypto-hash-polyfill.cjs quasar build",
+    "dev": "node ./scripts/quasar.cjs dev",
+    "dev:e2e": "node ./scripts/quasar.cjs dev --port 4100 --hostname 127.0.0.1",
+    "dev:electron": "node ./scripts/quasar.cjs dev -m electron",
+    "build": "node ./scripts/quasar.cjs build",
+    "build:electron": "node ./scripts/quasar.cjs build -m electron -b builder",
+    "build:electron:dir": "node ./scripts/quasar.cjs build -m electron -b builder -s",
+    "build:electron:mac": "node ./scripts/quasar.cjs build -m electron -b builder -T mac",
+    "build:electron:win": "node ./scripts/quasar.cjs build -m electron -b builder -T win",
+    "build:electron:linux": "node ./scripts/quasar.cjs build -m electron -b builder -T linux",
     "format": "biome format --write",
     "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false",
     "lint": "biome lint",
@@ -44,9 +52,11 @@
     "@quasar/app-vite": "2.1.0",
     "@types/node": "^20.17.0",
     "@vitest/coverage-v8": "^3.2.4",
+    "electron": "^41.2.0",
+    "electron-builder": "^24.13.3",
     "typescript": "~5.7.2",
-    "vue-tsc": "^2.2.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "vue-tsc": "^2.2.0"
   },
   "engines": {
     "node": ">=18",

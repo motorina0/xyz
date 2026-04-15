@@ -25,6 +25,26 @@ export default configure(() => {
       plugins: ['Dark', 'Notify', 'Dialog'],
     },
 
+    electron: {
+      bundler: 'builder',
+      builder: {
+        appId: 'com.motorina0.nostrchat',
+        productName: 'Nostr Chat',
+        artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
+        mac: {
+          category: 'public.app-category.social-networking',
+          target: ['dmg', 'zip'],
+        },
+        win: {
+          target: ['nsis'],
+        },
+        linux: {
+          category: 'Network',
+          target: ['AppImage', 'deb'],
+        },
+      },
+    },
+
     animations: [],
   };
 });
