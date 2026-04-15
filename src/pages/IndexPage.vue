@@ -742,6 +742,22 @@ async function refreshChats(
 
 async function handleRefreshChat(chatId: string): Promise<void> {
   try {
+    const chat = findChatById(chatId);
+    if (!chat) {
+      return;
+    }
+
+    if (chat.type === 'group') {
+      const nostrStore = await getNostrStore();
+      await nostrStore.restorePrivateMessagesForRecipient(chat.publicKey, { force: true });
+      if (chat.epochPublicKey) {
+        await nostrStore.restoreGroupEpochHistory(chat.publicKey, chat.epochPublicKey, { force: true });
+      }
+      await chatStore.reload();
+      await messageStore.loadMessages(chatId, true);
+      return;
+    }
+
     await refreshChats(chatId);
   } catch (error) {
     reportUiError('Failed to refresh chat', error, 'Failed to refresh chat.');

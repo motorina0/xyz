@@ -231,6 +231,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<void> = async () => {
     throw new Error('Group epoch history runtime is not initialized.');
   };
+  let restorePrivateMessagesForRecipientRuntime: (
+    recipientPubkey: string,
+    options?: {
+      force?: boolean;
+      seedRelayUrls?: string[];
+    }
+  ) => Promise<void> = async () => {
+    throw new Error('Private messages for recipient runtime is not initialized.');
+  };
   let upsertIncomingGroupInviteRequestChatRuntime: (
     groupPublicKey: string,
     createdAt: string,
@@ -1188,6 +1197,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   const {
     restoreGroupEpochHistory: restoreGroupEpochHistoryImpl,
+    restorePrivateMessagesForRecipient: restorePrivateMessagesForRecipientImpl,
     startPrivateMessagesStartupBackfill: startPrivateMessagesStartupBackfillImpl,
     stopPrivateMessagesBackfill: stopPrivateMessagesBackfillImpl,
   } = createPrivateMessagesBackfillRuntime({
@@ -1217,6 +1227,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     writePrivateMessagesBackfillState,
   });
   restoreGroupEpochHistoryRuntime = restoreGroupEpochHistoryImpl;
+  restorePrivateMessagesForRecipientRuntime = restorePrivateMessagesForRecipientImpl;
   startPrivateMessagesStartupBackfillRuntime = startPrivateMessagesStartupBackfillImpl;
   stopPrivateMessagesBackfillRuntime = stopPrivateMessagesBackfillImpl;
 
@@ -1688,7 +1699,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshContactByPublicKey,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
+    restoreGroupEpochHistory: restoreGroupEpochHistoryRuntime,
     restoreMyRelayList,
+    restorePrivateMessagesForRecipient: restorePrivateMessagesForRecipientRuntime,
     restorePrivateContactList,
     restorePrivatePreferences,
     restoreStartupState,

@@ -21,6 +21,11 @@ interface GroupEpochHistoryRestoreOptions {
   seedRelayUrls?: string[];
 }
 
+interface PrivateMessagesForRecipientRestoreOptions {
+  force?: boolean;
+  seedRelayUrls?: string[];
+}
+
 interface PrivateMessagesBackfillRuntimeDeps {
   buildFilterSinceDetails: (since: number | undefined) => Record<string, unknown>;
   buildFilterUntilDetails: (until: number | undefined) => Record<string, unknown>;
@@ -111,6 +116,8 @@ export function createPrivateMessagesBackfillRuntime({
   let privateMessagesBackfillDelayResolver: (() => void) | null = null;
   const groupEpochHistoryRestorePromises = new Map<string, Promise<void>>();
   const restoredGroupEpochHistoryKeys = new Set<string>();
+  const privateMessagesForRecipientRestorePromises = new Map<string, Promise<void>>();
+  const restoredPrivateMessagesForRecipientKeys = new Set<string>();
 
   function clearPrivateMessagesBackfillDelay(): void {
     if (privateMessagesBackfillDelayTimerId !== null) {
@@ -367,6 +374,107 @@ export function createPrivateMessagesBackfillRuntime({
     await getPrivateMessagesIngestQueue();
   }
 
+  async function runPrivateMessagesForRecipientRestoreWindow(options: {
+    loggedInPubkeyHex: string;
+    recipientPubkey: string;
+    relayUrls: string[];
+    since: number;
+    until: number;
+  }): Promise<void> {
+    if (options.since >= options.until || options.relayUrls.length === 0) {
+      return;
+    }
+
+    const privateMessageTargetDetails = await buildPrivateMessageSubscriptionTargetDetails(
+      [options.recipientPubkey],
+      options.loggedInPubkeyHex
+    );
+
+    await new Promise<void>((resolve, reject) => {
+      let didFinish = false;
+      let subscription: ReturnType<NDK['subscribe']> | null = null;
+
+      const finish = (error?: unknown) => {
+        if (didFinish) {
+          return;
+        }
+
+        didFinish = true;
+        if (subscription) {
+          subscription.stop();
+          subscription = null;
+        }
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      };
+
+      try {
+        const relaySet = NDKRelaySet.fromRelayUrls(options.relayUrls, ndk);
+        logSubscription('private-messages', 'private-message-recipient-subscribe', {
+          recipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
+          recipientCount: 1,
+          recipients: [formatSubscriptionLogValue(options.recipientPubkey)],
+          ...buildFilterSinceDetails(options.since),
+          ...buildFilterUntilDetails(options.until),
+          ...buildSubscriptionRelayDetails(options.relayUrls),
+          ...privateMessageTargetDetails,
+        });
+        const privateMessagesForRecipientRestoreFilters: NDKFilter = {
+          kinds: [NDKKind.GiftWrap],
+          '#p': [options.recipientPubkey],
+          since: options.since,
+          until: options.until,
+        };
+        subscription = subscribeWithReqLogging(
+          'private-messages',
+          'private-messages-recipient-restore',
+          privateMessagesForRecipientRestoreFilters,
+          {
+            relaySet,
+            cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+            closeOnEose: true,
+            onEvent: (event) => {
+              const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+              updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
+              updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
+              queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
+                uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
+              });
+            },
+            onEose: () => {
+              logSubscription('private-messages', 'private-messages-recipient-eose', {
+                recipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
+                ...buildFilterSinceDetails(options.since),
+                ...buildFilterUntilDetails(options.until),
+              });
+              schedulePostPrivateMessagesEoseChecks();
+              flushPrivateMessagesUiRefreshNow();
+              finish();
+            },
+            onClose: () => {
+              finish();
+            },
+          },
+          {
+            recipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
+            ...buildFilterSinceDetails(options.since),
+            ...buildFilterUntilDetails(options.until),
+            ...buildSubscriptionRelayDetails(options.relayUrls),
+          }
+        );
+      } catch (error) {
+        reject(error);
+      }
+    });
+
+    await getPrivateMessagesIngestQueue();
+  }
+
   async function restoreGroupEpochHistory(
     groupPublicKey: string,
     epochPublicKey: string,
@@ -433,6 +541,58 @@ export function createPrivateMessagesBackfillRuntime({
       });
 
     groupEpochHistoryRestorePromises.set(restoreKey, restorePromise);
+    return restorePromise;
+  }
+
+  async function restorePrivateMessagesForRecipient(
+    recipientPubkey: string,
+    options: PrivateMessagesForRecipientRestoreOptions = {}
+  ): Promise<void> {
+    const normalizedRecipientPubkey = inputSanitizerService.normalizeHexKey(recipientPubkey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!normalizedRecipientPubkey || !loggedInPubkeyHex) {
+      return;
+    }
+
+    const restoreKey = `${loggedInPubkeyHex}:${normalizedRecipientPubkey}`;
+    if (!options.force && restoredPrivateMessagesForRecipientKeys.has(restoreKey)) {
+      return;
+    }
+
+    const existingRestore = privateMessagesForRecipientRestorePromises.get(restoreKey);
+    if (existingRestore) {
+      return existingRestore;
+    }
+
+    const restorePromise = (async () => {
+      const relayUrls = await resolvePrivateMessageReadRelayUrls(options.seedRelayUrls);
+      if (relayUrls.length === 0) {
+        return;
+      }
+
+      await ensureRelayConnections(relayUrls);
+      const now = Math.floor(Date.now() / 1000);
+      await runPrivateMessagesForRecipientRestoreWindow({
+        loggedInPubkeyHex,
+        recipientPubkey: normalizedRecipientPubkey,
+        relayUrls,
+        since: getPrivateMessagesStartupFloorSince(now),
+        until: now,
+      });
+      restoredPrivateMessagesForRecipientKeys.add(restoreKey);
+    })()
+      .catch((error) => {
+        console.warn(
+          'Failed to restore private messages for recipient',
+          normalizedRecipientPubkey,
+          error
+        );
+      })
+      .finally(() => {
+        privateMessagesForRecipientRestorePromises.delete(restoreKey);
+      });
+
+    privateMessagesForRecipientRestorePromises.set(restoreKey, restorePromise);
     return restorePromise;
   }
 
@@ -593,6 +753,7 @@ export function createPrivateMessagesBackfillRuntime({
 
   return {
     restoreGroupEpochHistory,
+    restorePrivateMessagesForRecipient,
     startPrivateMessagesStartupBackfill,
     stopPrivateMessagesBackfill,
   };
