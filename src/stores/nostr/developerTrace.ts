@@ -117,6 +117,8 @@ export function createDeveloperTraceRuntime({
     if (scope.startsWith('subscription:')) {
       return (
         phase === 'start' ||
+        phase === 'req' ||
+        phase === 'req-relay' ||
         phase === 'backfill-window-subscribe' ||
         phase === 'epoch-history-subscribe'
       );

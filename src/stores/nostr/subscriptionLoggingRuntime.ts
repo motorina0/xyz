@@ -251,12 +251,31 @@ export function createSubscriptionLoggingRuntime({
       subId,
     });
     const reqFrame = buildNostrReqFrame(subId, subscription.filters);
+    const relayUrls = Array.from(
+      new Set<string>(
+        [...(options.relaySet?.relayUrls ?? []), ...(options.relayUrls ?? [])].filter(
+          (url): url is string => typeof url === 'string' && url.trim().length > 0
+        )
+      )
+    );
 
     logDeveloperTrace('info', `subscription:${name}`, 'req', {
       subId,
       reqFrame,
+      ...buildSubscriptionRelayDetails(relayUrls),
       ...details,
     });
+
+    for (const [relayIndex, relayUrl] of relayUrls.entries()) {
+      logDeveloperTrace('info', `subscription:${name}`, 'req-relay', {
+        subId,
+        relayIndex,
+        relayCount: relayUrls.length,
+        relayUrl,
+        reqFrame,
+        ...details,
+      });
+    }
 
     return subscription;
   }
