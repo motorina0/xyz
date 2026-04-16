@@ -50,6 +50,7 @@ interface AuthSessionRuntimeDeps {
   relayStatusVersion: Ref<number>;
   resetContactSubscriptionsRuntimeState: (reason?: string) => void;
   resetEventSinceForFreshLogin: () => void;
+  resetGroupRosterSubscriptionRuntimeState: (reason?: string) => void;
   resetMyRelayListRuntimeState: (reason?: string) => void;
   resetPrivateContactListRuntimeState: (reason?: string) => void;
   resetPrivateMessagesIngestRuntimeState: () => void;
@@ -105,6 +106,7 @@ export function createAuthSessionRuntime({
   relayStatusVersion,
   resetContactSubscriptionsRuntimeState,
   resetEventSinceForFreshLogin,
+  resetGroupRosterSubscriptionRuntimeState,
   resetMyRelayListRuntimeState,
   resetPrivateContactListRuntimeState,
   resetPrivateMessagesIngestRuntimeState,
@@ -189,6 +191,7 @@ export function createAuthSessionRuntime({
       console.error('Failed to clear developer trace entries.', error);
     });
     resetContactSubscriptionsRuntimeState('clear-private-key');
+    resetGroupRosterSubscriptionRuntimeState('clear-private-key');
     resetMyRelayListRuntimeState('clear-private-key');
     resetPrivateContactListRuntimeState('clear-private-key');
     stopPrivateMessagesSubscription();

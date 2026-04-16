@@ -198,6 +198,7 @@ function createDeps(overrides: Record<string, unknown> = {}) {
     decryptContactCursorContent: vi.fn(),
     decryptGroupIdentitySecretContent: vi.fn(),
     decryptPrivatePreferencesContent: vi.fn(),
+    decryptPrivateStringContent: vi.fn(async () => 'b'.repeat(64)),
     deriveContactCursorDTag: vi.fn(async (contactPublicKey: string) => `dtag-${contactPublicKey}`),
     encryptContactCursorContent: vi.fn(),
     encryptGroupIdentitySecretContent: vi.fn(),
@@ -350,6 +351,8 @@ describe('privateStateRuntime', () => {
         version: 1,
         group_pubkey: ndkMocks.groupPubkey,
         group_privkey: 'b'.repeat(64),
+        epoch_number: 0,
+        epoch_privkey: 'c'.repeat(64),
       }),
       encryptGroupIdentitySecretContent: vi.fn().mockResolvedValue('encrypted-group-secret'),
       ensureGroupContactAndChat: vi.fn().mockResolvedValue(true),
@@ -406,15 +409,29 @@ describe('privateStateRuntime', () => {
     expect(result.memberListSyncError).toBeNull();
     expect(result.contactListSyncError).toBe('Failed to publish private contact list.');
     const publishEventMock = deps.publishEventWithRelayStatuses as ReturnType<typeof vi.fn>;
-    const memberListPublishCall = publishEventMock.mock.calls.find(
+    const groupListPublishCalls = publishEventMock.mock.calls.filter(
       ([event]) => event.kind === 30000
     );
-    expect(memberListPublishCall?.[0]).toMatchObject({
+    const ownerListPublishCall = groupListPublishCalls.find(
+      ([event]) => event.getMatchingTags('d')[0]?.[1] === 'members'
+    );
+    const sharedRosterPublishCall = groupListPublishCalls.find(
+      ([event]) => event.getMatchingTags('d')[0]?.[1] === 'roster'
+    );
+    expect(ownerListPublishCall?.[0]).toMatchObject({
       kind: 30000,
       pubkey: ndkMocks.groupPubkey,
       tags: [['d', 'members']],
     });
-    expect(String(memberListPublishCall?.[0]?.content ?? '')).toBe('encrypted:[]');
+    expect(String(ownerListPublishCall?.[0]?.content ?? '')).toBe('encrypted:[]');
+    expect(sharedRosterPublishCall?.[0]).toMatchObject({
+      kind: 30000,
+      pubkey: ndkMocks.groupPubkey,
+      tags: [['d', 'roster']],
+    });
+    expect(String(sharedRosterPublishCall?.[0]?.content ?? '')).toBe(
+      `encrypted:${JSON.stringify([['p', 'f'.repeat(64)]])}`
+    );
     expect(deps.persistIncomingGroupEpochTicket).toHaveBeenCalledWith(
       ndkMocks.groupPubkey,
       0,
@@ -436,6 +453,131 @@ describe('privateStateRuntime', () => {
       ['wss://relay.example']
     );
     expect(deps.chatStore.reload).toHaveBeenCalled();
+  });
+
+  it('refreshes group members from the shared roster and persists non-owner members only', async () => {
+    const deps = createDeps({
+      decryptPrivateStringContent: vi.fn(async () => 'b'.repeat(64)),
+      refreshContactByPublicKey: vi.fn().mockResolvedValue(undefined),
+      refreshContactRelayList: vi
+        .fn()
+        .mockResolvedValue([{ url: 'wss://relay.example/', read: true, write: true }]),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+    const groupContact = {
+      id: 7,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      name: 'Roster Group',
+      given_name: null,
+      meta: {
+        owner_public_key: 'f'.repeat(64),
+        group_members: [{ public_key: 'd'.repeat(64), name: 'Old Member' }],
+      },
+      relays: [{ url: 'wss://relay.example/', read: true, write: true }],
+      sendMessagesToAppRelays: false,
+    };
+    const groupChat = {
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      meta: {
+        current_epoch_public_key: ndkMocks.groupPubkey,
+        current_epoch_private_key_encrypted: 'encrypted-current-epoch',
+      },
+    };
+
+    serviceMocks.contactsService.getContactByPublicKey.mockImplementation(
+      async (pubkey: string) => {
+        if (pubkey === ndkMocks.groupPubkey) {
+          return groupContact;
+        }
+
+        if (pubkey === 'c'.repeat(64)) {
+          return {
+            id: 11,
+            public_key: 'c'.repeat(64),
+            type: 'user',
+            name: 'Charlie',
+            given_name: 'Charlie',
+            meta: {
+              about: 'New member',
+              nip05: 'charlie@example.com',
+              nprofile: 'nprofile-charlie',
+            },
+            relays: [],
+            sendMessagesToAppRelays: false,
+          };
+        }
+
+        return null;
+      }
+    );
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(groupChat);
+    serviceMocks.contactsService.updateContact.mockResolvedValue({
+      ...groupContact,
+      meta: {
+        ...groupContact.meta,
+        group_members: [
+          {
+            public_key: 'c'.repeat(64),
+            name: 'Charlie',
+            given_name: 'Charlie',
+            about: 'New member',
+            nip05: 'charlie@example.com',
+            nprofile: 'nprofile-charlie',
+          },
+        ],
+      },
+    });
+    (deps.ndk.fetchEvent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      created_at: 1700000002,
+      pubkey: ndkMocks.groupPubkey,
+      content: 'encrypted-roster',
+      tags: [['d', 'roster']],
+      getMatchingTags: (tagName: string) => (tagName === 'd' ? [['d', 'roster']] : []),
+    });
+    ndkMocks.signerDecrypt.mockImplementation(async (_user: unknown, content: string) => {
+      if (content === 'encrypted-roster') {
+        return JSON.stringify([
+          ['p', 'f'.repeat(64)],
+          ['p', 'c'.repeat(64)],
+        ]);
+      }
+
+      return content.startsWith('encrypted:') ? content.slice('encrypted:'.length) : content;
+    });
+
+    const result = await runtime.refreshGroupMembershipRoster(ndkMocks.groupPubkey, [
+      'wss://seed.example',
+    ]);
+
+    expect(result.ownerIncluded).toBe(true);
+    expect(result.memberPublicKeys).toEqual(['c'.repeat(64), 'f'.repeat(64)]);
+    expect(deps.refreshContactByPublicKey).toHaveBeenCalledWith(
+      'f'.repeat(64),
+      'ffffffffffffffff',
+      expect.objectContaining({
+        relayListSeedRelayUrls: ['wss://seed.example'],
+      })
+    );
+    expect(deps.refreshContactByPublicKey).toHaveBeenCalledWith(
+      'c'.repeat(64),
+      'cccccccccccccccc',
+      expect.objectContaining({
+        relayListSeedRelayUrls: ['wss://seed.example'],
+      })
+    );
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledWith(7, {
+      meta: expect.objectContaining({
+        owner_public_key: 'f'.repeat(64),
+        group_members: [
+          expect.objectContaining({
+            public_key: 'c'.repeat(64),
+            name: 'Charlie',
+          }),
+        ],
+      }),
+    });
   });
 
   it('restores group members from the latest group-authored follow set and excludes owner and group pubkeys', async () => {

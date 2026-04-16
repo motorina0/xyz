@@ -67,6 +67,7 @@ interface StartupContactSyncRuntimeDeps {
   setSyncRecentChatContactsPromise: (promise: Promise<void> | null) => void;
   subscribeContactProfileUpdates: (seedRelayUrls?: string[]) => Promise<void>;
   subscribeContactRelayListUpdates: (seedRelayUrls?: string[]) => Promise<void>;
+  subscribeGroupMembershipRosterUpdates: (seedRelayUrls?: string[]) => Promise<void>;
   subscribeMyRelayListUpdates: (seedRelayUrls?: string[]) => Promise<void>;
   subscribePrivateContactListUpdates: (seedRelayUrls?: string[]) => Promise<void>;
   subscribePrivateMessagesForLoggedInUser: (
@@ -105,6 +106,7 @@ export function createStartupContactSyncRuntime({
   setSyncRecentChatContactsPromise,
   subscribeContactProfileUpdates,
   subscribeContactRelayListUpdates,
+  subscribeGroupMembershipRosterUpdates,
   subscribeMyRelayListUpdates,
   subscribePrivateContactListUpdates,
   subscribePrivateMessagesForLoggedInUser,
@@ -392,6 +394,9 @@ export function createStartupContactSyncRuntime({
         );
         await runStartupTask('Failed to subscribe to private messages on startup', () =>
           subscribePrivateMessagesForLoggedInUser()
+        );
+        await runStartupTask('Failed to subscribe to group rosters on startup', () =>
+          subscribeGroupMembershipRosterUpdates(seedRelayUrls)
         );
         await runStartupTask('Failed to sync recent chat contacts on startup', () =>
           syncRecentChatContacts(seedRelayUrls)

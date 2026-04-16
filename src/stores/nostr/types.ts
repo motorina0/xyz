@@ -159,6 +159,7 @@ export interface PendingIncomingDeletion {
 export type SubscriptionLogName =
   | 'contact-profile'
   | 'contact-relay-list'
+  | 'group-roster'
   | 'my-relay-list'
   | 'private-contact-list'
   | 'private-messages';

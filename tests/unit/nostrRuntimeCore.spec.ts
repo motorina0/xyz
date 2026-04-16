@@ -235,6 +235,7 @@ describe('nostr runtime core logic', () => {
 
     const subscribeContactProfileUpdates = vi.fn(async () => {});
     const subscribeContactRelayListUpdates = vi.fn(async () => {});
+    const subscribeGroupMembershipRosterUpdates = vi.fn(async () => {});
     const subscribePrivateMessagesForLoggedInUser = vi.fn(async () => {});
 
     const runtime = createSubscriptionRefreshRuntime({
@@ -264,6 +265,7 @@ describe('nostr runtime core logic', () => {
       },
       subscribeContactProfileUpdates,
       subscribeContactRelayListUpdates,
+      subscribeGroupMembershipRosterUpdates,
       subscribePrivateMessagesForLoggedInUser,
     });
 

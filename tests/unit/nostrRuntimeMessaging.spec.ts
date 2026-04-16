@@ -193,6 +193,7 @@ function createAuthSessionHarness() {
     relayStatusVersion: refs.relayStatusVersion,
     resetContactSubscriptionsRuntimeState: vi.fn(),
     resetEventSinceForFreshLogin: vi.fn(),
+    resetGroupRosterSubscriptionRuntimeState: vi.fn(),
     resetMyRelayListRuntimeState: vi.fn(),
     resetPrivateContactListRuntimeState: vi.fn(),
     resetPrivateMessagesIngestRuntimeState: vi.fn(),

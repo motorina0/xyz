@@ -83,6 +83,11 @@ interface GroupEpochPublishRuntimeDeps {
     memberPublicKeys: string[],
     seedRelayUrls?: string[]
   ) => Promise<RelaySaveStatus>;
+  publishGroupMembershipRosterFollowSet: (
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls?: string[]
+  ) => Promise<RelaySaveStatus>;
   toIsoTimestampFromUnix: (value: number | undefined) => string;
   toStoredNostrEvent: (event: NDKEvent) => Promise<NostrEvent | null>;
 }
@@ -104,9 +109,20 @@ export function createGroupEpochPublishRuntime({
   publishEventWithRelayStatuses,
   publishGroupIdentitySecret,
   publishGroupMembershipFollowSet,
+  publishGroupMembershipRosterFollowSet,
   toIsoTimestampFromUnix,
   toStoredNostrEvent,
 }: GroupEpochPublishRuntimeDeps) {
+  interface PreparedGroupEpochTicketPublishState {
+    createdNewEpoch: boolean;
+    epochNumber: number;
+    normalizedGroupPublicKey: string;
+    normalizedMemberPubkeys: string[];
+    normalizedTicketRecipientPubkeys: string[];
+    publishedRelayUrls: Set<string>;
+    seedRelayUrls: string[];
+  }
+
   function normalizeUniqueMemberPublicKeys(
     memberPublicKeys: string[],
     excludedPublicKeys: string[] = []
@@ -127,14 +143,14 @@ export function createGroupEpochPublishRuntime({
     );
   }
 
-  async function publishGroupEpochTickets(
+  async function prepareGroupEpochTicketPublish(
     groupPublicKey: string,
     memberPublicKeys: string[],
     options: {
       rotateEpoch?: boolean;
       seedRelayUrls?: string[];
     } = {}
-  ): Promise<PublishGroupMemberChangesResult> {
+  ): Promise<PreparedGroupEpochTicketPublishState> {
     const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
     const loggedInPubkeyHex = getLoggedInPublicKeyHex();
     if (!loggedInPubkeyHex) {
@@ -231,21 +247,37 @@ export function createGroupEpochPublishRuntime({
       ? normalizeUniqueMemberPublicKeys([normalizedOwnerPublicKey, ...normalizedMemberPubkeys])
       : normalizedMemberPubkeys;
 
+    return {
+      createdNewEpoch: shouldRotateEpoch,
+      epochNumber,
+      normalizedGroupPublicKey,
+      normalizedMemberPubkeys,
+      normalizedTicketRecipientPubkeys,
+      publishedRelayUrls,
+      seedRelayUrls,
+    };
+  }
+
+  async function deliverPreparedGroupEpochTickets(
+    preparedState: PreparedGroupEpochTicketPublishState
+  ): Promise<{
+    failedMemberPubkeys: string[];
+  }> {
     const failedMemberPubkeys: string[] = [];
-    for (const memberPublicKey of normalizedTicketRecipientPubkeys) {
+    for (const memberPublicKey of preparedState.normalizedTicketRecipientPubkeys) {
       try {
         const relaySaveStatus = await sendGroupEpochTicket(
-          normalizedGroupPublicKey,
+          preparedState.normalizedGroupPublicKey,
           memberPublicKey,
-          seedRelayUrls
+          preparedState.seedRelayUrls
         );
         for (const relayUrl of relaySaveStatus.publishedRelayUrls) {
-          publishedRelayUrls.add(relayUrl);
+          preparedState.publishedRelayUrls.add(relayUrl);
         }
       } catch (error) {
         failedMemberPubkeys.push(memberPublicKey);
         console.warn('Failed to publish group epoch ticket', {
-          groupPublicKey: normalizedGroupPublicKey,
+          groupPublicKey: preparedState.normalizedGroupPublicKey,
           memberPublicKey,
           error,
         });
@@ -253,12 +285,34 @@ export function createGroupEpochPublishRuntime({
     }
 
     return {
-      epochNumber,
-      createdNewEpoch: shouldRotateEpoch,
-      attemptedMemberCount: normalizedTicketRecipientPubkeys.length,
-      deliveredMemberCount: normalizedTicketRecipientPubkeys.length - failedMemberPubkeys.length,
       failedMemberPubkeys,
-      publishedRelayUrls: Array.from(publishedRelayUrls.values()),
+    };
+  }
+
+  async function publishGroupEpochTickets(
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    options: {
+      rotateEpoch?: boolean;
+      seedRelayUrls?: string[];
+    } = {}
+  ): Promise<PublishGroupMemberChangesResult> {
+    const preparedState = await prepareGroupEpochTicketPublish(
+      groupPublicKey,
+      memberPublicKeys,
+      options
+    );
+    const deliveryResult = await deliverPreparedGroupEpochTickets(preparedState);
+
+    return {
+      epochNumber: preparedState.epochNumber,
+      createdNewEpoch: preparedState.createdNewEpoch,
+      attemptedMemberCount: preparedState.normalizedTicketRecipientPubkeys.length,
+      deliveredMemberCount:
+        preparedState.normalizedTicketRecipientPubkeys.length -
+        deliveryResult.failedMemberPubkeys.length,
+      failedMemberPubkeys: deliveryResult.failedMemberPubkeys,
+      publishedRelayUrls: Array.from(preparedState.publishedRelayUrls.values()),
     };
   }
 
@@ -267,10 +321,30 @@ export function createGroupEpochPublishRuntime({
     memberPublicKeys: string[],
     seedRelayUrls: string[] = []
   ): Promise<RotateGroupEpochResult> {
-    return publishGroupEpochTickets(groupPublicKey, memberPublicKeys, {
+    const preparedState = await prepareGroupEpochTicketPublish(groupPublicKey, memberPublicKeys, {
       rotateEpoch: true,
       seedRelayUrls,
     });
+    const rosterSave = await publishGroupMembershipRosterFollowSet(
+      preparedState.normalizedGroupPublicKey,
+      preparedState.normalizedMemberPubkeys,
+      preparedState.seedRelayUrls
+    );
+    for (const relayUrl of rosterSave.publishedRelayUrls) {
+      preparedState.publishedRelayUrls.add(relayUrl);
+    }
+    const deliveryResult = await deliverPreparedGroupEpochTickets(preparedState);
+
+    return {
+      epochNumber: preparedState.epochNumber,
+      createdNewEpoch: preparedState.createdNewEpoch,
+      attemptedMemberCount: preparedState.normalizedTicketRecipientPubkeys.length,
+      deliveredMemberCount:
+        preparedState.normalizedTicketRecipientPubkeys.length -
+        deliveryResult.failedMemberPubkeys.length,
+      failedMemberPubkeys: deliveryResult.failedMemberPubkeys,
+      publishedRelayUrls: Array.from(preparedState.publishedRelayUrls.values()),
+    };
   }
 
   async function publishGroupMemberChanges(
@@ -318,7 +392,7 @@ export function createGroupEpochPublishRuntime({
       (memberPublicKey) => !currentMemberPubkeySet.has(memberPublicKey)
     );
     const membershipDidChange = hasRemovedMembers || addedMemberPubkeys.length > 0;
-    const publishResult = await publishGroupEpochTickets(
+    const preparedState = await prepareGroupEpochTicketPublish(
       normalizedGroupPublicKey,
       hasRemovedMembers ? nextMemberPubkeys : addedMemberPubkeys,
       {
@@ -328,20 +402,46 @@ export function createGroupEpochPublishRuntime({
     );
 
     if (!membershipDidChange) {
-      return publishResult;
+      const deliveryResult = await deliverPreparedGroupEpochTickets(preparedState);
+      return {
+        epochNumber: preparedState.epochNumber,
+        createdNewEpoch: preparedState.createdNewEpoch,
+        attemptedMemberCount: preparedState.normalizedTicketRecipientPubkeys.length,
+        deliveredMemberCount:
+          preparedState.normalizedTicketRecipientPubkeys.length -
+          deliveryResult.failedMemberPubkeys.length,
+        failedMemberPubkeys: deliveryResult.failedMemberPubkeys,
+        publishedRelayUrls: Array.from(preparedState.publishedRelayUrls.values()),
+      };
     }
 
     const memberListSave = await publishGroupMembershipFollowSet(
-      normalizedGroupPublicKey,
+      preparedState.normalizedGroupPublicKey,
       nextMemberPubkeys,
-      seedRelayUrls
+      preparedState.seedRelayUrls
     );
+    const rosterSave = await publishGroupMembershipRosterFollowSet(
+      preparedState.normalizedGroupPublicKey,
+      nextMemberPubkeys,
+      preparedState.seedRelayUrls
+    );
+    for (const relayUrl of memberListSave.publishedRelayUrls) {
+      preparedState.publishedRelayUrls.add(relayUrl);
+    }
+    for (const relayUrl of rosterSave.publishedRelayUrls) {
+      preparedState.publishedRelayUrls.add(relayUrl);
+    }
+    const deliveryResult = await deliverPreparedGroupEpochTickets(preparedState);
 
     return {
-      ...publishResult,
-      publishedRelayUrls: Array.from(
-        new Set([...publishResult.publishedRelayUrls, ...memberListSave.publishedRelayUrls])
-      ),
+      epochNumber: preparedState.epochNumber,
+      createdNewEpoch: preparedState.createdNewEpoch,
+      attemptedMemberCount: preparedState.normalizedTicketRecipientPubkeys.length,
+      deliveredMemberCount:
+        preparedState.normalizedTicketRecipientPubkeys.length -
+        deliveryResult.failedMemberPubkeys.length,
+      failedMemberPubkeys: deliveryResult.failedMemberPubkeys,
+      publishedRelayUrls: Array.from(preparedState.publishedRelayUrls.values()),
     };
   }
 

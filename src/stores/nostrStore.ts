@@ -38,6 +38,7 @@ import {
 import { createGroupEpochPublishRuntime } from 'src/stores/nostr/groupEpochPublishRuntime';
 import { createGroupEpochStateRuntime } from 'src/stores/nostr/groupEpochStateRuntime';
 import { createGroupInviteRuntime } from 'src/stores/nostr/groupInviteRuntime';
+import { createGroupRosterSubscriptionRuntime } from 'src/stores/nostr/groupRosterSubscriptionRuntime';
 import { createInboundPresentationRuntime } from 'src/stores/nostr/inboundPresentationRuntime';
 import { createMessageEventRuntime } from 'src/stores/nostr/messageEventRuntime';
 import { createMessageMutationRuntime } from 'src/stores/nostr/messageMutationRuntime';
@@ -199,6 +200,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<void> = async () => {
     throw new Error('Private messages subscription runtime is not initialized.');
   };
+  let subscribeGroupMembershipRosterUpdatesRuntime: (
+    seedRelayUrls?: string[],
+    force?: boolean
+  ) => Promise<void> = async () => {
+    throw new Error('Group roster subscription runtime is not initialized.');
+  };
+  let resetGroupRosterSubscriptionRuntimeState = (_reason = 'replace'): void => {};
   let _ensurePrivateMessagesWatchdogRuntime: () => void = () => {};
   let isPrivateMessagesSubscriptionRelayTrackedRuntime: (relayUrl: string) => boolean = () => false;
   let markPrivateMessagesWatchdogRelayDisconnectedRuntime: (relayUrl: string) => void = () => {};
@@ -260,6 +268,13 @@ export const useNostrStore = defineStore('nostrStore', () => {
     throw new Error('Private state runtime is not initialized.');
   };
   let publishGroupMembershipFollowSetRuntime: (
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls?: string[]
+  ) => Promise<RelaySaveStatus> = async () => {
+    throw new Error('Private state runtime is not initialized.');
+  };
+  let publishGroupMembershipRosterFollowSetRuntime: (
     groupPublicKey: string,
     memberPublicKeys: string[],
     seedRelayUrls?: string[]
@@ -960,6 +975,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
       subscribeContactProfileUpdates(seedRelayUrls, force),
     subscribeContactRelayListUpdates: (seedRelayUrls, force) =>
       subscribeContactRelayListUpdates(seedRelayUrls, force),
+    subscribeGroupMembershipRosterUpdates: (seedRelayUrls, force) =>
+      subscribeGroupMembershipRosterUpdatesRuntime(seedRelayUrls, force),
     subscribePrivateMessagesForLoggedInUser: (force, options) =>
       subscribePrivateMessagesForLoggedInUserRuntime(force, options),
   });
@@ -1044,6 +1061,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
         publishGroupIdentitySecretRuntime(groupPublicKey, encryptedPrivateKey, seedRelayUrls),
       publishGroupMembershipFollowSet: (groupPublicKey, memberPublicKeys, seedRelayUrls = []) =>
         publishGroupMembershipFollowSetRuntime(groupPublicKey, memberPublicKeys, seedRelayUrls),
+      publishGroupMembershipRosterFollowSet: (
+        groupPublicKey,
+        memberPublicKeys,
+        seedRelayUrls = []
+      ) =>
+        publishGroupMembershipRosterFollowSetRuntime(
+          groupPublicKey,
+          memberPublicKeys,
+          seedRelayUrls
+        ),
       toIsoTimestampFromUnix,
       toStoredNostrEvent,
     });
@@ -1393,17 +1420,23 @@ export const useNostrStore = defineStore('nostrStore', () => {
   upsertIncomingGroupInviteRequestChatRuntime = upsertIncomingGroupInviteRequestChatImpl;
 
   const {
+    applyGroupMembershipRosterEvent,
     applyContactCursorStateToContact,
 
     createGroupChat,
     fetchContactCursorEvents,
     fetchGroupMembershipFollowSetPubkeys,
+    fetchGroupMembershipRosterPubkeys,
+    listGroupMembershipRosterSubscriptionContexts,
 
     publishGroupIdentitySecret: publishGroupIdentitySecretImpl,
     publishGroupMembershipFollowSet: publishGroupMembershipFollowSetImpl,
+    publishGroupMembershipRosterFollowSet: publishGroupMembershipRosterFollowSetImpl,
     publishPrivatePreferences,
+    refreshGroupMembershipRoster,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
+    restoreGroupMembershipRoster,
     restorePrivatePreferences,
     scheduleContactCursorPublish,
   } = createPrivateStateRuntime({
@@ -1421,6 +1454,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     decryptContactCursorContent,
     decryptGroupIdentitySecretContent,
     decryptPrivatePreferencesContent,
+    decryptPrivateStringContent,
     deriveContactCursorDTag,
     encryptContactCursorContent,
     encryptGroupIdentitySecretContent,
@@ -1461,6 +1495,32 @@ export const useNostrStore = defineStore('nostrStore', () => {
   });
   publishGroupIdentitySecretRuntime = publishGroupIdentitySecretImpl;
   publishGroupMembershipFollowSetRuntime = publishGroupMembershipFollowSetImpl;
+  publishGroupMembershipRosterFollowSetRuntime = publishGroupMembershipRosterFollowSetImpl;
+
+  const {
+    resetGroupRosterSubscriptionRuntimeState: resetGroupRosterSubscriptionRuntimeStateImpl,
+    subscribeGroupMembershipRosterUpdates: subscribeGroupMembershipRosterUpdatesImpl,
+  } = createGroupRosterSubscriptionRuntime({
+    applyGroupMembershipRosterEvent,
+    buildSubscriptionEventDetails,
+    buildSubscriptionRelayDetails,
+    ensureRelayConnections,
+    extractRelayUrlsFromEvent,
+    formatSubscriptionLogValue,
+    getFilterSince,
+    getLoggedInPublicKeyHex,
+    getStoredAuthMethod,
+    listGroupMembershipRosterSubscriptionContexts,
+    logSubscription,
+    ndk,
+    relaySignature,
+    restoreGroupMembershipRoster,
+    subscribeWithReqLogging,
+    updateStoredEventSinceFromCreatedAt,
+  });
+  resetGroupRosterSubscriptionRuntimeState = resetGroupRosterSubscriptionRuntimeStateImpl;
+  subscribeGroupMembershipRosterUpdatesRuntime = subscribeGroupMembershipRosterUpdatesImpl;
+
   const {
     refreshAllStoredContacts: refreshAllStoredContactsImpl,
     restoreStartupState,
@@ -1502,6 +1562,8 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     subscribeContactProfileUpdates,
     subscribeContactRelayListUpdates,
+    subscribeGroupMembershipRosterUpdates: (seedRelayUrls) =>
+      subscribeGroupMembershipRosterUpdatesRuntime(seedRelayUrls),
     subscribeMyRelayListUpdates,
     subscribePrivateContactListUpdates,
     subscribePrivateMessagesForLoggedInUser: (force, options) =>
@@ -1550,6 +1612,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStatusVersion,
     resetContactSubscriptionsRuntimeState,
     resetEventSinceForFreshLogin,
+    resetGroupRosterSubscriptionRuntimeState,
     resetMyRelayListRuntimeState,
     resetPrivateContactListRuntimeState,
     resetPrivateMessagesIngestRuntimeState,
@@ -1693,6 +1756,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchRelayNip11Info,
     fetchMyRelayList,
     fetchGroupMembershipFollowSetPubkeys,
+    fetchGroupMembershipRosterPubkeys,
     refreshContactRelayList,
     getDeveloperDiagnosticsSnapshot,
     getNip05Data,
@@ -1718,6 +1782,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensureRespondedPubkeyIsContact,
     fetchContactPreviewByPublicKey,
     refreshContactByPublicKey,
+    refreshGroupMembershipRoster,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
     restoreGroupEpochHistory: restoreGroupEpochHistoryRuntime,

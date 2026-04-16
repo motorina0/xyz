@@ -19,6 +19,10 @@ interface SubscriptionRefreshRuntimeDeps {
   ) => void;
   subscribeContactProfileUpdates: (seedRelayUrls?: string[], force?: boolean) => Promise<void>;
   subscribeContactRelayListUpdates: (seedRelayUrls?: string[], force?: boolean) => Promise<void>;
+  subscribeGroupMembershipRosterUpdates: (
+    seedRelayUrls?: string[],
+    force?: boolean
+  ) => Promise<void>;
   subscribePrivateMessagesForLoggedInUser: (
     force?: boolean,
     options?: SubscribePrivateMessagesOptions
@@ -37,6 +41,7 @@ export function createSubscriptionRefreshRuntime({
   setPrivateMessagesEpochSubscriptionRefreshTimerId,
   subscribeContactProfileUpdates,
   subscribeContactRelayListUpdates,
+  subscribeGroupMembershipRosterUpdates,
   subscribePrivateMessagesForLoggedInUser,
 }: SubscriptionRefreshRuntimeDeps) {
   function queueContactRelayListSubscriptionRefresh(
@@ -54,6 +59,15 @@ export function createSubscriptionRefreshRuntime({
   ): void {
     void subscribeContactProfileUpdates(seedRelayUrls, force).catch((error) => {
       console.warn('Failed to refresh contact profile subscription', error);
+    });
+  }
+
+  function queueGroupMembershipRosterSubscriptionRefresh(
+    seedRelayUrls: string[] = [],
+    force = false
+  ): void {
+    void subscribeGroupMembershipRosterUpdates(seedRelayUrls, force).catch((error) => {
+      console.warn('Failed to refresh group roster subscription', error);
     });
   }
 
@@ -126,11 +140,11 @@ export function createSubscriptionRefreshRuntime({
         setPrivateMessagesEpochSubscriptionRefreshQueue(
           getPrivateMessagesEpochSubscriptionRefreshQueue()
             .then(() => subscribePrivateMessagesForLoggedInUser(true, refreshOptions))
+            .then(() =>
+              subscribeGroupMembershipRosterUpdates(refreshOptions.seedRelayUrls ?? [], true)
+            )
             .catch((error) => {
-              console.warn(
-                'Failed to refresh private message subscription after epoch ticket update',
-                error
-              );
+              console.warn('Failed to refresh subscriptions after epoch ticket update', error);
             })
         );
       }, privateMessagesEpochSubscriptionRefreshDebounceMs)
@@ -143,6 +157,7 @@ export function createSubscriptionRefreshRuntime({
   ): void {
     queueContactProfileSubscriptionRefresh(seedRelayUrls, force);
     queueContactRelayListSubscriptionRefresh(seedRelayUrls, force);
+    queueGroupMembershipRosterSubscriptionRefresh(seedRelayUrls, force);
     queuePrivateMessagesSubscriptionRefresh(force, { seedRelayUrls });
   }
 
@@ -151,6 +166,7 @@ export function createSubscriptionRefreshRuntime({
     queueContactProfileSubscriptionRefresh,
     queueContactRelayListSubscriptionRefresh,
     queueEpochDrivenPrivateMessagesSubscriptionRefresh,
+    queueGroupMembershipRosterSubscriptionRefresh,
     queuePrivateMessagesSubscriptionRefresh,
     queueTrackedContactSubscriptionsRefresh,
   };

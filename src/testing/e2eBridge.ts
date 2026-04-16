@@ -22,6 +22,11 @@ export interface AppE2EUpdateContactRelaysOptions {
   relayUrls: string[];
 }
 
+export interface AppE2EReplaceStoredGroupMembersOptions {
+  groupPublicKey: string;
+  memberPublicKeys: string[];
+}
+
 export interface AppE2ESendMessagesOptions {
   chatId: string;
   texts: string[];
@@ -41,6 +46,7 @@ export interface AppE2EBridge {
   logout(): Promise<void>;
   rotateGroupEpoch(options: AppE2ERotateGroupEpochOptions): Promise<void>;
   sendMessages(options: AppE2ESendMessagesOptions): Promise<void>;
+  replaceStoredGroupMembers(options: AppE2EReplaceStoredGroupMembersOptions): Promise<void>;
   updateContactRelays(options: AppE2EUpdateContactRelaysOptions): Promise<void>;
 }
 
@@ -297,6 +303,50 @@ async function updateContactRelays(options: AppE2EUpdateContactRelaysOptions): P
   }
 }
 
+async function replaceStoredGroupMembers(
+  options: AppE2EReplaceStoredGroupMembersOptions
+): Promise<void> {
+  const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(options.groupPublicKey);
+  if (!normalizedGroupPublicKey) {
+    throw new Error('A valid group public key is required to update stored group members.');
+  }
+
+  const normalizedMemberPublicKeys = Array.from(
+    new Set(
+      (Array.isArray(options.memberPublicKeys) ? options.memberPublicKeys : [])
+        .map((value) => inputSanitizerService.normalizeHexKey(value))
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  const { contactsService } = await import('src/services/contactsService');
+  await contactsService.init();
+
+  const contact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+  if (!contact || contact.type !== 'group') {
+    throw new Error(`Group contact ${normalizedGroupPublicKey} was not found.`);
+  }
+
+  const nextMeta = {
+    ...(contact.meta ?? {}),
+  };
+  if (normalizedMemberPublicKeys.length > 0) {
+    nextMeta.group_members = normalizedMemberPublicKeys.map((publicKey) => ({
+      public_key: publicKey,
+      name: publicKey,
+    }));
+  } else {
+    delete nextMeta.group_members;
+  }
+
+  const updatedContact = await contactsService.updateContact(contact.id, {
+    meta: nextMeta,
+  });
+  if (!updatedContact) {
+    throw new Error(`Failed to update stored group members for ${normalizedGroupPublicKey}.`);
+  }
+}
+
 export function installAppE2EBridge(): void {
   if (typeof window === 'undefined') {
     return;
@@ -308,6 +358,7 @@ export function installAppE2EBridge(): void {
     refreshSession,
     logout,
     rotateGroupEpoch,
+    replaceStoredGroupMembers,
     sendMessages,
     updateContactRelays,
   };

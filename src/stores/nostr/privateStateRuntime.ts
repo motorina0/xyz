@@ -5,6 +5,7 @@ import {
   NDKPrivateKeySigner,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
+  NDKUser,
 } from '@nostr-dev-kit/ndk';
 import { chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
@@ -15,6 +16,7 @@ import {
   GROUP_IDENTITY_SECRET_TAG,
   GROUP_IDENTITY_SECRET_VERSION,
   GROUP_MEMBERS_FOLLOW_SET_D_TAG,
+  GROUP_SHARED_ROSTER_FOLLOW_SET_D_TAG,
   LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY,
   PRIVATE_PREFERENCES_D_TAG,
   PRIVATE_PREFERENCES_KIND,
@@ -28,10 +30,14 @@ import type {
   PrivatePreferences,
   RelaySaveStatus,
 } from 'src/stores/nostr/types';
-import { resolveGroupPublishRelayUrlsValue } from 'src/stores/nostr/valueUtils';
+import {
+  resolveCurrentGroupChatEpochEntryValue,
+  resolveGroupPublishRelayUrlsValue,
+} from 'src/stores/nostr/valueUtils';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 import {
   buildGroupMembershipFollowSetPrivateTags,
+  normalizeGroupMembershipSnapshotPubkeys,
   parseGroupMembershipFollowSetPrivateTags,
 } from 'src/utils/groupMembershipFollowSet';
 import {
@@ -46,6 +52,14 @@ interface RestoreRuntimeState {
   restoreContactCursorStatePromise: Promise<void> | null;
   restoreGroupIdentitySecretsPromise: Promise<void> | null;
   restorePrivatePreferencesPromise: Promise<void> | null;
+}
+
+interface GroupMembershipRosterRefreshResult {
+  didChange: boolean;
+  fallbackProfileCount: number;
+  memberPublicKeys: string[];
+  ownerIncluded: boolean;
+  refreshedProfileCount: number;
 }
 
 interface PrivateStateRuntimeDeps {
@@ -78,6 +92,7 @@ interface PrivateStateRuntimeDeps {
     content: string
   ) => Promise<GroupIdentitySecretContent | null>;
   decryptPrivatePreferencesContent: (content: string) => Promise<PrivatePreferences | null>;
+  decryptPrivateStringContent: (content: string) => Promise<string | null>;
   deriveContactCursorDTag: (contactPublicKey: string) => Promise<string | null>;
   encryptContactCursorContent: (cursor: ContactCursorState) => Promise<string>;
   encryptGroupIdentitySecretContent: (content: GroupIdentitySecretContent) => Promise<string>;
@@ -165,6 +180,7 @@ export function createPrivateStateRuntime({
   decryptContactCursorContent,
   decryptGroupIdentitySecretContent,
   decryptPrivatePreferencesContent,
+  decryptPrivateStringContent,
   deriveContactCursorDTag,
   encryptContactCursorContent,
   encryptGroupIdentitySecretContent,
@@ -189,6 +205,7 @@ export function createPrivateStateRuntime({
 
   readPrivatePreferencesFromStorage,
 
+  refreshContactByPublicKey,
   refreshContactRelayList,
   resolveLoggedInPublishRelayUrls,
   resolveLoggedInReadRelayUrls,
@@ -479,6 +496,229 @@ export function createPrivateStateRuntime({
     ]);
   }
 
+  async function encryptGroupMembershipRosterContent(
+    groupPrivateKey: string,
+    groupPublicKey: string,
+    epochPublicKey: string,
+    memberPublicKeys: string[],
+    excludedPubkeys: string[] = []
+  ): Promise<string> {
+    const normalizedGroupPrivateKey = inputSanitizerService.normalizeHexKey(groupPrivateKey);
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedEpochPublicKey = inputSanitizerService.normalizeHexKey(epochPublicKey);
+    if (!normalizedGroupPrivateKey || !normalizedGroupPublicKey || !normalizedEpochPublicKey) {
+      throw new Error('A valid group identity and epoch identity are required.');
+    }
+
+    const groupSigner = new NDKPrivateKeySigner(normalizedGroupPrivateKey, ndk);
+    const signerUser = await groupSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedGroupPublicKey) {
+      throw new Error('Decrypted group private key does not match the group public key.');
+    }
+
+    return groupSigner.encrypt(
+      new NDKUser({ pubkey: normalizedEpochPublicKey }),
+      JSON.stringify(
+        buildGroupMembershipFollowSetPrivateTags(memberPublicKeys, [
+          normalizedGroupPublicKey,
+          ...excludedPubkeys,
+        ])
+      ),
+      'nip44'
+    );
+  }
+
+  async function decryptGroupMembershipRosterContent(
+    epochPrivateKey: string,
+    epochPublicKey: string,
+    groupPublicKey: string,
+    content: string,
+    excludedPubkeys: string[] = []
+  ): Promise<string[]> {
+    const normalizedEpochPrivateKey = inputSanitizerService.normalizeHexKey(epochPrivateKey);
+    const normalizedEpochPublicKey = inputSanitizerService.normalizeHexKey(epochPublicKey);
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const normalizedContent = content.trim();
+    if (!normalizedEpochPrivateKey || !normalizedEpochPublicKey || !normalizedGroupPublicKey) {
+      throw new Error('A valid epoch identity and group identity are required.');
+    }
+
+    if (!normalizedContent) {
+      return [];
+    }
+
+    const epochSigner = new NDKPrivateKeySigner(normalizedEpochPrivateKey, ndk);
+    const signerUser = await epochSigner.user();
+    if (inputSanitizerService.normalizeHexKey(signerUser.pubkey) !== normalizedEpochPublicKey) {
+      throw new Error('Decrypted epoch private key does not match the current epoch public key.');
+    }
+
+    const decryptedContent = await epochSigner.decrypt(
+      new NDKUser({ pubkey: normalizedGroupPublicKey }),
+      normalizedContent,
+      'nip44'
+    );
+    let parsed: unknown;
+
+    try {
+      parsed = JSON.parse(decryptedContent);
+    } catch {
+      return [];
+    }
+
+    return parseGroupMembershipFollowSetPrivateTags(parsed, [
+      normalizedGroupPublicKey,
+      ...excludedPubkeys,
+    ]);
+  }
+
+  async function resolveReadableGroupMembershipRosterContext(
+    groupPublicKey: string,
+    seedRelayUrls: string[] = [],
+    options: {
+      refreshRelayList?: boolean;
+    } = {}
+  ): Promise<{
+    currentEpochPrivateKey: string;
+    currentEpochPublicKey: string;
+    groupContact: ContactRecord;
+    ownerPublicKey: string | null;
+    relayUrls: string[];
+  }> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+    const existingGroupContact =
+      await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!existingGroupContact || existingGroupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    if (options.refreshRelayList !== false) {
+      try {
+        await refreshContactRelayList(normalizedGroupPublicKey, seedRelayUrls);
+      } catch (error) {
+        console.warn(
+          'Failed to refresh group relay list before reading shared roster',
+          normalizedGroupPublicKey,
+          error
+        );
+      }
+    }
+
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const groupChat = await chatDataService.getChatByPublicKey(normalizedGroupPublicKey);
+    if (!groupChat || groupChat.type !== 'group') {
+      throw new Error('Group chat not found.');
+    }
+
+    const currentEpochEntry = resolveCurrentGroupChatEpochEntryValue(groupChat);
+    const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(
+      currentEpochEntry?.epoch_public_key ?? ''
+    );
+    const encryptedCurrentEpochPrivateKey =
+      currentEpochEntry?.epoch_private_key_encrypted?.trim() ?? '';
+    if (!currentEpochPublicKey || !encryptedCurrentEpochPrivateKey) {
+      throw new Error('Current epoch key is not available for this group.');
+    }
+
+    const currentEpochPrivateKey = await decryptPrivateStringContent(
+      encryptedCurrentEpochPrivateKey
+    );
+    if (!currentEpochPrivateKey) {
+      throw new Error('Failed to decrypt the current epoch private key.');
+    }
+    const currentEpochSigner = new NDKPrivateKeySigner(currentEpochPrivateKey, ndk);
+    const currentEpochUser = await currentEpochSigner.user();
+    if (inputSanitizerService.normalizeHexKey(currentEpochUser.pubkey) !== currentEpochPublicKey) {
+      throw new Error('Decrypted epoch private key does not match the current epoch public key.');
+    }
+
+    const relayUrls = resolveGroupPublishRelayUrlsValue(groupContact.relays, seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot read the shared roster without at least one group relay.');
+    }
+
+    return {
+      currentEpochPrivateKey,
+      currentEpochPublicKey,
+      groupContact,
+      ownerPublicKey: inputSanitizerService.normalizeHexKey(
+        groupContact.meta.owner_public_key ?? ''
+      ),
+      relayUrls,
+    };
+  }
+
+  async function listGroupMembershipRosterSubscriptionContexts(
+    seedRelayUrls: string[] = []
+  ): Promise<
+    Array<{
+      currentEpochPublicKey: string;
+      groupPublicKey: string;
+      relayUrls: string[];
+    }>
+  > {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      return [];
+    }
+
+    await Promise.all([contactsService.init(), chatDataService.init()]);
+    const chats = await chatDataService.listChats();
+    const contexts: Array<{
+      currentEpochPublicKey: string;
+      groupPublicKey: string;
+      relayUrls: string[];
+    }> = [];
+
+    for (const chat of chats) {
+      if (chat.type !== 'group') {
+        continue;
+      }
+
+      const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(chat.public_key);
+      if (!normalizedGroupPublicKey) {
+        continue;
+      }
+
+      const currentEpochEntry = resolveCurrentGroupChatEpochEntryValue(chat);
+      const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(
+        currentEpochEntry?.epoch_public_key ?? ''
+      );
+      if (!currentEpochPublicKey) {
+        continue;
+      }
+
+      const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+      if (!groupContact || groupContact.type !== 'group') {
+        continue;
+      }
+
+      const relayUrls = resolveGroupPublishRelayUrlsValue(groupContact.relays, seedRelayUrls);
+      if (relayUrls.length === 0) {
+        continue;
+      }
+
+      contexts.push({
+        currentEpochPublicKey,
+        groupPublicKey: normalizedGroupPublicKey,
+        relayUrls,
+      });
+    }
+
+    return contexts.sort((first, second) =>
+      first.groupPublicKey.localeCompare(second.groupPublicKey)
+    );
+  }
+
   async function fetchGroupMembershipFollowSetPubkeys(
     groupPublicKey: string,
     seedRelayUrls: string[] = []
@@ -570,6 +810,51 @@ export function createPrivateStateRuntime({
     );
   }
 
+  async function fetchGroupMembershipRosterPubkeys(
+    groupPublicKey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<string[]> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!getLoggedInPublicKeyHex()) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    const context = await resolveReadableGroupMembershipRosterContext(
+      normalizedGroupPublicKey,
+      seedRelayUrls
+    );
+    await ensureRelayConnections(context.relayUrls);
+
+    const relaySet = NDKRelaySet.fromRelayUrls(context.relayUrls, ndk);
+    const listEvent = await ndk.fetchEvent(
+      {
+        kinds: [NDKKind.FollowSet],
+        authors: [normalizedGroupPublicKey],
+        '#d': [GROUP_SHARED_ROSTER_FOLLOW_SET_D_TAG],
+      },
+      {
+        cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+      },
+      relaySet
+    );
+    if (!listEvent) {
+      throw new Error('Published group roster not found on relays.');
+    }
+
+    updateStoredEventSinceFromCreatedAt(listEvent.created_at);
+
+    return decryptGroupMembershipRosterContent(
+      context.currentEpochPrivateKey,
+      context.currentEpochPublicKey,
+      normalizedGroupPublicKey,
+      listEvent.content
+    );
+  }
+
   async function publishGroupMembershipFollowSet(
     groupPublicKey: string,
     memberPublicKeys: string[],
@@ -654,6 +939,358 @@ export function createPrivateStateRuntime({
     }
 
     return relaySaveStatus;
+  }
+
+  async function publishGroupMembershipRosterFollowSet(
+    groupPublicKey: string,
+    memberPublicKeys: string[],
+    seedRelayUrls: string[] = []
+  ): Promise<RelaySaveStatus> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('Missing public key in localStorage. Login is required.');
+    }
+
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await contactsService.init();
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    if (!normalizedOwnerPublicKey || normalizedOwnerPublicKey !== loggedInPubkeyHex) {
+      throw new Error('Only the owner can publish the group roster.');
+    }
+
+    const encryptedGroupPrivateKey = groupContact.meta.group_private_key_encrypted?.trim() ?? '';
+    if (!encryptedGroupPrivateKey) {
+      throw new Error('Encrypted group private key not found.');
+    }
+
+    const decryptedSecret = await decryptGroupIdentitySecretContent(encryptedGroupPrivateKey);
+    if (
+      !decryptedSecret ||
+      inputSanitizerService.normalizeHexKey(decryptedSecret.group_pubkey) !==
+        normalizedGroupPublicKey
+    ) {
+      throw new Error('Failed to decrypt the group private key.');
+    }
+
+    const currentEpochPrivateKey = inputSanitizerService.normalizeHexKey(
+      decryptedSecret.epoch_privkey ?? ''
+    );
+    if (!currentEpochPrivateKey) {
+      throw new Error('Current epoch private key not found.');
+    }
+
+    const currentEpochSigner = new NDKPrivateKeySigner(currentEpochPrivateKey, ndk);
+    const currentEpochUser = await currentEpochSigner.user();
+    const currentEpochPublicKey = inputSanitizerService.normalizeHexKey(currentEpochUser.pubkey);
+    if (!currentEpochPublicKey) {
+      throw new Error('Current epoch public key not found.');
+    }
+
+    const relayUrls = resolveGroupPublishRelayUrlsValue(groupContact.relays, seedRelayUrls);
+    if (relayUrls.length === 0) {
+      throw new Error('Cannot publish the group roster without at least one group relay.');
+    }
+
+    await ensureRelayConnections(relayUrls);
+
+    const rosterPubkeys = Array.from(new Set([normalizedOwnerPublicKey, ...memberPublicKeys]));
+    const listEvent = new NDKEvent(ndk, {
+      kind: NDKKind.FollowSet,
+      created_at: Math.floor(Date.now() / 1000),
+      pubkey: normalizedGroupPublicKey,
+      content: await encryptGroupMembershipRosterContent(
+        decryptedSecret.group_privkey,
+        normalizedGroupPublicKey,
+        currentEpochPublicKey,
+        rosterPubkeys
+      ),
+      tags: [['d', GROUP_SHARED_ROSTER_FOLLOW_SET_D_TAG]],
+    });
+
+    const groupSigner = new NDKPrivateKeySigner(decryptedSecret.group_privkey, ndk);
+    await listEvent.sign(groupSigner);
+
+    const publishResult = await publishEventWithRelayStatuses(listEvent, relayUrls, 'self');
+    if (
+      publishResult.relayStatuses.some(
+        (entry) => entry.direction === 'outbound' && entry.status === 'published'
+      )
+    ) {
+      updateStoredEventSinceFromCreatedAt(listEvent.created_at);
+    }
+
+    const relaySaveStatus = buildRelaySaveStatus(publishResult.relayStatuses);
+    if (publishResult.error && !relaySaveStatus.errorMessage) {
+      relaySaveStatus.errorMessage = publishResult.error.message;
+    }
+
+    if (publishResult.error && relaySaveStatus.publishedRelayUrls.length === 0) {
+      throw publishResult.error;
+    }
+
+    return relaySaveStatus;
+  }
+
+  function buildStoredGroupMemberFromContact(
+    memberPublicKey: string,
+    storedContact: Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'> | null,
+    existingMember: NonNullable<ContactMetadata['group_members']>[number] | null
+  ): NonNullable<ContactMetadata['group_members']>[number] {
+    const fallbackName =
+      existingMember?.name?.trim() || storedContact?.name?.trim() || memberPublicKey.slice(0, 16);
+    const about = storedContact?.meta?.about?.trim() || existingMember?.about?.trim() || '';
+    const nip05 = storedContact?.meta?.nip05?.trim() || existingMember?.nip05?.trim() || '';
+    const nprofile =
+      storedContact?.meta?.nprofile?.trim() || existingMember?.nprofile?.trim() || '';
+
+    return {
+      public_key: memberPublicKey,
+      name:
+        storedContact?.meta?.name?.trim() ||
+        storedContact?.meta?.display_name?.trim() ||
+        storedContact?.name?.trim() ||
+        fallbackName,
+      ...(storedContact?.given_name?.trim() || existingMember?.given_name?.trim()
+        ? {
+            given_name:
+              storedContact?.given_name?.trim() || existingMember?.given_name?.trim() || null,
+          }
+        : {}),
+      ...(about ? { about } : {}),
+      ...(nip05 ? { nip05 } : {}),
+      ...(nprofile ? { nprofile } : {}),
+    };
+  }
+
+  async function applyGroupMembershipRosterPubkeys(
+    groupPublicKey: string,
+    memberPubkeys: string[],
+    options: {
+      refreshMemberProfiles?: boolean;
+      seedRelayUrls?: string[];
+    } = {}
+  ): Promise<GroupMembershipRosterRefreshResult> {
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(groupPublicKey);
+    if (!normalizedGroupPublicKey) {
+      throw new Error('A valid group public key is required.');
+    }
+
+    await contactsService.init();
+    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
+    if (!groupContact || groupContact.type !== 'group') {
+      throw new Error('Group contact not found.');
+    }
+
+    const normalizedOwnerPublicKey = inputSanitizerService.normalizeHexKey(
+      groupContact.meta.owner_public_key ?? ''
+    );
+    const normalizedRosterPubkeys = normalizeGroupMembershipSnapshotPubkeys(memberPubkeys, [
+      normalizedGroupPublicKey,
+    ]);
+    const ownerIncluded = Boolean(
+      normalizedOwnerPublicKey && normalizedRosterPubkeys.includes(normalizedOwnerPublicKey)
+    );
+    const nonOwnerMemberPubkeys = normalizedRosterPubkeys.filter(
+      (memberPublicKey) => memberPublicKey !== normalizedOwnerPublicKey
+    );
+
+    const existingMembers = inputSanitizerService.normalizeContactGroupMembers(
+      groupContact.meta.group_members
+    );
+    const existingMembersByPubkey = new Map(
+      existingMembers.map((member) => [member.public_key, member] as const)
+    );
+
+    if (normalizedOwnerPublicKey && ownerIncluded && options.refreshMemberProfiles === true) {
+      try {
+        await refreshContactByPublicKey(
+          normalizedOwnerPublicKey,
+          normalizedOwnerPublicKey.slice(0, 16),
+          {
+            relayListSeedRelayUrls: options.seedRelayUrls,
+          }
+        );
+      } catch (error) {
+        console.warn('Failed to refresh group owner profile from shared roster', {
+          groupPublicKey: normalizedGroupPublicKey,
+          ownerPublicKey: normalizedOwnerPublicKey,
+          error,
+        });
+      }
+    }
+
+    let refreshedProfileCount = 0;
+    let fallbackProfileCount = 0;
+    const nextMembers = await Promise.all(
+      nonOwnerMemberPubkeys.map(async (memberPublicKey) => {
+        const existingMember = existingMembersByPubkey.get(memberPublicKey) ?? null;
+        const shouldRefreshProfile =
+          options.refreshMemberProfiles === true || existingMember === null;
+        if (shouldRefreshProfile) {
+          try {
+            await refreshContactByPublicKey(memberPublicKey, memberPublicKey.slice(0, 16), {
+              relayListSeedRelayUrls: options.seedRelayUrls,
+            });
+            refreshedProfileCount += 1;
+          } catch (error) {
+            fallbackProfileCount += 1;
+            console.warn('Failed to refresh group member profile from shared roster', {
+              groupPublicKey: normalizedGroupPublicKey,
+              memberPublicKey,
+              error,
+            });
+          }
+        }
+
+        const storedContact = await contactsService.getContactByPublicKey(memberPublicKey);
+        return buildStoredGroupMemberFromContact(memberPublicKey, storedContact, existingMember);
+      })
+    );
+
+    if (JSON.stringify(existingMembers) === JSON.stringify(nextMembers)) {
+      return {
+        didChange: false,
+        fallbackProfileCount,
+        memberPublicKeys: normalizedRosterPubkeys,
+        ownerIncluded,
+        refreshedProfileCount,
+      };
+    }
+
+    const nextMeta: ContactMetadata = {
+      ...(groupContact.meta ?? {}),
+    };
+    if (nextMembers.length > 0) {
+      nextMeta.group_members = nextMembers;
+    } else {
+      delete nextMeta.group_members;
+    }
+
+    const updatedContact = await contactsService.updateContact(groupContact.id, {
+      meta: nextMeta,
+    });
+    if (!updatedContact) {
+      throw new Error('Failed to persist refreshed group members.');
+    }
+
+    bumpContactListVersion();
+    await chatStore.reload();
+
+    return {
+      didChange: true,
+      fallbackProfileCount,
+      memberPublicKeys: normalizedRosterPubkeys,
+      ownerIncluded,
+      refreshedProfileCount,
+    };
+  }
+
+  async function refreshGroupMembershipRoster(
+    groupPublicKey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<GroupMembershipRosterRefreshResult> {
+    const memberPublicKeys = await fetchGroupMembershipRosterPubkeys(groupPublicKey, seedRelayUrls);
+    return applyGroupMembershipRosterPubkeys(groupPublicKey, memberPublicKeys, {
+      refreshMemberProfiles: true,
+      seedRelayUrls,
+    });
+  }
+
+  async function restoreGroupMembershipRoster(
+    groupPublicKey: string,
+    seedRelayUrls: string[] = []
+  ): Promise<boolean> {
+    try {
+      const memberPublicKeys = await fetchGroupMembershipRosterPubkeys(
+        groupPublicKey,
+        seedRelayUrls
+      );
+      const result = await applyGroupMembershipRosterPubkeys(groupPublicKey, memberPublicKeys, {
+        seedRelayUrls,
+      });
+      return result.didChange;
+    } catch (error) {
+      console.warn('Failed to restore group roster from relays', groupPublicKey, error);
+      return false;
+    }
+  }
+
+  function isSkippableGroupMembershipRosterEventError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error ?? '');
+
+    return (
+      message.includes('invalid MAC') ||
+      message.includes('Current epoch key is not available for this group.') ||
+      message.includes('Failed to decrypt the current epoch private key.') ||
+      message.includes('Decrypted epoch private key does not match the current epoch public key.')
+    );
+  }
+
+  async function applyGroupMembershipRosterEvent(
+    event: NDKEvent,
+    options: {
+      refreshMemberProfiles?: boolean;
+      seedRelayUrls?: string[];
+    } = {}
+  ): Promise<boolean> {
+    if (event.kind !== NDKKind.FollowSet) {
+      return false;
+    }
+
+    const normalizedGroupPublicKey = inputSanitizerService.normalizeHexKey(event.pubkey ?? '');
+    const dTag = event.getMatchingTags('d')[0]?.[1]?.trim() ?? '';
+    if (!normalizedGroupPublicKey || dTag !== GROUP_SHARED_ROSTER_FOLLOW_SET_D_TAG) {
+      return false;
+    }
+
+    try {
+      const context = await resolveReadableGroupMembershipRosterContext(
+        normalizedGroupPublicKey,
+        options.seedRelayUrls ?? [],
+        {
+          refreshRelayList: false,
+        }
+      );
+      const memberPublicKeys = await decryptGroupMembershipRosterContent(
+        context.currentEpochPrivateKey,
+        context.currentEpochPublicKey,
+        normalizedGroupPublicKey,
+        event.content
+      );
+      updateStoredEventSinceFromCreatedAt(event.created_at);
+      const result = await applyGroupMembershipRosterPubkeys(
+        normalizedGroupPublicKey,
+        memberPublicKeys,
+        {
+          refreshMemberProfiles: options.refreshMemberProfiles,
+          seedRelayUrls: options.seedRelayUrls,
+        }
+      );
+
+      return result.didChange;
+    } catch (error) {
+      if (isSkippableGroupMembershipRosterEventError(error)) {
+        console.warn('Skipping unreadable group roster event', {
+          eventId: normalizeEventId(event.id),
+          groupPublicKey: normalizedGroupPublicKey,
+          error,
+        });
+        return false;
+      }
+
+      throw error;
+    }
   }
 
   function buildRestoredGroupMembers(
@@ -988,13 +1625,23 @@ export function createPrivateStateRuntime({
       }
     }
 
-    let memberListSyncError: string | null = null;
+    const memberListSyncErrors: string[] = [];
     try {
       await publishGroupMembershipFollowSet(groupPublicKey, [], relayUrls);
     } catch (error) {
-      memberListSyncError =
-        error instanceof Error ? error.message : 'Failed to publish group member list.';
+      memberListSyncErrors.push(
+        error instanceof Error ? error.message : 'Failed to publish group member list.'
+      );
     }
+    try {
+      await publishGroupMembershipRosterFollowSet(groupPublicKey, [], relayUrls);
+    } catch (error) {
+      memberListSyncErrors.push(
+        error instanceof Error ? error.message : 'Failed to publish shared group roster.'
+      );
+    }
+    const memberListSyncError =
+      memberListSyncErrors.length > 0 ? memberListSyncErrors.join(' ') : null;
 
     let contactListSyncError: string | null = null;
     try {
@@ -1402,19 +2049,25 @@ export function createPrivateStateRuntime({
   }
 
   return {
+    applyGroupMembershipRosterEvent,
     applyContactCursorStateToContact,
     buildChatMetaWithUnseenReactionCount,
     compareContactCursorState,
     createGroupChat,
     fetchContactCursorEvents,
     fetchGroupMembershipFollowSetPubkeys,
+    fetchGroupMembershipRosterPubkeys,
     fetchGroupIdentitySecretEvents,
+    listGroupMembershipRosterSubscriptionContexts,
     publishContactCursor,
     publishGroupMembershipFollowSet,
+    publishGroupMembershipRosterFollowSet,
     publishGroupIdentitySecret,
     publishPrivatePreferences,
+    refreshGroupMembershipRoster,
     restoreContactCursorState,
     restoreGroupIdentitySecrets,
+    restoreGroupMembershipRoster,
     restorePrivatePreferences,
     scheduleContactCursorPublish,
   };

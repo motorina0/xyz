@@ -11,6 +11,7 @@ export const RELAY_STORAGE_KEYS = ['relays', 'nip65_relays'] as const;
 export const PRIVATE_CONTACT_LIST_D_TAG = 'xyz:contacts';
 export const PRIVATE_CONTACT_LIST_TITLE = 'Contacts';
 export const GROUP_MEMBERS_FOLLOW_SET_D_TAG = 'members';
+export const GROUP_SHARED_ROSTER_FOLLOW_SET_D_TAG = 'roster';
 export const PRIVATE_PREFERENCES_KIND = 30078;
 export const PRIVATE_PREFERENCES_D_TAG = '1';
 export const GROUP_IDENTITY_SECRET_TAG = 'group';

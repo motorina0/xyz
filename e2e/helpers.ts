@@ -121,6 +121,18 @@ export const TEST_ACCOUNTS = {
     privateKey: '55a9153bb5fc61f56063c7984c7e5cdc29aaf157c294a1f495de673b4b74b07f',
     displayName: 'Charlie Group',
   },
+  groupRosterOwner: {
+    privateKey: '1fd6615ac78925451c2141da6f8571a7c5bf0f2fd2d867dcfbb7d9ee41174950',
+    displayName: 'Owner Roster',
+  },
+  groupRosterBob: {
+    privateKey: '4a679b4a47d5481dc7054d48a0c6311f6cf6263f20bdb06ca27453ce38d9f5b6',
+    displayName: 'Bob Roster',
+  },
+  groupRosterCharlie: {
+    privateKey: '25e32ef7475673c3bd4dff29bcd91cc0ce355a60431f39183f92cf2d1dcf8fd4',
+    displayName: 'Charlie Roster',
+  },
   groupRemovalOwner: {
     privateKey: '93b14eb63c3a5da797dc6aa64cade4398866def096f7ae83835024986127c7ce',
     displayName: 'Owner Removal',
@@ -491,7 +503,7 @@ function resolveChatItem(page: Page, match?: string | RegExp) {
 function groupMemberListItem(page: Page, memberPublicKey: string) {
   return page
     .locator('.profile-members-list .q-item')
-    .filter({ hasText: memberPublicKey.slice(0, 32) })
+    .filter({ hasText: memberPublicKey.slice(0, 16) })
     .first();
 }
 
@@ -1143,7 +1155,7 @@ export async function addGroupMembersAndPublish(
   ).toHaveCount(0);
 
   for (const memberPublicKey of memberPublicKeys) {
-    await expect(page.getByText(memberPublicKey.slice(0, 32))).toBeVisible();
+    await expect(page.getByText(memberPublicKey.slice(0, 16))).toBeVisible();
   }
 }
 
@@ -1350,6 +1362,30 @@ export async function updateStoredContactRelays(
     {
       nextPublicKey: publicKey,
       nextRelayUrls: relayUrls,
+    }
+  );
+}
+
+export async function replaceStoredGroupMembers(
+  page: Page,
+  groupPublicKey: string,
+  memberPublicKeys: string[]
+): Promise<void> {
+  await page.evaluate(
+    async ({ nextGroupPublicKey, nextMemberPublicKeys }) => {
+      const bridge = window.__appE2E__;
+      if (!bridge) {
+        throw new Error('E2E bridge is not available.');
+      }
+
+      await bridge.replaceStoredGroupMembers({
+        groupPublicKey: nextGroupPublicKey,
+        memberPublicKeys: nextMemberPublicKeys,
+      });
+    },
+    {
+      nextGroupPublicKey: groupPublicKey,
+      nextMemberPublicKeys: memberPublicKeys,
     }
   );
 }
