@@ -475,6 +475,10 @@ const isLoadingNewerMessages = computed(() => currentPaginationState.value.isLoa
 const canNavigateThreadSearch = computed(() => {
   return !isThreadSearchBusy.value && threadSearchMatches.value.length > 0;
 });
+const isChatActuallyVisible = computed(() => {
+  const currentChatId = props.chat?.id ?? null;
+  return Boolean(currentChatId && chatStore.visibleChatId === currentChatId);
+});
 const threadSearchStatusLabel = computed(() => {
   const normalizedQuery = threadSearchQuery.value.trim();
   if (!normalizedQuery) {
@@ -1642,7 +1646,7 @@ function scheduleVisibleReactionViewSync(): void {
 
 async function syncVisibleReactionViews(): Promise<void> {
   const currentChatId = props.chat?.id ?? null;
-  if (!currentChatId) {
+  if (!currentChatId || !isChatActuallyVisible.value) {
     return;
   }
   const currentLastSeenReceivedActivityAt = readCurrentLastSeenReceivedActivityAt();
@@ -1977,6 +1981,17 @@ watch(
     void refreshMessageAuthorIdentities();
   },
   { immediate: true }
+);
+
+watch(
+  isChatActuallyVisible,
+  (isVisible) => {
+    if (!isVisible) {
+      return;
+    }
+
+    scheduleVisibleReactionViewSync();
+  }
 );
 
 watch(

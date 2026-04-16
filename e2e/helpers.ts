@@ -73,6 +73,14 @@ export const TEST_ACCOUNTS = {
     privateKey: '8b345418bf7c7cf7cf6f4dc1c4d1a9f3f4a762ec5b8fdf8cbd2f9e4f3cd06dea',
     displayName: 'Charlie Mark Read',
   },
+  backgroundUnreadAlice: {
+    privateKey: '51673d4b5a0e2bc7f1d9e4c3b2a187650f1e2d3c4b5a69788796a5b4c3d2e101',
+    displayName: 'Alice Background Unread',
+  },
+  backgroundUnreadBob: {
+    privateKey: '2c4e6f8091a2b3c4d5e6f70819283746a5b4c3d2e1f001122334455667788990',
+    displayName: 'Bob Background Unread',
+  },
   reactionReloadAlice: {
     privateKey: 'ed0d7a4610d16dd4ffb0a14fe92cfad11ad2bd575f53dcfc0bbfd799a098ce8e',
     displayName: 'Alice Reactions Reload',
@@ -671,6 +679,38 @@ export async function refreshSession(page: Page, chatId?: string): Promise<void>
   );
 }
 
+export async function setAppVisibility(
+  page: Page,
+  options: {
+    visibilityState: 'visible' | 'hidden';
+    hasFocus: boolean;
+  }
+): Promise<void> {
+  await page.evaluate(
+    ({ nextVisibilityState, nextHasFocus }) => {
+      Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => nextVisibilityState,
+      });
+      Object.defineProperty(document, 'hidden', {
+        configurable: true,
+        get: () => nextVisibilityState !== 'visible',
+      });
+      Object.defineProperty(document, 'hasFocus', {
+        configurable: true,
+        value: () => nextHasFocus,
+      });
+
+      document.dispatchEvent(new Event('visibilitychange'));
+      window.dispatchEvent(new Event(nextHasFocus ? 'focus' : 'blur'));
+    },
+    {
+      nextVisibilityState: options.visibilityState,
+      nextHasFocus: options.hasFocus,
+    }
+  );
+}
+
 export async function openDirectChatFromIdentifier(
   page: Page,
   identifier: string,
@@ -872,6 +912,21 @@ export async function waitForChatUnreadCount(
 
 export async function waitForNoChatUnreadBadge(page: Page, match?: string | RegExp): Promise<void> {
   await expect(resolveChatItem(page, match).locator('.chat-item__meta .q-badge')).toHaveCount(0, {
+    timeout: 12_000,
+  });
+}
+
+export async function waitForUnreadChatTotalBadge(page: Page, count: number): Promise<void> {
+  await expect(page.locator('.nav-rail__badge, .mobile-nav__badge').first()).toHaveText(
+    String(count),
+    {
+      timeout: 12_000,
+    }
+  );
+}
+
+export async function waitForNoUnreadChatTotalBadge(page: Page): Promise<void> {
+  await expect(page.locator('.nav-rail__badge, .mobile-nav__badge')).toHaveCount(0, {
     timeout: 12_000,
   });
 }

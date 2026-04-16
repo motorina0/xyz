@@ -22,6 +22,7 @@ import {
   searchThreadMessages,
   sendMessage,
   sendMessagesViaBridge,
+  setAppVisibility,
   TEST_ACCOUNTS,
   waitForChatPreview,
   waitForChatReactionBadge,
@@ -30,12 +31,14 @@ import {
   waitForNoChatUnreadBadge,
   waitForNoRequests,
   waitForNoThreadMessage,
+  waitForNoUnreadChatTotalBadge,
   waitForReaction,
   waitForReactionCount,
   waitForThreadMessage,
   waitForThreadMessageCount,
   waitForThreadSearchFocusedMessage,
   waitForThreadSearchStatus,
+  waitForUnreadChatTotalBadge,
 } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
@@ -149,6 +152,7 @@ test('mark as read survives a hard reload', async ({ browser }) => {
     await establishAcceptedDirectChat(alice, bob);
 
     await bob.page.goto('/#/settings/profile');
+    await expect(bob.page.getByTestId('settings-logout-item')).toBeVisible();
     await sendMessage(alice.page, firstMessage, {
       chatId: bob.session.publicKey,
     });
@@ -172,6 +176,46 @@ test('mark as read survives a hard reload', async ({ browser }) => {
     await expectNoUnexpectedBrowserErrors([alice, bob, charlie]);
   } finally {
     await disposeUsers(alice, bob, charlie);
+  }
+});
+
+test('active thread only marks incoming messages as read after the app regains focus', async ({
+  browser,
+}) => {
+  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.backgroundUnreadAlice);
+  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.backgroundUnreadBob);
+
+  try {
+    const hiddenMessage = `background-unread-${Date.now()}`;
+
+    await establishAcceptedDirectChat(alice, bob);
+    await navigateToChat(bob.page, alice.session.publicKey);
+    await waitForNoUnreadChatTotalBadge(bob.page);
+    await waitForNoChatUnreadBadge(bob.page);
+
+    await setAppVisibility(bob.page, {
+      visibilityState: 'hidden',
+      hasFocus: false,
+    });
+
+    await sendMessage(alice.page, hiddenMessage, {
+      chatId: bob.session.publicKey,
+    });
+
+    await waitForChatPreview(bob.page, hiddenMessage);
+    await waitForChatUnreadCount(bob.page, 1);
+    await waitForUnreadChatTotalBadge(bob.page, 1);
+
+    await setAppVisibility(bob.page, {
+      visibilityState: 'visible',
+      hasFocus: true,
+    });
+
+    await waitForNoChatUnreadBadge(bob.page);
+    await waitForNoUnreadChatTotalBadge(bob.page);
+    await expectNoUnexpectedBrowserErrors([alice, bob]);
+  } finally {
+    await disposeUsers(alice, bob);
   }
 });
 

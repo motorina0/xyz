@@ -114,6 +114,31 @@ const routeLoaders: Record<NavigationSection, RouteLoader> = {
 const unreadChatCount = computed(() => chatStore.unreadChatCount);
 const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadChatCount.value));
 
+function readIsDocumentVisible(): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  return document.visibilityState === 'visible';
+}
+
+function readIsWindowFocused(): boolean {
+  if (typeof document === 'undefined') {
+    return false;
+  }
+
+  return typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+}
+
+const isDocumentVisible = ref(readIsDocumentVisible());
+const isWindowFocused = ref(readIsWindowFocused());
+const isAppForeground = computed(() => isDocumentVisible.value && isWindowFocused.value);
+
+function syncAppForegroundState(): void {
+  isDocumentVisible.value = readIsDocumentVisible();
+  isWindowFocused.value = readIsWindowFocused();
+}
+
 function hasActivePubkeyParam(value: unknown): boolean {
   if (Array.isArray(value)) {
     return value.some((entry) => typeof entry === 'string' && entry.trim().length > 0);
@@ -143,6 +168,10 @@ const showMobileNav = computed(() => {
 });
 
 const visibleChatId = computed(() => {
+  if (!isAppForeground.value) {
+    return null;
+  }
+
   if (route.name !== 'chats') {
     return null;
   }
@@ -182,6 +211,11 @@ let mobilePreloadTimeoutId: number | null = null;
 let startupRestoreFrameId: number | null = null;
 
 onMounted(() => {
+  syncAppForegroundState();
+  document.addEventListener('visibilitychange', syncAppForegroundState);
+  window.addEventListener('focus', syncAppForegroundState);
+  window.addEventListener('blur', syncAppForegroundState);
+
   startupRestoreFrameId = window.requestAnimationFrame(() => {
     startupRestoreFrameId = null;
     void restoreStartupState();
@@ -198,6 +232,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', syncAppForegroundState);
+  window.removeEventListener('focus', syncAppForegroundState);
+  window.removeEventListener('blur', syncAppForegroundState);
   removeAfterEachHook();
 
   if (mobilePreloadTimeoutId !== null) {
