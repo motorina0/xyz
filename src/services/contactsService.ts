@@ -7,6 +7,7 @@ import type {
   CreateContactInput,
   UpdateContactInput,
 } from 'src/types/contact';
+import { searchContactsForList } from 'src/utils/contactList';
 import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 
 interface RawContactStoreRecord {
@@ -104,10 +105,6 @@ function normalizeOptionalString(value: unknown): string | null {
 
   const normalized = value.trim();
   return normalized || null;
-}
-
-function normalizeNameValue(value: string): string {
-  return value.trim().toLowerCase();
 }
 
 function normalizeBooleanFlag(value: unknown): boolean {
@@ -314,21 +311,16 @@ class ContactsService {
   }
 
   async searchContacts(searchText: string): Promise<ContactRecord[]> {
-    const query = searchText.trim().toLowerCase();
+    const query = searchText.trim();
     if (!query) {
       return this.listContacts();
     }
 
-    const records = await this.listStoreRecords();
-    const filteredRecords = records.filter((record) => {
-      return (
-        record.public_key.includes(query) ||
-        normalizeNameValue(record.name).includes(query) ||
-        normalizeNameValue(record.given_name ?? '').includes(query)
-      );
-    });
+    const contacts = (await this.listStoreRecords())
+      .sort(compareContactsByName)
+      .map((record) => toContactRecord(record));
 
-    return filteredRecords.sort(compareContactsByName).map((record) => toContactRecord(record));
+    return searchContactsForList(contacts, query);
   }
 
   async getContactById(id: number): Promise<ContactRecord | null> {

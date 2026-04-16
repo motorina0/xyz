@@ -212,6 +212,13 @@ import {
   type ContactProfileForm
 } from 'src/types/contactProfile';
 import { buildAvatarText } from 'src/utils/avatarText';
+import {
+  contactListCaption as formatContactListCaption,
+  contactListTitle as formatContactListTitle,
+  searchContactsForList,
+  sortContactsForList,
+  type ContactListOptions
+} from 'src/utils/contactList';
 import { buildContactProfilePublishPayload } from 'src/utils/contactProfilePublish';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -352,60 +359,29 @@ function contactPubkeySnippet(contact: ContactRecord): string {
   return contact.public_key.trim().slice(0, 32);
 }
 
-function contactListCandidates(contact: ContactRecord): string[] {
-  const npub = contact.meta.npub?.trim() || nostrStore.encodeNpub(contact.public_key) || '';
-
-  return [contact.meta.name?.trim() ?? '', contact.meta.about?.trim() ?? '', contact.meta.nip05?.trim() ?? '', npub].filter(
-    (value) => value.length > 0
-  );
-}
-
-function isLoggedInContact(contact: ContactRecord): boolean {
-  const loggedInPubkey = nostrStore.getLoggedInPublicKeyHex();
-  if (!loggedInPubkey) {
-    return false;
-  }
-
-  return contact.public_key.trim().toLowerCase() === loggedInPubkey;
+function currentContactListOptions(): ContactListOptions {
+  return {
+    loggedInPubkey: nostrStore.getLoggedInPublicKeyHex(),
+    resolveNpub: (publicKey: string) => nostrStore.encodeNpub(publicKey)
+  };
 }
 
 function contactListTitle(contact: ContactRecord): string {
-  if (isLoggedInContact(contact)) {
-    return 'My Self';
-  }
-
-  return contactListCandidates(contact)[0] ?? contactPubkeySnippet(contact);
+  return formatContactListTitle(contact, currentContactListOptions()) || contactPubkeySnippet(contact);
 }
 
 function contactListCaption(contact: ContactRecord): string {
-  const candidates = contactListCandidates(contact);
-  if (isLoggedInContact(contact)) {
-    return candidates[0] ?? '';
-  }
-
-  return candidates[1] ?? '';
+  return formatContactListCaption(contact, currentContactListOptions());
 }
 
-function compareContactListValue(first: ContactRecord, second: ContactRecord): number {
-  const byTitle = contactListTitle(first).localeCompare(contactListTitle(second), undefined, {
-    sensitivity: 'base'
-  });
-  if (byTitle !== 0) {
-    return byTitle;
+function applyContactListQuery(nextContacts: ContactRecord[], query = ''): ContactRecord[] {
+  const options = currentContactListOptions();
+  const normalizedQuery = typeof query === 'string' ? query.trim() : '';
+  if (!normalizedQuery) {
+    return sortContactsForList(nextContacts, options);
   }
 
-  const byCaption = contactListCaption(first).localeCompare(contactListCaption(second), undefined, {
-    sensitivity: 'base'
-  });
-  if (byCaption !== 0) {
-    return byCaption;
-  }
-
-  return first.public_key.localeCompare(second.public_key);
-}
-
-function sortContactsForList(nextContacts: ContactRecord[]): ContactRecord[] {
-  return [...nextContacts].sort(compareContactListValue);
+  return searchContactsForList(nextContacts, normalizedQuery, options);
 }
 
 function mapContactToProfileForm(contact: ContactRecord): ContactProfileForm {
@@ -500,8 +476,9 @@ function buildUpdatedContactMeta(contact: ContactRecord, profile: ContactProfile
 }
 
 function updateContactInState(updatedContact: ContactRecord): void {
-  contacts.value = sortContactsForList(
-    contacts.value.map((contact) => (contact.id === updatedContact.id ? updatedContact : contact))
+  contacts.value = applyContactListQuery(
+    contacts.value.map((contact) => (contact.id === updatedContact.id ? updatedContact : contact)),
+    contactQuery.value
   );
 
   if (selectedContactId.value === updatedContact.id) {
@@ -525,19 +502,17 @@ async function loadContacts(query = ''): Promise<void> {
   const normalizedQuery = typeof query === 'string' ? query : '';
 
   try {
-    const nextContacts = normalizedQuery.trim()
-      ? await contactsService.searchContacts(normalizedQuery)
-      : await contactsService.listContacts();
+    const nextContacts = await contactsService.listContacts();
 
     if (requestId !== latestSearchRequestId) {
       return;
     }
 
-    contacts.value = sortContactsForList(nextContacts);
+    contacts.value = applyContactListQuery(nextContacts, normalizedQuery);
 
     if (
       selectedContactId.value !== null &&
-      !nextContacts.some((contact) => contact.id === selectedContactId.value)
+      !contacts.value.some((contact) => contact.id === selectedContactId.value)
     ) {
       selectedContactId.value = null;
       selectedContactPubkey.value = '';
