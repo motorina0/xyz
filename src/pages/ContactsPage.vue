@@ -823,7 +823,7 @@ async function handleSendMessagesToAppRelaysUpdate(value: boolean): Promise<void
   }
 }
 
-async function handlePublishSelectedGroupProfile(): Promise<void> {
+async function handlePublishSelectedGroupProfile(nextProfile: ContactProfileForm): Promise<void> {
   if (isPublishingSelectedGroupProfile.value || !canPublishSelectedGroupProfile.value) {
     return;
   }
@@ -836,17 +836,18 @@ async function handlePublishSelectedGroupProfile(): Promise<void> {
   isPublishingSelectedGroupProfile.value = true;
 
   try {
+    selectedContactProfile.value = nextProfile;
     await nostrStore.publishGroupMetadata(
       selectedContact.public_key,
-      buildContactProfilePublishPayload(selectedContactProfile.value),
+      buildContactProfilePublishPayload(nextProfile),
       relayStore.relays
     );
 
     const updatedContact = await contactsService.updateContact(selectedContact.id, {
-      ...(selectedContactProfile.value.name.trim()
-        ? { name: selectedContactProfile.value.name.trim() }
+      ...(nextProfile.name.trim()
+        ? { name: nextProfile.name.trim() }
         : {}),
-      meta: buildUpdatedContactMeta(selectedContact, selectedContactProfile.value)
+      meta: buildUpdatedContactMeta(selectedContact, nextProfile)
     });
 
     if (updatedContact) {

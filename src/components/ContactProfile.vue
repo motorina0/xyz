@@ -108,7 +108,7 @@
                 data-testid="contact-profile-publish-button"
                 :disable="!normalizedHeaderPubkey"
                 :loading="props.isPublishing"
-                @click="emit('publish')"
+                @click="handlePublishProfile"
               />
             </div>
 
@@ -1063,7 +1063,7 @@ const emit = defineEmits<{
   (event: 'update:send-messages-to-app-relays', value: boolean): void;
   (event: 'open-chat'): void;
   (event: 'open-relays-settings'): void;
-  (event: 'publish'): void;
+  (event: 'publish', value: ContactProfileForm): void;
 }>();
 
 const $q = useQuasar();
@@ -1803,6 +1803,10 @@ function normalizePubkeyInput(input: string): string | null {
 
 function toggleDisplayedPubkeyFormat(): void {
   displayedPubkeyFormat.value = displayedPubkeyFormat.value === 'npub' ? 'hex' : 'npub';
+}
+
+function handlePublishProfile(): void {
+  emit('publish', cloneProfile(localProfile));
 }
 
 function handleRelayExpand(relay: string): void {

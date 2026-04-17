@@ -53,7 +53,14 @@ The app currently uses the Nostr flows documented in [NIPS_USED.md](./NIPS_USED.
 
 ## Getting Started
 
-Node.js 20 is recommended. The repo currently declares support for Node.js 18+ and npm 8+.
+Node.js 24 and npm 11 are required for local development and CI. The repo now declares support for Node.js 24.x.
+
+If you use `nvm`, run:
+
+```bash
+nvm install
+nvm use
+```
 
 Install dependencies:
 

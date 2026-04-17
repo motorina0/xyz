@@ -1235,11 +1235,22 @@ export async function publishOwnProfile(
 ): Promise<void> {
   await page.goto('/#/settings/profile');
   const nameInput = page.getByPlaceholder('Your profile name').first();
+  const aboutInput = page.getByPlaceholder('Short bio').first();
   await expect(nameInput).toBeVisible();
   await nameInput.fill(options.name);
 
   if (typeof options.about === 'string') {
-    await page.getByPlaceholder('Short bio').first().fill(options.about);
+    await aboutInput.fill(options.about);
+  }
+
+  await expect(nameInput).toHaveValue(options.name);
+  if (typeof options.about === 'string') {
+    await expect(aboutInput).toHaveValue(options.about);
+  }
+  await page.waitForTimeout(250);
+  await expect(nameInput).toHaveValue(options.name);
+  if (typeof options.about === 'string') {
+    await expect(aboutInput).toHaveValue(options.about);
   }
 
   await page.getByTestId('contact-profile-publish-button').click();

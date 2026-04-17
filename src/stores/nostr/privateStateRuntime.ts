@@ -62,6 +62,9 @@ interface GroupMembershipRosterRefreshResult {
   refreshedProfileCount: number;
 }
 
+const GROUP_MEMBER_PROFILE_REFRESH_RETRY_DELAY_MS = 500;
+const GROUP_MEMBER_PROFILE_REFRESH_RETRY_ATTEMPTS = 4;
+
 interface PrivateStateRuntimeDeps {
   beginStartupStep: (stepId: any) => void;
   buildFreshPrivatePreferences: (existing?: Record<string, unknown>) => PrivatePreferences;
@@ -1076,6 +1079,56 @@ export function createPrivateStateRuntime({
     };
   }
 
+  async function waitForGroupMemberProfileRefreshRetry(): Promise<void> {
+    await new Promise<void>((resolve) => {
+      globalThis.setTimeout(resolve, GROUP_MEMBER_PROFILE_REFRESH_RETRY_DELAY_MS);
+    });
+  }
+
+  function hasResolvedGroupMemberPreview(
+    previewContact: Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'>,
+    fallbackName: string
+  ): boolean {
+    if (
+      previewContact.meta?.display_name?.trim() ||
+      previewContact.meta?.name?.trim() ||
+      previewContact.given_name?.trim()
+    ) {
+      return true;
+    }
+
+    const previewName = previewContact.name.trim();
+    return (
+      previewName.length > 0 &&
+      previewName !== fallbackName &&
+      previewName !== previewContact.public_key
+    );
+  }
+
+  async function fetchGroupMemberPreviewWithRetry(
+    memberPublicKey: string,
+    fallbackName: string,
+    seedRelayUrls: string[]
+  ): Promise<Pick<ContactRecord, 'public_key' | 'name' | 'given_name' | 'meta'> | null> {
+    for (let attempt = 0; attempt < GROUP_MEMBER_PROFILE_REFRESH_RETRY_ATTEMPTS; attempt += 1) {
+      const previewContact = await fetchContactPreviewByPublicKey(memberPublicKey, fallbackName, {
+        seedRelayUrls,
+      });
+      if (previewContact && hasResolvedGroupMemberPreview(previewContact, fallbackName)) {
+        return previewContact;
+      }
+
+      if (attempt < GROUP_MEMBER_PROFILE_REFRESH_RETRY_ATTEMPTS - 1 && seedRelayUrls.length > 0) {
+        await waitForGroupMemberProfileRefreshRetry();
+        continue;
+      }
+
+      return previewContact;
+    }
+
+    return null;
+  }
+
   async function applyGroupMembershipRosterPubkeys(
     groupPublicKey: string,
     memberPubkeys: string[],
@@ -1132,12 +1185,10 @@ export function createPrivateStateRuntime({
         > | null = null;
         if (shouldRefreshProfile) {
           try {
-            previewContact = await fetchContactPreviewByPublicKey(
+            previewContact = await fetchGroupMemberPreviewWithRetry(
               memberPublicKey,
               memberPublicKey.slice(0, 16),
-              {
-                seedRelayUrls: previewSeedRelayUrls,
-              }
+              previewSeedRelayUrls
             );
             if (previewContact) {
               refreshedProfileCount += 1;

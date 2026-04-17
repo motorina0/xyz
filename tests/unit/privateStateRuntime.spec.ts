@@ -1,7 +1,7 @@
 import type { NDKEvent } from '@nostr-dev-kit/ndk';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
 import type { MessageRelayStatus } from 'src/types/chat';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ref } from 'vue';
 
 const ndkMocks = vi.hoisted(() => {
@@ -123,6 +123,10 @@ vi.mock('src/services/chatDataService', () => ({
 vi.mock('src/services/contactsService', () => ({
   contactsService: serviceMocks.contactsService,
 }));
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function makeRelayStatus(overrides: Partial<MessageRelayStatus> = {}): MessageRelayStatus {
   return {
@@ -587,6 +591,125 @@ describe('privateStateRuntime', () => {
       }),
     });
     expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries missing member previews once when refreshing the shared roster', async () => {
+    vi.useFakeTimers();
+
+    const groupContact = {
+      id: 7,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      name: 'Retry Group',
+      given_name: null,
+      meta: {
+        owner_public_key: 'f'.repeat(64),
+        group_private_key_encrypted: 'encrypted-group-secret-event',
+      },
+      relays: [{ url: 'wss://relay.example/', read: true, write: true }],
+      sendMessagesToAppRelays: false,
+    };
+    const groupChat = {
+      id: 8,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      meta: {
+        current_epoch_public_key: ndkMocks.groupPubkey,
+        current_epoch_private_key_encrypted: 'encrypted-current-epoch',
+      },
+    };
+    const deps = createDeps({
+      decryptGroupIdentitySecretContent: vi.fn().mockImplementation(async (content: string) => {
+        if (content !== 'encrypted-group-secret-event') {
+          return null;
+        }
+
+        return {
+          version: 1,
+          group_pubkey: ndkMocks.groupPubkey,
+          group_privkey: 'b'.repeat(64),
+          epoch_number: 0,
+          epoch_privkey: 'epoch-private-key',
+          name: 'Retry Group',
+        };
+      }),
+      ensureGroupContactAndChat: vi.fn().mockResolvedValue(false),
+      fetchContactPreviewByPublicKey: vi
+        .fn()
+        .mockResolvedValueOnce({
+          public_key: 'c'.repeat(64),
+          name: 'cccccccccccccccc',
+          given_name: null,
+          meta: {},
+        })
+        .mockResolvedValueOnce({
+          public_key: 'c'.repeat(64),
+          name: 'Charlie Retry',
+          given_name: 'Charlie',
+          meta: {
+            name: 'Charlie Retry',
+            about: 'Retried member preview',
+          },
+        }),
+      refreshContactRelayList: vi.fn().mockResolvedValue(groupContact.relays),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+
+    serviceMocks.contactsService.getContactByPublicKey.mockImplementation(async (pubkey: string) =>
+      pubkey === ndkMocks.groupPubkey ? groupContact : null
+    );
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(groupChat);
+    serviceMocks.contactsService.updateContact.mockResolvedValue({
+      ...groupContact,
+      meta: {
+        ...groupContact.meta,
+        group_members: [
+          {
+            public_key: 'c'.repeat(64),
+            name: 'Charlie Retry',
+            given_name: 'Charlie',
+            about: 'Retried member preview',
+          },
+        ],
+      },
+    });
+    (deps.ndk.fetchEvent as ReturnType<typeof vi.fn>).mockResolvedValue({
+      created_at: 1700000002,
+      pubkey: ndkMocks.groupPubkey,
+      content: 'encrypted-roster',
+      tags: [['d', 'roster']],
+      getMatchingTags: (tagName: string) => (tagName === 'd' ? [['d', 'roster']] : []),
+    });
+    ndkMocks.signerDecrypt.mockImplementation(async (_user: unknown, content: string) => {
+      if (content === 'encrypted-roster') {
+        return JSON.stringify([
+          ['p', 'f'.repeat(64)],
+          ['p', 'c'.repeat(64)],
+        ]);
+      }
+
+      return content.startsWith('encrypted:') ? content.slice('encrypted:'.length) : content;
+    });
+
+    const refreshPromise = runtime.refreshGroupMembershipRoster(ndkMocks.groupPubkey, [
+      'wss://seed.example',
+    ]);
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await refreshPromise;
+
+    expect(result.fallbackProfileCount).toBe(0);
+    expect(result.refreshedProfileCount).toBe(1);
+    expect(deps.fetchContactPreviewByPublicKey).toHaveBeenCalledTimes(2);
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledWith(7, {
+      meta: expect.objectContaining({
+        group_members: [
+          expect.objectContaining({
+            public_key: 'c'.repeat(64),
+            name: 'Charlie Retry',
+          }),
+        ],
+      }),
+    });
   });
 
   it('restores group members from the latest group-authored follow set and excludes owner and group pubkeys', async () => {

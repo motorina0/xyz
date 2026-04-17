@@ -44,17 +44,15 @@ function handleOpenRelaysSettings(): void {
   }
 }
 
-async function handlePublish(): Promise<void> {
+async function handlePublish(nextProfile: typeof profileMetadata.value): Promise<void> {
   if (isPublishing.value) {
     return;
   }
 
   isPublishing.value = true;
   try {
-    await nostrStore.publishUserMetadata(
-      buildContactProfilePublishPayload(profileMetadata.value),
-      relayStore.relays
-    );
+    profileMetadata.value = nextProfile;
+    await nostrStore.publishUserMetadata(buildContactProfilePublishPayload(nextProfile), relayStore.relays);
     $q.notify({
       type: 'positive',
       message: 'Profile metadata published.',
