@@ -28,9 +28,9 @@ export default configure(() => {
     electron: {
       bundler: 'builder',
       builder: {
-        appId: 'com.motorina0.nostrchat',
+        appId: 'com.lnbits.nostrchat',
         productName: 'Nostr Chat',
-        artifactName: '${productName}-${version}-${os}-${arch}.${ext}',
+        artifactName: `\${productName}-\${version}-\${os}-\${arch}.\${ext}`,
         mac: {
           category: 'public.app-category.social-networking',
           target: ['dmg', 'zip'],

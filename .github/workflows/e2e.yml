@@ -41,11 +41,28 @@ jobs:
       - name: Run unit tests
         run: npm run test:unit
 
-  core-dm:
+  e2e-smoke:
+    name: E2E ${{ matrix.name }}
     needs:
       - quality
       - unit-tests
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: auth
+            script: test:e2e:auth-smoke
+          - name: contacts
+            script: test:e2e:contacts-smoke
+          - name: dm
+            script: test:e2e:dm-smoke
+          - name: groups
+            script: test:e2e:groups-smoke
+          - name: relays
+            script: test:e2e:relays-smoke
+          - name: session
+            script: test:e2e:session-smoke
 
     steps:
       - uses: actions/checkout@v4
@@ -67,8 +84,8 @@ jobs:
       - name: Wait for relay startup
         run: sleep 10
 
-      - name: Run core DM e2e tests
-        run: npm run test:e2e
+      - name: Run ${{ matrix.name }} e2e smoke tests
+        run: npm run ${{ matrix.script }}
 
       - name: Stop local relay
         if: always()
@@ -78,7 +95,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.name }}
           path: |
             playwright-report
             test-results

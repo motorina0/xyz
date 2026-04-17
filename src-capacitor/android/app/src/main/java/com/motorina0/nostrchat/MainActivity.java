@@ -1,4 +1,4 @@
-package com.motorina0.nostrchat;
+package com.lnbits.nostrchat;
 
 import com.getcapacitor.BridgeActivity;
 
