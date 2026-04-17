@@ -223,6 +223,16 @@ export function createPrivateStateRuntime({
   updateStoredEventSinceFromCreatedAt,
   writePrivatePreferencesToStorage,
 }: PrivateStateRuntimeDeps) {
+  const lastReplaceableFollowSetCreatedAtByStream = new Map<string, number>();
+
+  function allocateReplaceableFollowSetCreatedAt(streamKey: string): number {
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    const lastCreatedAt = lastReplaceableFollowSetCreatedAtByStream.get(streamKey) ?? 0;
+    const nextCreatedAt = Math.max(nowInSeconds, lastCreatedAt + 1);
+    lastReplaceableFollowSetCreatedAtByStream.set(streamKey, nextCreatedAt);
+    return nextCreatedAt;
+  }
+
   function compareContactCursorState(
     first: ContactCursorState | ContactCursorContent | null | undefined,
     second: ContactCursorState | ContactCursorContent | null | undefined
@@ -910,9 +920,12 @@ export function createPrivateStateRuntime({
 
     await ensureRelayConnections(relayUrls);
 
+    const createdAt = allocateReplaceableFollowSetCreatedAt(
+      `${normalizedGroupPublicKey}:${GROUP_MEMBERS_FOLLOW_SET_D_TAG}`
+    );
     const listEvent = new NDKEvent(ndk, {
       kind: NDKKind.FollowSet,
-      created_at: Math.floor(Date.now() / 1000),
+      created_at: createdAt,
       pubkey: normalizedGroupPublicKey,
       content: await encryptGroupMembershipFollowSetContent(
         decryptedSecret.group_privkey,
@@ -1011,9 +1024,12 @@ export function createPrivateStateRuntime({
     await ensureRelayConnections(relayUrls);
 
     const rosterPubkeys = Array.from(new Set([normalizedOwnerPublicKey, ...memberPublicKeys]));
+    const createdAt = allocateReplaceableFollowSetCreatedAt(
+      `${normalizedGroupPublicKey}:${GROUP_SHARED_ROSTER_FOLLOW_SET_D_TAG}`
+    );
     const listEvent = new NDKEvent(ndk, {
       kind: NDKKind.FollowSet,
-      created_at: Math.floor(Date.now() / 1000),
+      created_at: createdAt,
       pubkey: normalizedGroupPublicKey,
       content: await encryptGroupMembershipRosterContent(
         decryptedSecret.group_privkey,
@@ -1129,6 +1145,32 @@ export function createPrivateStateRuntime({
     return null;
   }
 
+  async function readStoredGroupContact(groupPublicKey: string): Promise<ContactRecord | null> {
+    const groupContact = await contactsService.getContactByPublicKey(groupPublicKey);
+    return groupContact && groupContact.type === 'group' ? groupContact : null;
+  }
+
+  async function persistGroupContactMetaWithRetry(
+    groupPublicKey: string,
+    buildNextMeta: (groupContact: ContactRecord) => ContactMetadata
+  ): Promise<ContactRecord | null> {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const groupContact = await readStoredGroupContact(groupPublicKey);
+      if (!groupContact) {
+        return null;
+      }
+
+      const updatedContact = await contactsService.updateContact(groupContact.id, {
+        meta: buildNextMeta(groupContact),
+      });
+      if (updatedContact) {
+        return updatedContact;
+      }
+    }
+
+    return null;
+  }
+
   async function applyGroupMembershipRosterPubkeys(
     groupPublicKey: string,
     memberPubkeys: string[],
@@ -1143,8 +1185,8 @@ export function createPrivateStateRuntime({
     }
 
     await contactsService.init();
-    const groupContact = await contactsService.getContactByPublicKey(normalizedGroupPublicKey);
-    if (!groupContact || groupContact.type !== 'group') {
+    const groupContact = await readStoredGroupContact(normalizedGroupPublicKey);
+    if (!groupContact) {
       throw new Error('Group contact not found.');
     }
 
@@ -1221,18 +1263,21 @@ export function createPrivateStateRuntime({
       };
     }
 
-    const nextMeta: ContactMetadata = {
-      ...(groupContact.meta ?? {}),
-    };
-    if (nextMembers.length > 0) {
-      nextMeta.group_members = nextMembers;
-    } else {
-      delete nextMeta.group_members;
-    }
+    const updatedContact = await persistGroupContactMetaWithRetry(
+      normalizedGroupPublicKey,
+      (storedGroupContact) => {
+        const nextMeta: ContactMetadata = {
+          ...(storedGroupContact.meta ?? {}),
+        };
+        if (nextMembers.length > 0) {
+          nextMeta.group_members = nextMembers;
+        } else {
+          delete nextMeta.group_members;
+        }
 
-    const updatedContact = await contactsService.updateContact(groupContact.id, {
-      meta: nextMeta,
-    });
+        return nextMeta;
+      }
+    );
     if (!updatedContact) {
       throw new Error('Failed to persist refreshed group members.');
     }
@@ -1448,9 +1493,21 @@ export function createPrivateStateRuntime({
       delete nextMeta.group_members;
     }
 
-    const updatedContact = await contactsService.updateContact(groupContact.id, {
-      meta: nextMeta,
-    });
+    const updatedContact = await persistGroupContactMetaWithRetry(
+      normalizedGroupPublicKey,
+      (storedGroupContact) => {
+        const updatedMeta: ContactMetadata = {
+          ...(storedGroupContact.meta ?? {}),
+        };
+        if (nextMembers.length > 0) {
+          updatedMeta.group_members = nextMembers;
+        } else {
+          delete updatedMeta.group_members;
+        }
+
+        return updatedMeta;
+      }
+    );
     if (!updatedContact) {
       throw new Error('Failed to persist restored group members.');
     }

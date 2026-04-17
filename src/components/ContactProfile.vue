@@ -1215,6 +1215,13 @@ const showMembersTabActions = computed(() => {
   return props.showHeader || (canEditGroupMembers.value && props.showPublishAction);
 });
 const showRelaysTabActions = computed(() => props.showHeader || props.showPublishAction);
+const hasUnsavedLocalProfileChanges = computed(() => {
+  if (props.readOnly || props.isPublishing || currentContact.value === null) {
+    return false;
+  }
+
+  return !isSameProfile(localProfile, mapContactToProfile(currentContact.value));
+});
 const hasPendingGroupMemberChanges = computed(() => pendingGroupMemberChanges.value.length > 0);
 const pendingRemovedGroupMemberPubkeys = computed(() => new Set(
   pendingGroupMemberChanges.value
@@ -1397,6 +1404,7 @@ watch(
     if (
       !normalizedPubkey ||
       isLoadingContact.value ||
+      hasUnsavedLocalProfileChanges.value ||
       (canEditGroupMembers.value &&
         (activeTab.value === 'members' || hasPendingGroupMemberChanges.value))
     ) {
