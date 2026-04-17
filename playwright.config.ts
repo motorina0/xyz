@@ -1,18 +1,19 @@
 import { defineConfig } from '@playwright/test';
 
 const appBaseUrl = process.env.APP_BASE_URL ?? 'http://127.0.0.1:4100';
+const isCi = Boolean(process.env.CI);
 
 export default defineConfig({
   testDir: './e2e',
   timeout: 90_000,
   fullyParallel: false,
-  forbidOnly: Boolean(process.env.CI),
-  retries: process.env.CI ? 1 : 0,
-  workers: 5,
+  forbidOnly: isCi,
+  retries: isCi ? 1 : 0,
+  workers: isCi ? 1 : 5,
   expect: {
     timeout: 15_000,
   },
-  reporter: process.env.CI
+  reporter: isCi
     ? [['github'], ['html', { open: 'never' }]]
     : [['list'], ['html', { open: 'never' }]],
   use: {
@@ -31,7 +32,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev:e2e',
     url: appBaseUrl,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: !isCi,
     timeout: 120_000,
   },
 });
