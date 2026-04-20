@@ -62,6 +62,7 @@ type SidebarItem = {
   label: string;
   icon: string;
   activeIcon?: string;
+  href?: string;
   routeName?: string;
   params?: Record<string, string> | undefined;
   badge?: string;
@@ -76,11 +77,6 @@ const navItems = computed<SidebarItem[]>(() => [
     routeName: 'home',
   },
   {
-    key: 'explore',
-    label: 'Explore',
-    icon: 'search',
-  },
-  {
     key: 'notifications',
     label: 'Notifications',
     icon: 'notifications_none',
@@ -90,11 +86,7 @@ const navItems = computed<SidebarItem[]>(() => [
     key: 'messages',
     label: 'Messages',
     icon: 'mail_outline',
-  },
-  {
-    key: 'grok',
-    label: 'Grok',
-    icon: 'auto_awesome',
+    href: 'https://chat.nostr.com',
   },
   {
     key: 'bookmarks',
@@ -102,12 +94,6 @@ const navItems = computed<SidebarItem[]>(() => [
     icon: 'bookmark_border',
     activeIcon: 'bookmark',
     routeName: 'bookmarks',
-  },
-  {
-    key: 'premium',
-    label: 'Premium',
-    icon: 'workspace_premium',
-    badge: '50% off',
   },
   {
     key: 'profile',
@@ -129,6 +115,11 @@ function isActive(item: SidebarItem): boolean {
 }
 
 function handleNav(item: SidebarItem): void {
+  if (item.href) {
+    window.open(item.href, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
   if (!item.routeName) {
     return;
   }
