@@ -1,7 +1,7 @@
 <template>
   <div class="left-sidebar">
     <button class="brand-mark" type="button" @click="router.push({ name: 'home' })">
-      <span class="brand-mark__glyph">X</span>
+      <span class="brand-mark__glyph">Nostr</span>
     </button>
 
     <nav class="left-sidebar-nav">
@@ -142,8 +142,10 @@ function handleNav(item: SidebarItem): void {
 .brand-mark {
   display: grid;
   place-items: center;
-  width: 52px;
+  width: auto;
+  min-width: 52px;
   height: 52px;
+  padding: 0 14px;
   margin-bottom: 4px;
   border: none;
   border-radius: 999px;
@@ -158,10 +160,10 @@ function handleNav(item: SidebarItem): void {
 }
 
 .brand-mark__glyph {
-  font-size: 2rem;
-  font-weight: 500;
+  font-size: 1.34rem;
+  font-weight: 700;
   line-height: 1;
-  letter-spacing: -0.08em;
+  letter-spacing: -0.04em;
 }
 
 .left-sidebar-nav {

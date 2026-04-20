@@ -3,7 +3,7 @@
     <div class="login-card scroll-card">
       <div class="login-card__eyebrow">mocked nostr-auth</div>
       <h1 class="login-card__title">nostr-scroll</h1>
-      <p class="login-card__subtitle">X-style Nostr client prototype</p>
+      <p class="login-card__subtitle">Nostr social client prototype</p>
 
       <q-btn
         no-caps
