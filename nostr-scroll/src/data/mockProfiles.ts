@@ -26,25 +26,63 @@ function profile(
   };
 }
 
-export const mockProfiles: NostrProfile[] = [
-  profile({
-    pubkey: CURRENT_USER_PUBKEY,
-    name: 'ada',
-    displayName: 'Ada Rivera',
+const currentUserTemplate = {
+  name: 'ada',
+  displayName: 'Ada Rivera',
+  verified: true,
+  about:
+    'Designing fast, humane Nostr products with a bias toward clear systems and sharp interfaces.',
+  initials: 'AR',
+  avatarColors: ['#1d9bf0', '#075985'] as [string, string],
+  bannerColors: ['#0b1220', '#162234', '#1d9bf0'] as [string, string, string],
+  nip05: 'ada@nostr-scroll.local',
+  website: 'nostr-scroll.local/ada',
+  lud16: 'ada@scrollpay.local',
+  followersCount: 12840,
+  followingCount: 428,
+  joinedAt: '2022-03-18T00:00:00.000Z',
+  location: 'Barcelona, ES',
+};
+
+function deriveSessionProfileName(pubkey: string): string {
+  return `nostr${pubkey.slice(0, 6)}`;
+}
+
+function deriveSessionProfileDisplayName(pubkey: string): string {
+  return `Nostr ${pubkey.slice(0, 8)}`;
+}
+
+function deriveSessionProfileInitials(pubkey: string): string {
+  return pubkey.slice(0, 2).toUpperCase();
+}
+
+function createCurrentUserProfile(pubkey: string): NostrProfile {
+  if (pubkey === CURRENT_USER_PUBKEY) {
+    return profile({
+      pubkey,
+      ...currentUserTemplate,
+    });
+  }
+
+  const displayName = deriveSessionProfileDisplayName(pubkey);
+
+  return profile({
+    pubkey,
+    name: deriveSessionProfileName(pubkey),
+    displayName,
     verified: true,
-    about:
-      'Designing fast, humane Nostr products with a bias toward clear systems and sharp interfaces.',
-    initials: 'AR',
-    avatarColors: ['#1d9bf0', '#075985'],
-    bannerColors: ['#0b1220', '#162234', '#1d9bf0'],
-    nip05: 'ada@nostr-scroll.local',
-    website: 'nostr-scroll.local/ada',
-    lud16: 'ada@scrollpay.local',
-    followersCount: 12840,
-    followingCount: 428,
-    joinedAt: '2022-03-18T00:00:00.000Z',
-    location: 'Barcelona, ES',
-  }),
+    about: currentUserTemplate.about,
+    initials: deriveSessionProfileInitials(pubkey),
+    avatarColors: currentUserTemplate.avatarColors,
+    bannerColors: currentUserTemplate.bannerColors,
+    followersCount: currentUserTemplate.followersCount,
+    followingCount: currentUserTemplate.followingCount,
+    joinedAt: currentUserTemplate.joinedAt,
+    location: currentUserTemplate.location,
+  });
+}
+
+const otherProfiles: NostrProfile[] = [
   profile({
     pubkey: 'pk-nia-relay',
     name: 'niarelay',
@@ -181,3 +219,9 @@ export const mockProfiles: NostrProfile[] = [
     location: 'Toronto, CA',
   }),
 ];
+
+export function createInitialProfiles(currentUserPubkey = CURRENT_USER_PUBKEY): NostrProfile[] {
+  return [createCurrentUserProfile(currentUserPubkey), ...otherProfiles];
+}
+
+export const mockProfiles: NostrProfile[] = createInitialProfiles();

@@ -592,9 +592,28 @@ function cloneState<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-export function createInitialFeedState(): FeedPersistenceState {
+function remapCurrentUserPubkey(
+  notes: NostrNote[],
+  currentUserPubkey: string,
+): NostrNote[] {
+  if (currentUserPubkey === CURRENT_USER_PUBKEY) {
+    return notes;
+  }
+
+  return notes.map((entry) => ({
+    ...entry,
+    pubkey: entry.pubkey === CURRENT_USER_PUBKEY ? currentUserPubkey : entry.pubkey,
+    tags: entry.tags.map((tag) =>
+      tag.map((value, index) =>
+        index === 1 && value === CURRENT_USER_PUBKEY ? currentUserPubkey : value,
+      ),
+    ),
+  }));
+}
+
+export function createInitialFeedState(currentUserPubkey = CURRENT_USER_PUBKEY): FeedPersistenceState {
   return cloneState({
-    notes: mockNotes,
+    notes: remapCurrentUserPubkey(mockNotes, currentUserPubkey),
     viewerState: initialViewerState,
     homeVisibleCount: initialHomeVisibleCount,
   });

@@ -1,7 +1,14 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { loginWithMockNostrAuth } from '../services/mockAuthService';
-import type { MockAuthSession } from '../types/auth';
+import {
+  defaultAuthSession,
+  hasNip07Extension,
+  loginWithExtension,
+  loginWithPrivateKey,
+  normalizeStoredSession,
+  validatePrivateKey,
+} from '../services/nostrAuthService';
+import type { NostrAuthSession } from '../types/auth';
 import {
   STORAGE_KEYS,
   readStorageItem,
@@ -9,20 +16,18 @@ import {
   writeStorageItem,
 } from '../utils/storage';
 
-const defaultSession: MockAuthSession = {
-  isAuthenticated: false,
-  method: 'nostr-auth',
-  currentPubkey: null,
-};
-
 export const useAuthStore = defineStore('auth', () => {
-  const session = ref<MockAuthSession>(readStorageItem(STORAGE_KEYS.auth, defaultSession));
+  const session = ref<NostrAuthSession>(
+    normalizeStoredSession(readStorageItem(STORAGE_KEYS.auth, defaultAuthSession)),
+  );
   const loading = ref(false);
 
   const isAuthenticated = computed(
     () => session.value.isAuthenticated && Boolean(session.value.currentPubkey),
   );
   const currentPubkey = computed(() => session.value.currentPubkey);
+  const currentAuthMethod = computed(() => session.value.method);
+  const hasExtension = computed(() => hasNip07Extension());
 
   function persistSession(): void {
     if (!session.value.isAuthenticated || !session.value.currentPubkey) {
@@ -34,14 +39,25 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function restoreSession(): void {
-    session.value = readStorageItem(STORAGE_KEYS.auth, defaultSession);
+    session.value = normalizeStoredSession(readStorageItem(STORAGE_KEYS.auth, defaultAuthSession));
   }
 
-  async function loginWithNostrAuth(): Promise<void> {
+  async function loginWithExtensionMethod(): Promise<void> {
     loading.value = true;
 
     try {
-      session.value = await loginWithMockNostrAuth();
+      session.value = await loginWithExtension();
+      persistSession();
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function loginWithPrivateKeyMethod(input: string): Promise<void> {
+    loading.value = true;
+
+    try {
+      session.value = loginWithPrivateKey(input);
       persistSession();
     } finally {
       loading.value = false;
@@ -49,7 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   function logout(): void {
-    session.value = { ...defaultSession };
+    session.value = { ...defaultAuthSession };
     removeStorageItem(STORAGE_KEYS.auth);
   }
 
@@ -58,8 +74,12 @@ export const useAuthStore = defineStore('auth', () => {
     loading,
     isAuthenticated,
     currentPubkey,
-    loginWithNostrAuth,
+    currentAuthMethod,
+    hasExtension,
+    loginWithExtension: loginWithExtensionMethod,
+    loginWithPrivateKey: loginWithPrivateKeyMethod,
     logout,
     restoreSession,
+    validatePrivateKey,
   };
 });

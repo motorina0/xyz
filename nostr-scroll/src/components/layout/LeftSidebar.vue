@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { useSessionActions } from '../../composables/useSessionActions';
 import { useAuthStore } from '../../stores/auth';
 import { useProfilesStore } from '../../stores/profiles';
 import { useUiStore } from '../../stores/ui';
@@ -65,6 +66,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 const profilesStore = useProfilesStore();
 const uiStore = useUiStore();
+const { logout } = useSessionActions();
 
 const currentProfile = computed(() =>
   profilesStore.getProfileByPubkey(authStore.currentPubkey),
@@ -141,8 +143,7 @@ function handleNav(item: SidebarItem): void {
 }
 
 async function handleLogout(): Promise<void> {
-  authStore.logout();
-  await router.replace({ name: 'login' });
+  await logout();
 }
 </script>
 

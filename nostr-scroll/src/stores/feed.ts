@@ -1,10 +1,11 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { useMockDelay } from '../composables/useMockDelay';
+import { CURRENT_USER_PUBKEY } from '../data/mockProfiles';
 import { loadMockFeedState } from '../services/mockFeedService';
 import type { FeedPersistenceState, NostrNote, ViewerPostState } from '../types/nostr';
 import { createMockId } from '../utils/ids';
-import { STORAGE_KEYS, readStorageItem, writeStorageItem } from '../utils/storage';
+import { STORAGE_KEYS, readStorageItem, removeStorageItem, writeStorageItem } from '../utils/storage';
 import { useAuthStore } from './auth';
 
 function defaultViewerState(): ViewerPostState {
@@ -48,6 +49,7 @@ export const useFeedStore = defineStore('feed', () => {
   const hydrated = ref(false);
   const hydrating = ref(false);
   const loadingMore = ref(false);
+  const hydratedForPubkey = ref<string | null>(null);
 
   function persistState(): void {
     const state: FeedPersistenceState = {
@@ -66,20 +68,42 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   async function ensureHydrated(): Promise<void> {
+    const targetPubkey = authStore.currentPubkey ?? CURRENT_USER_PUBKEY;
     if (hydrated.value || hydrating.value) {
-      return;
+      if (hydrated.value && hydratedForPubkey.value === targetPubkey) {
+        return;
+      }
+
+      if (hydrating.value) {
+        return;
+      }
     }
 
     hydrating.value = true;
     try {
       const storedState = readStorageItem<FeedPersistenceState | null>(STORAGE_KEYS.feed, null);
-      const nextState = storedState ?? (await loadMockFeedState());
+      const hasTargetOwnedNotes =
+        storedState?.notes.some((note) => note.pubkey === targetPubkey) ?? false;
+      const nextState =
+        storedState && hasTargetOwnedNotes ? storedState : await loadMockFeedState(targetPubkey);
       applyState(nextState);
       hydrated.value = true;
+      hydratedForPubkey.value = targetPubkey;
       persistState();
     } finally {
       hydrating.value = false;
     }
+  }
+
+  function reset(): void {
+    notes.value = [];
+    viewerState.value = {};
+    homeVisibleCount.value = 15;
+    hydrated.value = false;
+    hydrating.value = false;
+    loadingMore.value = false;
+    hydratedForPubkey.value = null;
+    removeStorageItem(STORAGE_KEYS.feed);
   }
 
   const notesById = computed(() =>
@@ -400,5 +424,6 @@ export const useFeedStore = defineStore('feed', () => {
     toggleRepost,
     toggleBookmark,
     loadMoreHome,
+    reset,
   };
 });

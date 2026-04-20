@@ -1,7 +1,7 @@
 import { ref } from 'vue';
 import { defineStore } from 'pinia';
 import type { ProfileTab } from '../types/nostr';
-import { STORAGE_KEYS, readStorageItem, writeStorageItem } from '../utils/storage';
+import { STORAGE_KEYS, readStorageItem, removeStorageItem, writeStorageItem } from '../utils/storage';
 
 type StoredUiState = {
   profileTabs: Record<string, ProfileTab>;
@@ -43,6 +43,12 @@ export const useUiStore = defineStore('ui', () => {
     isComposeDialogOpen.value = false;
   }
 
+  function reset(): void {
+    profileTabs.value = {};
+    isComposeDialogOpen.value = false;
+    removeStorageItem(STORAGE_KEYS.ui);
+  }
+
   return {
     profileTabs,
     isComposeDialogOpen,
@@ -50,5 +56,6 @@ export const useUiStore = defineStore('ui', () => {
     setProfileTab,
     openComposeDialog,
     closeComposeDialog,
+    reset,
   };
 });

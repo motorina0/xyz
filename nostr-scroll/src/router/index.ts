@@ -1,15 +1,12 @@
 import { route } from 'quasar/wrappers';
 import { createMemoryHistory, createRouter, createWebHistory } from 'vue-router';
 import routes from './routes';
-import type { MockAuthSession } from '../types/auth';
+import type { NostrAuthSession } from '../types/auth';
+import { defaultAuthSession, normalizeStoredSession } from '../services/nostrAuthService';
 import { STORAGE_KEYS, readStorageItem } from '../utils/storage';
 
-function readStoredSession(): MockAuthSession {
-  return readStorageItem<MockAuthSession>(STORAGE_KEYS.auth, {
-    isAuthenticated: false,
-    method: 'nostr-auth',
-    currentPubkey: null,
-  });
+function readStoredSession(): NostrAuthSession {
+  return normalizeStoredSession(readStorageItem(STORAGE_KEYS.auth, defaultAuthSession));
 }
 
 export default route(() => {
