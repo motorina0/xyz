@@ -39,6 +39,11 @@ export interface AppE2ESessionSnapshot {
   relayUrls: string[];
 }
 
+export interface AppE2EWaitForAppReadyOptions {
+  contactPublicKey?: string | null;
+  timeoutMs?: number;
+}
+
 export interface AppE2EBridge {
   bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot>;
   getSessionSnapshot(): Promise<AppE2ESessionSnapshot>;
@@ -48,6 +53,7 @@ export interface AppE2EBridge {
   sendMessages(options: AppE2ESendMessagesOptions): Promise<void>;
   replaceStoredGroupMembers(options: AppE2EReplaceStoredGroupMembersOptions): Promise<void>;
   updateContactRelays(options: AppE2EUpdateContactRelaysOptions): Promise<void>;
+  waitForAppReady(options?: AppE2EWaitForAppReadyOptions): Promise<void>;
 }
 
 const WINDOW_BRIDGE_KEY = '__appE2E__';
@@ -161,6 +167,52 @@ async function getSessionSnapshot(): Promise<AppE2ESessionSnapshot> {
     (candidatePublicKey) => nostrStore.encodeNpub(candidatePublicKey),
     relayStore.relays
   );
+}
+
+async function waitForAppReady(options: AppE2EWaitForAppReadyOptions = {}): Promise<void> {
+  const normalizedContactPublicKey = inputSanitizerService.normalizeHexKey(
+    options.contactPublicKey ?? ''
+  );
+  const timeoutMs =
+    typeof options.timeoutMs === 'number' && Number.isFinite(options.timeoutMs)
+      ? Math.max(1_000, Math.floor(options.timeoutMs))
+      : 30_000;
+  const deadlineAt = Date.now() + timeoutMs;
+
+  const [{ useNostrStore }, { contactsService }] = await Promise.all([
+    import('src/stores/nostrStore'),
+    import('src/services/contactsService'),
+  ]);
+
+  const nostrStore = useNostrStore();
+  await contactsService.init();
+
+  while (Date.now() <= deadlineAt) {
+    if (nostrStore.isRestoringStartupState) {
+      await new Promise<void>((resolve) => {
+        window.setTimeout(resolve, 100);
+      });
+      continue;
+    }
+
+    if (!normalizedContactPublicKey) {
+      return;
+    }
+
+    const contact = await contactsService.getContactByPublicKey(normalizedContactPublicKey);
+    if (contact) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      window.setTimeout(resolve, 100);
+    });
+  }
+
+  const targetDescription = normalizedContactPublicKey
+    ? `contact ${normalizedContactPublicKey}`
+    : 'startup restore';
+  throw new Error(`Timed out waiting for ${targetDescription} to become ready.`);
 }
 
 async function refreshSession(options: AppE2ERefreshOptions = {}): Promise<void> {
@@ -361,6 +413,7 @@ export function installAppE2EBridge(): void {
     replaceStoredGroupMembers,
     sendMessages,
     updateContactRelays,
+    waitForAppReady,
   };
 
   Object.defineProperty(window, WINDOW_BRIDGE_KEY, {
