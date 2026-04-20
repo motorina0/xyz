@@ -23,22 +23,32 @@
 
 <script setup lang="ts">
 import { onMounted } from 'vue';
+import { useAppRelaysStore } from '../../stores/appRelays';
 import { useAuthStore } from '../../stores/auth';
 import { useFeedStore } from '../../stores/feed';
+import { useMyRelaysStore } from '../../stores/myRelays';
 import { useProfilesStore } from '../../stores/profiles';
 import ComposePostDialog from '../feed/ComposePostDialog.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import MobileBottomNav from './MobileBottomNav.vue';
 import RightNewsPanel from './RightNewsPanel.vue';
 
+const appRelaysStore = useAppRelaysStore();
 const authStore = useAuthStore();
 const profilesStore = useProfilesStore();
 const feedStore = useFeedStore();
+const myRelaysStore = useMyRelaysStore();
 
 onMounted(() => {
   authStore.restoreSession();
+  appRelaysStore.init();
+  myRelaysStore.init();
   void profilesStore.ensureHydrated();
   void feedStore.ensureHydrated();
+
+  if (authStore.isAuthenticated) {
+    void myRelaysStore.hydrateFromNostr();
+  }
 });
 </script>
 

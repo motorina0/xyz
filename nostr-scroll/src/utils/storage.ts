@@ -2,7 +2,9 @@ const STORAGE_PREFIX = 'nostr-scroll:';
 
 export const STORAGE_KEYS = {
   auth: `${STORAGE_PREFIX}auth-session`,
+  appRelays: `${STORAGE_PREFIX}app-relays`,
   feed: `${STORAGE_PREFIX}feed-state`,
+  myRelays: `${STORAGE_PREFIX}my-relays`,
   profiles: `${STORAGE_PREFIX}profiles-state`,
   ui: `${STORAGE_PREFIX}ui-state`,
 } as const;

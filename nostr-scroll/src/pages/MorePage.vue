@@ -16,18 +16,165 @@
           label="My Relays"
           header-class="more-page__section-header"
         >
-          <div class="more-page__section-body">
-            <div
-              v-for="relay in myRelays"
-              :key="relay.url"
-              class="more-page__row"
-            >
-              <div class="more-page__row-copy">
-                <div class="more-page__row-title">{{ relay.label }}</div>
-                <div class="more-page__row-subtitle text-scroll-muted">{{ relay.url }}</div>
-              </div>
-              <div class="more-page__pill">{{ relay.status }}</div>
+          <div class="more-page__section-body more-page__section-body--relay-editor">
+            <div class="more-page__relay-source text-scroll-muted">
+              {{ myRelaysSummary }}
             </div>
+
+            <div class="more-page__relay-toolbar">
+              <q-input
+                v-model="myNewRelay"
+                outlined
+                dense
+                rounded
+                label="Relay URL"
+                placeholder="wss://example-relay.io"
+                class="more-page__relay-input"
+                :error="Boolean(myRelayValidationError)"
+                :error-message="myRelayValidationError"
+                @keydown.enter.prevent="addMyRelay"
+              >
+                <template #append>
+                  <q-btn
+                    unelevated
+                    round
+                    dense
+                    color="primary"
+                    icon="add"
+                    size="sm"
+                    aria-label="Add relay"
+                    :disable="!canAddMyRelay || myRelaysStore.isPublishing"
+                    @click="addMyRelay"
+                  />
+                </template>
+              </q-input>
+
+              <q-btn
+                flat
+                color="primary"
+                icon="sync"
+                label="Refresh from Nostr"
+                :loading="myRelaysStore.isHydrating"
+                @click="refreshMyRelays"
+              />
+            </div>
+
+            <div
+              v-if="myRelaysStore.hydrationError"
+              class="more-page__relay-feedback more-page__relay-feedback--error"
+            >
+              <span>{{ myRelaysStore.hydrationError }}</span>
+            </div>
+
+            <div
+              v-if="myRelaysStore.syncError"
+              class="more-page__relay-feedback more-page__relay-feedback--error"
+            >
+              <span>{{ myRelaysStore.syncError }}</span>
+            </div>
+
+            <div
+              v-if="myRelaysStore.relayEntries.length === 0 && !myRelaysStore.isHydrating"
+              class="more-page__relay-empty text-scroll-muted"
+            >
+              No My Relays found yet.
+            </div>
+
+            <div
+              v-else-if="myRelaysStore.relayEntries.length === 0"
+              class="more-page__relay-empty text-scroll-muted"
+            >
+              Loading My Relays…
+            </div>
+
+            <q-list
+              v-else
+              bordered
+              separator
+              class="more-page__relay-list"
+            >
+              <q-expansion-item
+                v-for="(relay, index) in myRelaysStore.relayEntries"
+                :key="relay.url"
+                expand-separator
+                switch-toggle-side
+                expand-icon="keyboard_arrow_right"
+                expanded-icon="keyboard_arrow_down"
+                class="more-page__relay-item"
+              >
+                <template #header>
+                  <q-item-section avatar class="more-page__relay-header-cell">
+                    <div class="more-page__relay-header-badges">
+                      <q-avatar size="22px" class="more-page__relay-icon more-page__relay-icon--fallback">
+                        <q-icon name="satellite_alt" size="14px" />
+                      </q-avatar>
+
+                      <span class="more-page__relay-status-dot more-page__relay-status-dot--connected" />
+                    </div>
+                  </q-item-section>
+
+                  <q-item-section class="more-page__relay-url-section">
+                    <q-item-label class="more-page__relay-url-label">
+                      {{ relay.url }}
+                    </q-item-label>
+
+                    <div class="more-page__relay-io-toggles" @click.stop>
+                      <div class="more-page__relay-io-toggle">
+                        <q-toggle
+                          dense
+                          size="xs"
+                          class="more-page__relay-io-switch q-mr-sm"
+                          color="primary"
+                          :disable="myRelaysStore.isPublishing"
+                          :model-value="relay.read"
+                          @click.stop
+                          @update:model-value="updateMyRelayRead(index, $event)"
+                        />
+                        <span class="more-page__relay-io-toggle-label">Read</span>
+                      </div>
+
+                      <q-separator vertical class="more-page__relay-io-toggle-separator" />
+
+                      <div class="more-page__relay-io-toggle">
+                        <span class="more-page__relay-io-toggle-label q-ml-sm">Write</span>
+                        <q-toggle
+                          dense
+                          size="xs"
+                          class="more-page__relay-io-switch"
+                          color="primary"
+                          :disable="myRelaysStore.isPublishing"
+                          :model-value="relay.write"
+                          @click.stop
+                          @update:model-value="updateMyRelayWrite(index, $event)"
+                        />
+                      </div>
+                    </div>
+                  </q-item-section>
+
+                  <q-item-section side class="more-page__relay-header-actions">
+                    <q-btn
+                      flat
+                      round
+                      dense
+                      icon="delete"
+                      color="negative"
+                      aria-label="Delete relay"
+                      :disable="myRelaysStore.isPublishing"
+                      @click.stop="removeMyRelay(index)"
+                    />
+                  </q-item-section>
+                </template>
+
+                <div class="more-page__relay-body">
+                  <div class="more-page__relay-note">
+                    Published as part of your personal relay list, similar to `nostr-chat`.
+                  </div>
+                  <div class="text-scroll-muted more-page__relay-note">
+                    Startup merges your public relay list with private NIP-07 relay hints when the extension exposes them.
+                  </div>
+                </div>
+              </q-expansion-item>
+            </q-list>
           </div>
         </q-expansion-item>
 
@@ -78,7 +225,7 @@
               />
             </div>
 
-            <div v-if="appRelays.length === 0" class="more-page__relay-empty text-scroll-muted">
+            <div v-if="appRelaysStore.relayEntries.length === 0" class="more-page__relay-empty text-scroll-muted">
               No app relays configured.
             </div>
 
@@ -89,7 +236,7 @@
               class="more-page__relay-list"
             >
               <q-expansion-item
-                v-for="(relay, index) in appRelays"
+                v-for="(relay, index) in appRelaysStore.relayEntries"
                 :key="relay.url"
                 expand-separator
                 switch-toggle-side
@@ -104,14 +251,7 @@
                         <q-icon name="satellite_alt" size="14px" />
                       </q-avatar>
 
-                      <span
-                        class="more-page__relay-status-dot"
-                        :class="
-                          relay.connected
-                            ? 'more-page__relay-status-dot--connected'
-                            : 'more-page__relay-status-dot--disconnected'
-                        "
-                      />
+                      <span class="more-page__relay-status-dot more-page__relay-status-dot--connected" />
                     </div>
                   </q-item-section>
 
@@ -166,7 +306,7 @@
 
                 <div class="more-page__relay-body">
                   <div class="more-page__relay-note">
-                    {{ relay.isDefault ? 'Default nostr-chat app relay' : 'Custom prototype app relay' }}
+                    {{ isDefaultAppRelay(relay.url) ? 'Default nostr-chat app relay' : 'Custom prototype app relay' }}
                   </div>
                   <div class="text-scroll-muted more-page__relay-note">
                     Read and write are both enabled by default, matching the base app relay setup.
@@ -205,42 +345,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { DEFAULT_APP_RELAY_URLS } from '../constants/relays';
 import StickyTopBar from '../components/layout/StickyTopBar.vue';
-
-interface PrototypeRelayEntry {
-  url: string;
-  read: boolean;
-  write: boolean;
-  connected: boolean;
-  isDefault: boolean;
-}
-
-const DEFAULT_APP_RELAY_URLS = [
-  'wss://relay.damus.io',
-  'wss://nostr.mom',
-  'wss://nostr.bitcoiner.social',
-  'wss://nos.lol',
-  'wss://relay.snort.social',
-];
-
-const myRelays = [
-  {
-    label: 'Primary Write Relay',
-    url: 'wss://relay.damus.io',
-    status: 'Connected',
-  },
-  {
-    label: 'Profile Backup Relay',
-    url: 'wss://nos.lol',
-    status: 'Healthy',
-  },
-  {
-    label: 'Timeline Relay',
-    url: 'wss://relay.primal.net',
-    status: 'Synced',
-  },
-];
+import { useAppRelaysStore } from '../stores/appRelays';
+import { useAuthStore } from '../stores/auth';
+import { useMyRelaysStore } from '../stores/myRelays';
+import { validateRelayUrl } from '../utils/relayList';
 
 const appearanceOptions = [
   {
@@ -260,54 +371,63 @@ const appearanceOptions = [
   },
 ];
 
+const authStore = useAuthStore();
+const appRelaysStore = useAppRelaysStore();
+const myRelaysStore = useMyRelaysStore();
+
 const appNewRelay = ref('');
-const appRelays = ref<PrototypeRelayEntry[]>(createDefaultAppRelays());
+const myNewRelay = ref('');
 const appRelayValidationError = computed(() => validateRelayUrl(appNewRelay.value.trim()));
+const myRelayValidationError = computed(() => validateRelayUrl(myNewRelay.value.trim()));
 const canAddAppRelay = computed(() => {
   const value = appNewRelay.value.trim();
   return value.length > 0 && appRelayValidationError.value.length === 0;
 });
+const canAddMyRelay = computed(() => {
+  const value = myNewRelay.value.trim();
+  return value.length > 0 && myRelayValidationError.value.length === 0;
+});
 const canRestoreAppRelays = computed(() => {
-  const current = appRelays.value;
-  if (current.length !== DEFAULT_APP_RELAY_URLS.length) {
+  appRelaysStore.init();
+
+  if (appRelaysStore.relayEntries.length !== DEFAULT_APP_RELAY_URLS.length) {
     return true;
   }
 
-  return current.some((relay, index) => {
-    const defaultUrl = DEFAULT_APP_RELAY_URLS[index];
-    return relay.url !== defaultUrl || relay.read !== true || relay.write !== true;
+  return appRelaysStore.relayEntries.some((relay, index) => {
+    const defaultRelayUrl = DEFAULT_APP_RELAY_URLS[index];
+    return relay.url !== defaultRelayUrl || relay.read !== true || relay.write !== true;
   });
 });
-
-function createDefaultAppRelays(): PrototypeRelayEntry[] {
-  return DEFAULT_APP_RELAY_URLS.map((url) => ({
-    url,
-    read: true,
-    write: true,
-    connected: true,
-    isDefault: true,
-  }));
-}
-
-function validateRelayUrl(value: string): string {
-  if (!value) {
-    return '';
+const myRelaysSummary = computed(() => {
+  const publicCount = myRelaysStore.publicRelayCount;
+  const privateCount = myRelaysStore.privateRelayCount;
+  if (publicCount === 0 && privateCount === 0) {
+    return 'Fetches your personal relay list from Nostr on startup and merges private NIP-07 relay hints when available.';
   }
 
-  try {
-    const url = new URL(value);
-    if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
-      return 'Relay must use ws:// or wss://';
-    }
-
-    if (!url.hostname) {
-      return 'Relay URL must include a hostname';
-    }
-
-    return '';
-  } catch {
-    return 'Relay must be a valid ws:// or wss:// URL';
+  const parts: string[] = [];
+  if (publicCount > 0) {
+    parts.push(`${publicCount} public`);
   }
+  if (privateCount > 0) {
+    parts.push(`${privateCount} private`);
+  }
+
+  return `Loaded ${parts.join(' and ')} relay sources for this account.`;
+});
+
+onMounted(() => {
+  appRelaysStore.init();
+  myRelaysStore.init();
+
+  if (authStore.isAuthenticated) {
+    void myRelaysStore.hydrateFromNostr();
+  }
+});
+
+function isDefaultAppRelay(relayUrl: string): boolean {
+  return DEFAULT_APP_RELAY_URLS.includes(relayUrl);
 }
 
 function addAppRelay(): void {
@@ -315,43 +435,57 @@ function addAppRelay(): void {
     return;
   }
 
-  const value = appNewRelay.value.trim();
-  if (appRelays.value.some((relay) => relay.url === value)) {
-    appNewRelay.value = '';
-    return;
-  }
-
-  appRelays.value = [
-    ...appRelays.value,
-    {
-      url: value,
-      read: true,
-      write: true,
-      connected: false,
-      isDefault: false,
-    },
-  ];
+  appRelaysStore.addRelay(appNewRelay.value.trim());
   appNewRelay.value = '';
 }
 
 function removeAppRelay(index: number): void {
-  appRelays.value = appRelays.value.filter((_, relayIndex) => relayIndex !== index);
+  appRelaysStore.removeRelay(index);
 }
 
 function updateAppRelayRead(index: number, value: boolean): void {
-  appRelays.value = appRelays.value.map((relay, relayIndex) =>
-    relayIndex === index ? { ...relay, read: Boolean(value) } : relay,
-  );
+  appRelaysStore.setRelayFlags(index, { read: Boolean(value) });
 }
 
 function updateAppRelayWrite(index: number, value: boolean): void {
-  appRelays.value = appRelays.value.map((relay, relayIndex) =>
-    relayIndex === index ? { ...relay, write: Boolean(value) } : relay,
-  );
+  appRelaysStore.setRelayFlags(index, { write: Boolean(value) });
 }
 
 function restoreDefaultAppRelays(): void {
-  appRelays.value = createDefaultAppRelays();
+  appRelaysStore.restoreDefaults();
+}
+
+async function addMyRelay(): Promise<void> {
+  if (!canAddMyRelay.value) {
+    return;
+  }
+
+  try {
+    await myRelaysStore.addRelay(myNewRelay.value.trim());
+    myNewRelay.value = '';
+  } catch {}
+}
+
+async function removeMyRelay(index: number): Promise<void> {
+  try {
+    await myRelaysStore.removeRelay(index);
+  } catch {}
+}
+
+async function updateMyRelayRead(index: number, value: boolean): Promise<void> {
+  try {
+    await myRelaysStore.setRelayFlags(index, { read: Boolean(value) });
+  } catch {}
+}
+
+async function updateMyRelayWrite(index: number, value: boolean): Promise<void> {
+  try {
+    await myRelaysStore.setRelayFlags(index, { write: Boolean(value) });
+  } catch {}
+}
+
+async function refreshMyRelays(): Promise<void> {
+  await myRelaysStore.hydrateFromNostr(true);
 }
 </script>
 
@@ -411,6 +545,12 @@ function restoreDefaultAppRelays(): void {
   word-break: break-word;
 }
 
+.more-page__relay-source {
+  padding: 12px 14px 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
 .more-page__relay-toolbar {
   display: flex;
   align-items: flex-start;
@@ -420,6 +560,18 @@ function restoreDefaultAppRelays(): void {
 
 .more-page__relay-input {
   flex: 1;
+}
+
+.more-page__relay-feedback {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 0;
+  font-size: 0.88rem;
+}
+
+.more-page__relay-feedback--error {
+  color: #fda4af;
 }
 
 .more-page__relay-empty {
@@ -538,11 +690,6 @@ function restoreDefaultAppRelays(): void {
 .more-page__relay-status-dot--connected {
   background: #22c55e;
   box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
-}
-
-.more-page__relay-status-dot--disconnected {
-  background: #ef4444;
-  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.16);
 }
 
 .more-page__pill,
