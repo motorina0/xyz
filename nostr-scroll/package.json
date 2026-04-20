@@ -3,10 +3,26 @@
   "version": "0.1.0",
   "private": true,
   "description": "Mocked Nostr-shaped social feed prototype built with Quasar and Vue.",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
   "scripts": {
-    "dev": "node ../scripts/quasar.cjs dev",
-    "build": "node ../scripts/quasar.cjs build",
-    "prepare:quasar": "node ../scripts/quasar.cjs prepare",
-    "typecheck": "node ../node_modules/vue-tsc/bin/vue-tsc.js --noEmit -p tsconfig.json"
+    "dev": "node ./scripts/quasar.cjs dev",
+    "build": "node ./scripts/quasar.cjs build",
+    "prepare:quasar": "node ./scripts/quasar.cjs prepare",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@quasar/extras": "^1.17.0",
+    "pinia": "^2.1.7",
+    "quasar": "^2.17.7",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@quasar/app-vite": "2.1.0",
+    "typescript": "~5.7.2",
+    "vue-tsc": "^2.2.0"
   }
 }
