@@ -35,7 +35,20 @@
         <div class="profile-peek__name">{{ currentProfile.displayName }}</div>
         <div class="profile-peek__handle text-scroll-muted">@{{ currentProfile.name }}</div>
       </div>
-      <q-btn flat round dense icon="more_horiz" class="profile-peek__more" />
+      <q-btn flat round dense icon="more_horiz" class="profile-peek__more">
+        <q-menu
+          class="account-menu"
+          anchor="top middle"
+          self="bottom middle"
+          :offset="[0, 10]"
+        >
+          <q-list class="account-menu__list" dense>
+            <q-item clickable class="account-menu__item" @click="handleLogout">
+              <q-item-section class="account-menu__label">Log out @{{ currentProfile.name }}</q-item-section>
+            </q-item>
+          </q-list>
+        </q-menu>
+      </q-btn>
     </div>
   </div>
 </template>
@@ -125,6 +138,11 @@ function handleNav(item: SidebarItem): void {
   }
 
   void router.push({ name: item.routeName, params: item.params });
+}
+
+async function handleLogout(): Promise<void> {
+  authStore.logout();
+  await router.replace({ name: 'login' });
 }
 </script>
 
@@ -253,6 +271,35 @@ function handleNav(item: SidebarItem): void {
 }
 
 .profile-peek__more {
+  color: var(--scroll-text);
+}
+
+:deep(.account-menu) {
+  border: 1px solid rgba(83, 100, 113, 0.34);
+  border-radius: 18px;
+  background: #000000;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  overflow: hidden;
+}
+
+:deep(.account-menu__list) {
+  min-width: 240px;
+  padding: 8px 0;
+  background: #000000;
+}
+
+:deep(.account-menu__item) {
+  min-height: 48px;
+  padding: 0 18px;
+}
+
+:deep(.account-menu__item:hover) {
+  background: rgba(231, 233, 234, 0.08);
+}
+
+:deep(.account-menu__label) {
+  font-size: 1rem;
+  font-weight: 700;
   color: var(--scroll-text);
 }
 </style>
