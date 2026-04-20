@@ -15,6 +15,7 @@ export const useUiStore = defineStore('ui', () => {
   const profileTabs = ref<Record<string, ProfileTab>>(
     readStorageItem<StoredUiState>(STORAGE_KEYS.ui, defaultState).profileTabs,
   );
+  const isComposeDialogOpen = ref(false);
 
   function persist(): void {
     writeStorageItem(STORAGE_KEYS.ui, {
@@ -34,9 +35,20 @@ export const useUiStore = defineStore('ui', () => {
     persist();
   }
 
+  function openComposeDialog(): void {
+    isComposeDialogOpen.value = true;
+  }
+
+  function closeComposeDialog(): void {
+    isComposeDialogOpen.value = false;
+  }
+
   return {
     profileTabs,
+    isComposeDialogOpen,
     getProfileTab,
     setProfileTab,
+    openComposeDialog,
+    closeComposeDialog,
   };
 });

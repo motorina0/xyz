@@ -16,6 +16,7 @@
       </div>
     </q-page-container>
 
+    <ComposePostDialog />
     <MobileBottomNav class="lt-md" />
   </q-layout>
 </template>
@@ -25,6 +26,7 @@ import { onMounted } from 'vue';
 import { useAuthStore } from '../../stores/auth';
 import { useFeedStore } from '../../stores/feed';
 import { useProfilesStore } from '../../stores/profiles';
+import ComposePostDialog from '../feed/ComposePostDialog.vue';
 import LeftSidebar from './LeftSidebar.vue';
 import MobileBottomNav from './MobileBottomNav.vue';
 import RightNewsPanel from './RightNewsPanel.vue';

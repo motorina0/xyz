@@ -24,6 +24,7 @@
       unelevated
       label="Post"
       class="scroll-button left-sidebar__post-button"
+      @click="uiStore.openComposeDialog()"
     />
 
     <div v-if="currentProfile" class="profile-peek">
@@ -44,11 +45,13 @@ import { computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '../../stores/auth';
 import { useProfilesStore } from '../../stores/profiles';
+import { useUiStore } from '../../stores/ui';
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const profilesStore = useProfilesStore();
+const uiStore = useUiStore();
 
 const currentProfile = computed(() =>
   profilesStore.getProfileByPubkey(authStore.currentPubkey),
