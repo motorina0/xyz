@@ -31,19 +31,6 @@
 
       <div v-else class="news-loading text-scroll-muted">Loading headlines…</div>
     </div>
-
-    <div class="scroll-card right-panel-card trends-card">
-      <div class="card-heading">What's happening</div>
-
-      <div v-for="trend in trends" :key="trend.id" class="trend-item">
-        <div class="trend-item__row">
-          <span class="trend-item__category">{{ trend.category }}</span>
-          <q-btn flat round dense icon="more_horiz" class="trend-item__action" />
-        </div>
-        <div class="trend-item__headline">{{ trend.title }}</div>
-        <div class="trend-item__meta text-scroll-muted">{{ trend.meta }}</div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -53,26 +40,6 @@ import { loadNews } from '../../services/newsService';
 import type { NewsItem } from '../../types/news';
 
 const newsItems = ref<NewsItem[]>([]);
-const trends = [
-  {
-    id: 'trend-1',
-    category: 'Product · Trending',
-    title: 'Dark-mode feed refresh',
-    meta: '14.8K posts',
-  },
-  {
-    id: 'trend-2',
-    category: 'Design · Trending',
-    title: 'Timeline density',
-    meta: '7,214 posts',
-  },
-  {
-    id: 'trend-3',
-    category: 'Nostr · Trending',
-    title: 'Relay UX',
-    meta: '5,102 posts',
-  },
-];
 
 onMounted(async () => {
   newsItems.value = await loadNews();
@@ -157,47 +124,31 @@ onMounted(async () => {
   color: white;
 }
 
-.news-list,
-.trends-card {
+.news-list {
   display: flex;
   flex-direction: column;
 }
 
-.news-item,
-.trend-item {
+.news-item {
   padding: 14px 16px;
   border-top: 1px solid var(--scroll-border);
   transition: background 160ms ease;
 }
 
-.news-item:hover,
-.trend-item:hover {
+.news-item:hover {
   background: var(--scroll-hover);
 }
 
-.news-item__category,
-.trend-item__category {
+.news-item__category {
   color: var(--scroll-text-soft);
   font-size: 0.82rem;
 }
 
-.news-item__headline,
-.trend-item__headline {
+.news-item__headline {
   font-size: 0.98rem;
   line-height: 1.35;
   font-weight: 700;
   margin: 3px 0 6px;
-}
-
-.trend-item__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.trend-item__action {
-  color: var(--scroll-text-muted);
 }
 
 .news-loading {
