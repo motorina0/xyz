@@ -2,7 +2,16 @@ import { NDKKind, NDKUser, profileFromEvent, serializeProfile, type NDKEvent, ty
 import type { NostrAuthSession } from '../types/auth';
 import type { NostrProfile } from '../types/nostr';
 import type { RelayListEntry } from '../types/relays';
-import { buildReadRelayUrls, buildWriteRelayUrls, connectNdkClient, createNdkClient, createRelaySet, fetchEventsFromRelays, publishReplaceableEventToRelays } from './nostrClientService';
+import {
+  buildReadRelayUrls,
+  buildWriteRelayUrls,
+  connectNdkClient,
+  createNdkClient,
+  createRelaySet,
+  fetchEventFromRelays,
+  fetchEventsFromRelays,
+  publishReplaceableEventToRelays,
+} from './nostrClientService';
 import { encodeProfileReference, shortenPubkey, slugifyHandle } from './nostrEntityService';
 import { createFallbackAvatarDataUri, createFallbackBannerDataUri } from '../utils/visuals';
 
@@ -129,6 +138,31 @@ export async function fetchFollowingCount(
   } catch {
     return undefined;
   }
+}
+
+export async function fetchFollowingPubkeys(
+  session: NostrAuthSession,
+  appRelayEntries: RelayListEntry[],
+  myRelayEntries: RelayListEntry[],
+  pubkey: string,
+): Promise<string[]> {
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const contactsEvent = await fetchEventFromRelays(session, relayUrls, {
+    authors: [pubkey],
+    kinds: [NDKKind.Contacts],
+  });
+
+  if (!contactsEvent) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      contactsEvent.tags
+        .filter((tag) => tag[0] === 'p' && typeof tag[1] === 'string' && tag[1].length > 0)
+        .map((tag) => tag[1] as string),
+    ),
+  );
 }
 
 export async function saveCurrentUserProfile(

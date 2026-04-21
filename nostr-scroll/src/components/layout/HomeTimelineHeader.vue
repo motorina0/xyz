@@ -9,16 +9,25 @@
       indicator-color="primary"
       narrow-indicator
     >
-      <q-tab name="for-you" label="For you" />
+      <q-tab name="all" label="All" />
       <q-tab name="following" label="Following" />
     </q-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed } from 'vue';
+import { useUiStore } from '../../stores/ui';
+import type { HomeTimelineTab } from '../../types/nostr';
 
-const activeTab = ref('following');
+const uiStore = useUiStore();
+
+const activeTab = computed<HomeTimelineTab>({
+  get: () => uiStore.homeTimelineTab,
+  set: (tab) => {
+    uiStore.setHomeTimelineTab(tab);
+  },
+});
 </script>
 
 <style scoped>

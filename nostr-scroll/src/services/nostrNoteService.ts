@@ -454,12 +454,17 @@ export async function fetchHomeTimelineBatch(
   myRelayEntries: RelayListEntry[],
   until: number | null,
   limit = 15,
+  authors?: string[],
 ): Promise<HydratedNoteCollection> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
   const filters: NDKFilter = {
     kinds: [NDKKind.Text, NDKKind.Repost],
     limit: Math.max(limit * 3, 30),
   };
+
+  if (Array.isArray(authors) && authors.length > 0) {
+    filters.authors = authors;
+  }
 
   if (typeof until === 'number') {
     filters.until = until;

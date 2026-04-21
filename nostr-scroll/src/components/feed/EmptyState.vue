@@ -30,5 +30,6 @@ defineProps<Props>();
 .empty-state__subtitle {
   max-width: 32ch;
   line-height: 1.5;
+  white-space: pre-line;
 }
 </style>

@@ -57,4 +57,5 @@ export interface ViewerPostState {
   repostEventIds?: string[];
 }
 
+export type HomeTimelineTab = 'all' | 'following';
 export type ProfileTab = 'posts' | 'replies' | 'likes' | 'reposts';

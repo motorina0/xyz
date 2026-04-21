@@ -5,6 +5,7 @@ import { useAppRelaysStore } from './appRelays';
 import { useAuthStore } from './auth';
 import { useMyRelaysStore } from './myRelays';
 import { useProfilesStore } from './profiles';
+import { fetchFollowingPubkeys } from '../services/nostrProfileService';
 import {
   fetchBookmarksCollection,
   fetchHomeTimelineBatch,
@@ -19,7 +20,7 @@ import {
   publishReply,
   publishRepost,
 } from '../services/nostrNoteService';
-import type { NostrNote, ProfileTab, ViewerPostState } from '../types/nostr';
+import type { HomeTimelineTab, NostrNote, ProfileTab, ViewerPostState } from '../types/nostr';
 
 interface ThreadState {
   focusedId: string | null;
@@ -28,6 +29,18 @@ interface ThreadState {
   loading: boolean;
   loaded: boolean;
   error: string;
+}
+
+interface HomeTimelineState {
+  ids: string[];
+  loading: boolean;
+  loaded: boolean;
+  error: string;
+  loadingMore: boolean;
+  nextCursor: number | null;
+  hasMore: boolean;
+  followPubkeys: string[];
+  followListEmpty: boolean;
 }
 
 function defaultViewerState(): ViewerPostState {
@@ -44,6 +57,20 @@ function uniqueIds(ids: string[]): string[] {
   return Array.from(new Set(ids.filter(Boolean)));
 }
 
+function defaultHomeTimelineState(): HomeTimelineState {
+  return {
+    ids: [],
+    loading: false,
+    loaded: false,
+    error: '',
+    loadingMore: false,
+    nextCursor: null,
+    hasMore: true,
+    followPubkeys: [],
+    followListEmpty: false,
+  };
+}
+
 export const useFeedStore = defineStore('feed', () => {
   const authStore = useAuthStore();
   const appRelaysStore = useAppRelaysStore();
@@ -52,13 +79,10 @@ export const useFeedStore = defineStore('feed', () => {
 
   const notesById = ref<Record<string, NostrNote>>({});
   const viewerState = ref<Record<string, ViewerPostState>>({});
-  const homeTimelineIds = ref<string[]>([]);
-  const homeLoading = ref(false);
-  const homeLoaded = ref(false);
-  const homeError = ref('');
-  const homeLoadingMore = ref(false);
-  const homeNextCursor = ref<number | null>(null);
-  const hasMoreHome = ref(true);
+  const homeTimelineState = ref<Record<HomeTimelineTab, HomeTimelineState>>({
+    all: defaultHomeTimelineState(),
+    following: defaultHomeTimelineState(),
+  });
   const bookmarksTimelineIds = ref<string[]>([]);
   const bookmarksLoading = ref(false);
   const bookmarksLoaded = ref(false);
@@ -73,9 +97,13 @@ export const useFeedStore = defineStore('feed', () => {
   const rawEventsById = new Map<string, NostrEvent>();
 
   const notes = computed(() => Object.values(notesById.value));
-  const loadingMore = computed(() => homeLoadingMore.value);
-  const homeTimeline = computed(() =>
-    homeTimelineIds.value
+  const allTimeline = computed(() =>
+    homeTimelineState.value.all.ids
+      .map((id) => notesById.value[id])
+      .filter((note): note is NostrNote => Boolean(note)),
+  );
+  const followingTimeline = computed(() =>
+    homeTimelineState.value.following.ids
       .map((id) => notesById.value[id])
       .filter((note): note is NostrNote => Boolean(note)),
   );
@@ -88,6 +116,26 @@ export const useFeedStore = defineStore('feed', () => {
   function ensureRelayStoresInitialized(): void {
     appRelaysStore.init();
     myRelaysStore.init();
+  }
+
+  function getHomeState(tab: HomeTimelineTab): HomeTimelineState {
+    return homeTimelineState.value[tab];
+  }
+
+  function setHomeState(tab: HomeTimelineTab, patch: Partial<HomeTimelineState>): void {
+    homeTimelineState.value = {
+      ...homeTimelineState.value,
+      [tab]: {
+        ...homeTimelineState.value[tab],
+        ...patch,
+      },
+    };
+  }
+
+  function getHomeTimeline(tab: HomeTimelineTab): NostrNote[] {
+    return homeTimelineState.value[tab].ids
+      .map((id) => notesById.value[id])
+      .filter((note): note is NostrNote => Boolean(note));
   }
 
   function upsertNotes(nextNotes: NostrNote[]): void {
@@ -209,7 +257,16 @@ export const useFeedStore = defineStore('feed', () => {
   }
 
   function replaceIdInLists(previousId: string, nextId: string): void {
-    homeTimelineIds.value = homeTimelineIds.value.map((id) => (id === previousId ? nextId : id));
+    homeTimelineState.value = {
+      all: {
+        ...homeTimelineState.value.all,
+        ids: homeTimelineState.value.all.ids.map((id) => (id === previousId ? nextId : id)),
+      },
+      following: {
+        ...homeTimelineState.value.following,
+        ids: homeTimelineState.value.following.ids.map((id) => (id === previousId ? nextId : id)),
+      },
+    };
     bookmarksTimelineIds.value = bookmarksTimelineIds.value.map((id) => (id === previousId ? nextId : id));
     profileTabIds.value = Object.fromEntries(
       Object.entries(profileTabIds.value).map(([pubkey, tabs]) => [
@@ -258,11 +315,20 @@ export const useFeedStore = defineStore('feed', () => {
     );
   }
 
+  function shouldIncludeAuthorInFollowingTimeline(pubkey: string): boolean {
+    return homeTimelineState.value.following.followPubkeys.includes(pubkey);
+  }
+
   async function ensureHydrated(force = false): Promise<void> {
-    if (homeLoaded.value && !force) {
+    await ensureHomeTimelineLoaded('all', force);
+  }
+
+  async function ensureHomeTimelineLoaded(tab: HomeTimelineTab, force = false): Promise<void> {
+    const homeState = getHomeState(tab);
+    if (homeState.loaded && !force) {
       return;
     }
-    if (homeLoading.value) {
+    if (homeState.loading) {
       return;
     }
 
@@ -271,15 +337,51 @@ export const useFeedStore = defineStore('feed', () => {
     }
 
     ensureRelayStoresInitialized();
-    homeLoading.value = true;
-    homeError.value = '';
+    setHomeState(tab, {
+      loading: true,
+      error: '',
+    });
 
     try {
+      let authors: string[] | undefined;
+
+      if (tab === 'following') {
+        const followPubkeys = await fetchFollowingPubkeys(
+          authStore.session,
+          appRelaysStore.relayEntries,
+          myRelaysStore.relayEntries,
+          authStore.currentPubkey,
+        );
+
+        if (followPubkeys.length === 0) {
+          setHomeState('following', {
+            ids: [],
+            loading: false,
+            loaded: true,
+            error: '',
+            loadingMore: false,
+            nextCursor: null,
+            hasMore: false,
+            followPubkeys: [],
+            followListEmpty: true,
+          });
+          return;
+        }
+
+        authors = followPubkeys;
+        setHomeState('following', {
+          followPubkeys,
+          followListEmpty: false,
+        });
+      }
+
       const homeCollection = await fetchHomeTimelineBatch(
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
         null,
+        15,
+        authors,
       );
       upsertNotes([...homeCollection.primaryNotes, ...homeCollection.relatedNotes]);
       upsertRawEvents(homeCollection.rawEvents);
@@ -288,32 +390,46 @@ export const useFeedStore = defineStore('feed', () => {
         [...homeCollection.primaryNotes, ...homeCollection.relatedNotes],
         homeCollection.authorPubkeys,
       );
-      homeTimelineIds.value = homeCollection.primaryNotes.map((note) => note.id);
-      homeNextCursor.value = homeCollection.nextCursor;
-      hasMoreHome.value = homeCollection.hasMore;
-      homeLoaded.value = true;
+      setHomeState(tab, {
+        ids: homeCollection.primaryNotes.map((note) => note.id),
+        nextCursor: homeCollection.nextCursor,
+        hasMore: homeCollection.hasMore,
+        loaded: true,
+        loading: false,
+      });
     } catch (error) {
-      homeError.value =
-        error instanceof Error ? error.message : 'Failed to load the home timeline from relays.';
-    } finally {
-      homeLoading.value = false;
+      setHomeState(tab, {
+        loading: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : `Failed to load the ${tab} home timeline from relays.`,
+      });
     }
   }
 
-  async function loadMoreHome(): Promise<void> {
-    if (homeLoadingMore.value || !hasMoreHome.value || !authStore.currentPubkey) {
+  async function loadMoreHome(tab: HomeTimelineTab): Promise<void> {
+    const homeState = getHomeState(tab);
+    if (homeState.loadingMore || !homeState.hasMore || !authStore.currentPubkey) {
+      return;
+    }
+    if (tab === 'following' && homeState.followListEmpty) {
       return;
     }
 
     ensureRelayStoresInitialized();
-    homeLoadingMore.value = true;
+    setHomeState(tab, {
+      loadingMore: true,
+    });
 
     try {
       const homeCollection = await fetchHomeTimelineBatch(
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        homeNextCursor.value,
+        homeState.nextCursor,
+        15,
+        tab === 'following' ? homeState.followPubkeys : undefined,
       );
       upsertNotes([...homeCollection.primaryNotes, ...homeCollection.relatedNotes]);
       upsertRawEvents(homeCollection.rawEvents);
@@ -322,14 +438,21 @@ export const useFeedStore = defineStore('feed', () => {
         [...homeCollection.primaryNotes, ...homeCollection.relatedNotes],
         homeCollection.authorPubkeys,
       );
-      homeTimelineIds.value = uniqueIds([...homeTimelineIds.value, ...homeCollection.primaryNotes.map((note) => note.id)]);
-      homeNextCursor.value = homeCollection.nextCursor;
-      hasMoreHome.value = homeCollection.hasMore;
+      setHomeState(tab, {
+        ids: uniqueIds([
+          ...homeTimelineState.value[tab].ids,
+          ...homeCollection.primaryNotes.map((note) => note.id),
+        ]),
+        nextCursor: homeCollection.nextCursor,
+        hasMore: homeCollection.hasMore,
+        loadingMore: false,
+      });
     } catch (error) {
-      homeError.value =
-        error instanceof Error ? error.message : 'Failed to load more posts from relays.';
-    } finally {
-      homeLoadingMore.value = false;
+      setHomeState(tab, {
+        loadingMore: false,
+        error:
+          error instanceof Error ? error.message : `Failed to load more ${tab} posts from relays.`,
+      });
     }
   }
 
@@ -559,7 +682,14 @@ export const useFeedStore = defineStore('feed', () => {
     };
 
     upsertNotes([optimisticNote]);
-    homeTimelineIds.value = uniqueIds([optimisticId, ...homeTimelineIds.value]);
+    setHomeState('all', {
+      ids: uniqueIds([optimisticId, ...homeTimelineState.value.all.ids]),
+    });
+    if (shouldIncludeAuthorInFollowingTimeline(authStore.currentPubkey)) {
+      setHomeState('following', {
+        ids: uniqueIds([optimisticId, ...homeTimelineState.value.following.ids]),
+      });
+    }
 
     try {
       const rawEvent = await publishNote(
@@ -591,10 +721,22 @@ export const useFeedStore = defineStore('feed', () => {
       );
       replaceIdInLists(optimisticId, rawEvent.id);
       removeNote(optimisticId);
-      homeTimelineIds.value = uniqueIds([rawEvent.id, ...homeTimelineIds.value]);
+      setHomeState('all', {
+        ids: uniqueIds([rawEvent.id, ...homeTimelineState.value.all.ids]),
+      });
+      if (shouldIncludeAuthorInFollowingTimeline(authStore.currentPubkey)) {
+        setHomeState('following', {
+          ids: uniqueIds([rawEvent.id, ...homeTimelineState.value.following.ids]),
+        });
+      }
     } catch (error) {
       removeNote(optimisticId);
-      homeTimelineIds.value = homeTimelineIds.value.filter((id) => id !== optimisticId);
+      setHomeState('all', {
+        ids: homeTimelineState.value.all.ids.filter((id) => id !== optimisticId),
+      });
+      setHomeState('following', {
+        ids: homeTimelineState.value.following.ids.filter((id) => id !== optimisticId),
+      });
       throw error;
     } finally {
       publishingPost.value = false;
@@ -903,16 +1045,33 @@ export const useFeedStore = defineStore('feed', () => {
     return getProfilePosts(pubkey).length + getProfileReplies(pubkey).length;
   }
 
+  function isHomeTimelineLoading(tab: HomeTimelineTab): boolean {
+    return homeTimelineState.value[tab].loading;
+  }
+
+  function getHomeTimelineError(tab: HomeTimelineTab): string {
+    return homeTimelineState.value[tab].error;
+  }
+
+  function isHomeTimelineLoadingMore(tab: HomeTimelineTab): boolean {
+    return homeTimelineState.value[tab].loadingMore;
+  }
+
+  function canLoadMoreHome(tab: HomeTimelineTab): boolean {
+    return homeTimelineState.value[tab].hasMore;
+  }
+
+  function isFollowingListEmpty(): boolean {
+    return homeTimelineState.value.following.followListEmpty;
+  }
+
   function reset(): void {
     notesById.value = {};
     viewerState.value = {};
-    homeTimelineIds.value = [];
-    homeLoading.value = false;
-    homeLoaded.value = false;
-    homeError.value = '';
-    homeLoadingMore.value = false;
-    homeNextCursor.value = null;
-    hasMoreHome.value = true;
+    homeTimelineState.value = {
+      all: defaultHomeTimelineState(),
+      following: defaultHomeTimelineState(),
+    };
     bookmarksTimelineIds.value = [];
     bookmarksLoading.value = false;
     bookmarksLoaded.value = false;
@@ -929,16 +1088,14 @@ export const useFeedStore = defineStore('feed', () => {
   return {
     notes,
     viewerState,
-    homeTimeline,
+    allTimeline,
+    followingTimeline,
     bookmarksTimeline,
-    homeLoading,
-    homeError,
-    loadingMore,
-    hasMoreHome,
     bookmarksLoading,
     bookmarksError,
     publishingPost,
     ensureHydrated,
+    ensureHomeTimelineLoaded,
     loadMoreHome,
     loadBookmarks,
     ensureProfileTabLoaded,
@@ -959,8 +1116,14 @@ export const useFeedStore = defineStore('feed', () => {
     toggleLike,
     toggleRepost,
     toggleBookmark,
+    getHomeTimeline,
+    getHomeTimelineError,
     getProfileTabError,
     isProfileTabLoading,
+    isHomeTimelineLoading,
+    isHomeTimelineLoadingMore,
+    canLoadMoreHome,
+    isFollowingListEmpty,
     getThreadError,
     isThreadLoading,
     isActionPending,
