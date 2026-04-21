@@ -4,6 +4,7 @@
     <PostComposer :submitting="feedStore.publishingPost" @submit="void feedStore.createPost($event)" />
     <FeedList
       :posts="feedStore.homeTimeline"
+      :preview-chars="300"
       empty-title="Nothing on the timeline yet"
       empty-subtitle="Recent public notes from your configured relays will appear here."
       :loading="feedStore.homeLoading"

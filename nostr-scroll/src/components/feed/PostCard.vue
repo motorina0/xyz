@@ -39,7 +39,15 @@
           Replying to <span>@{{ replyingToHandle }}</span>
         </div>
 
-        <div class="post-card__text">{{ displayPost.content }}</div>
+        <div class="post-card__text">{{ renderedContent }}</div>
+        <button
+          v-if="showMoreLink"
+          type="button"
+          class="post-card__show-more"
+          @click.stop="expandPost"
+        >
+          Show more
+        </button>
 
         <button
           v-if="quotedPost"
@@ -89,7 +97,7 @@
 
 <script setup lang="ts">
 import { copyToClipboard } from 'quasar';
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useFormatters } from '../../composables/useFormatters';
 import { useFeedStore } from '../../stores/feed';
@@ -100,10 +108,12 @@ import PostActionBar from './PostActionBar.vue';
 interface Props {
   post: NostrNote;
   highlighted?: boolean;
+  previewChars?: number | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   highlighted: false,
+  previewChars: null,
 });
 
 const router = useRouter();
@@ -142,9 +152,34 @@ const quotedAuthor = computed(() =>
 const primaryMedia = computed(() => displayPost.value.media?.[0] ?? null);
 const postState = computed(() => feedStore.getViewerPostState(displayPost.value.id));
 const isPending = computed(() => feedStore.isActionPending(displayPost.value.id));
+const isExpanded = ref(false);
+const contentCharacters = computed(() => Array.from(displayPost.value.content));
+const previewCharacterLimit = computed(() =>
+  typeof props.previewChars === 'number' && props.previewChars > 0 ? props.previewChars : null,
+);
+const showMoreLink = computed(
+  () =>
+    !isExpanded.value
+    && previewCharacterLimit.value !== null
+    && contentCharacters.value.length > previewCharacterLimit.value,
+);
+const renderedContent = computed(() => {
+  if (isExpanded.value || previewCharacterLimit.value === null || contentCharacters.value.length <= previewCharacterLimit.value) {
+    return displayPost.value.content;
+  }
+
+  return `${contentCharacters.value
+    .slice(0, previewCharacterLimit.value)
+    .join('')
+    .trimEnd()}…`;
+});
 
 function openPost(): void {
   openPostById(displayPost.value.id);
+}
+
+function expandPost(): void {
+  isExpanded.value = true;
 }
 
 function openPostById(id: string): void {
@@ -258,8 +293,27 @@ async function sharePost(): Promise<void> {
 .post-card__text {
   color: var(--scroll-text);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   line-height: 1.48;
   font-size: 0.98rem;
+  max-width: 100%;
+}
+
+.post-card__show-more {
+  margin-top: 2px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--scroll-accent);
+  font: inherit;
+  font-weight: 600;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.post-card__show-more:hover {
+  text-decoration: underline;
 }
 
 .post-card__quoted {
@@ -291,6 +345,9 @@ async function sharePost(): Promise<void> {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 
 .post-card__media {

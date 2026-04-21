@@ -11,7 +11,12 @@
     />
 
     <template v-else-if="posts.length">
-      <PostCard v-for="post in posts" :key="post.id" :post="post" />
+      <PostCard
+        v-for="post in posts"
+        :key="post.id"
+        :post="post"
+        :preview-chars="previewChars"
+      />
 
       <div ref="sentinelRef" class="feed-list__sentinel">
         <q-spinner v-if="loadingMore" color="primary" size="28px" />
@@ -37,6 +42,7 @@ interface Props {
   errorMessage?: string;
   canLoadMore?: boolean;
   loadingMore?: boolean;
+  previewChars?: number | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -44,6 +50,7 @@ const props = withDefaults(defineProps<Props>(), {
   errorMessage: '',
   canLoadMore: false,
   loadingMore: false,
+  previewChars: null,
 });
 
 const emit = defineEmits<{
