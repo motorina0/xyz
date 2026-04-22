@@ -11,8 +11,36 @@ import type { NostrAuthSession } from '../types/auth';
 import type { RelayListEntry } from '../types/relays';
 import { normalizeReadableRelayUrls, normalizeWritableRelayUrls } from '../utils/relayList';
 
+const NOSTR_WIRE_LOG_PREFIX = '[nostr-scroll:nostr-wire]';
+
 function uniqueRelayUrls(relayUrls: string[]): string[] {
   return Array.from(new Set(relayUrls));
+}
+
+function parseWireFrame(message: string): unknown[] | null {
+  try {
+    const parsed = JSON.parse(message);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function logRelayTraffic(message: string, relayUrl: string, direction?: 'send' | 'recv'): void {
+  const frame = parseWireFrame(message);
+  if (!frame) {
+    return;
+  }
+
+  const [command] = frame;
+  if (direction === 'send' && command === 'REQ') {
+    console.info(NOSTR_WIRE_LOG_PREFIX, 'REQ', relayUrl, message, frame);
+    return;
+  }
+
+  if (direction === 'recv' && command === 'EVENT') {
+    console.info(NOSTR_WIRE_LOG_PREFIX, 'EVENT', relayUrl, message, frame);
+  }
 }
 
 export function buildReadRelayUrls(
@@ -43,7 +71,14 @@ export function buildWriteRelayUrls(
 
 export function createNdkClient(session: NostrAuthSession, relayUrls: string[]): NDK {
   const ndk = new NDK({
+    autoConnectUserRelays: false,
+    enableOutboxModel: false,
     explicitRelayUrls: relayUrls,
+    netDebug: (message, relay, direction) => {
+      if (typeof message === 'string') {
+        logRelayTraffic(message, relay.url, direction);
+      }
+    },
   });
 
   if (session.method === 'nsec' && session.privateKeyHex) {

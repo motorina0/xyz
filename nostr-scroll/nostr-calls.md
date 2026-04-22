@@ -50,6 +50,7 @@ The final list is deduplicated in `buildWriteRelayUrls()`.
 - Generic read/write calls in `nostrClientService.ts` connect with a `4_000ms` timeout.
 - My-relay discovery in `nostrRelayService.ts` uses a separate `2_500ms` timeout.
 - Generic publishes wait for `1` successful relay ack when at least one relay is configured.
+- `nostr-scroll` disables NDK `autoConnectUserRelays` and the NDK outbox model, so reads and writes only use the relay URLs explicitly chosen by the app.
 
 ## Startup sequence
 

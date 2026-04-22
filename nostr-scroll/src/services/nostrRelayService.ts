@@ -1,13 +1,12 @@
 import NDK, {
   NDKEvent,
   NDKKind,
-  NDKNip07Signer,
-  NDKPrivateKeySigner,
   NDKRelayList,
   NDKRelaySet,
   NDKSubscriptionCacheUsage,
 } from '@nostr-dev-kit/ndk';
 import { DEFAULT_APP_RELAY_URLS } from '../constants/relays';
+import { createNdkClient } from './nostrClientService';
 import type { NostrAuthSession } from '../types/auth';
 import type { MyRelayFetchResult, RelayListEntry } from '../types/relays';
 import {
@@ -21,20 +20,6 @@ type NostrWindow = Window & {
     getRelays?: () => Promise<Record<string, { read?: boolean; write?: boolean }>>;
   };
 };
-
-function createNdkClient(session: NostrAuthSession, relayUrls: string[]): NDK {
-  const ndk = new NDK({
-    explicitRelayUrls: relayUrls,
-  });
-
-  if (session.method === 'nsec' && session.privateKeyHex) {
-    ndk.signer = new NDKPrivateKeySigner(session.privateKeyHex);
-  } else if (session.method === 'nip07') {
-    ndk.signer = new NDKNip07Signer(undefined, ndk);
-  }
-
-  return ndk;
-}
 
 async function connectNdk(ndk: NDK): Promise<void> {
   await ndk.connect(2_500);
