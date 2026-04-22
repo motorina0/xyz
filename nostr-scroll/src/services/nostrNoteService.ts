@@ -17,6 +17,7 @@ import {
   createRelaySet,
   fetchEventFromRelays,
   fetchEventsFromRelays,
+  streamEventsFromRelays,
   publishEventToRelays,
   publishReplaceableEventToRelays,
   toRawEvent,
@@ -34,6 +35,16 @@ export interface HydratedNoteCollection {
   nextCursor: number | null;
   hasMore: boolean;
   authorPubkeys: string[];
+}
+
+export type HydratedNoteChunk = Pick<
+  HydratedNoteCollection,
+  'primaryNotes' | 'relatedNotes' | 'rawEvents' | 'viewerState' | 'authorPubkeys'
+>;
+
+export interface HomeTimelineStreamResult {
+  nextCursor: number | null;
+  hasMore: boolean;
 }
 
 export interface ThreadCollection {
@@ -56,6 +67,8 @@ export interface BookmarkCollection {
 function unique<T>(values: T[]): T[] {
   return Array.from(new Set(values));
 }
+
+const HOME_TIMELINE_STREAM_BATCH_SIZE = 5;
 
 function extractImageMedia(content: string) {
   const matches = Array.from(content.matchAll(IMAGE_URL_REGEX));
@@ -162,6 +175,20 @@ function mergeNotesById(notes: NostrNote[]): NostrNote[] {
   }
 
   return Array.from(noteMap.values());
+}
+
+function buildPrimaryChunkFromEvents(primaryEvents: NDKEvent[]): HydratedNoteChunk {
+  const primaryNotes = primaryEvents
+    .map((event) => mapEventToNote(event))
+    .filter((note): note is NostrNote => note !== null);
+
+  return {
+    primaryNotes,
+    relatedNotes: [],
+    rawEvents: primaryEvents.map((event) => toRawEvent(event)),
+    viewerState: {},
+    authorPubkeys: unique(primaryNotes.map((note) => note.pubkey)),
+  };
 }
 
 async function fetchEventsInChunks(
@@ -517,6 +544,128 @@ export async function fetchHomeTimelineBatch(
   return hydrateEvents(session, appRelayEntries, myRelayEntries, primaryEvents, {
     hasMore: primaryEvents.length === limit,
   });
+}
+
+export async function streamHomeTimelineBatch(
+  session: NostrAuthSession,
+  appRelayEntries: RelayListEntry[],
+  myRelayEntries: RelayListEntry[],
+  until: number | null,
+  limit = 15,
+  authors: string[] | undefined,
+  onChunk: (chunk: HydratedNoteChunk) => Promise<void> | void,
+): Promise<HomeTimelineStreamResult> {
+  const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+  const filters: NDKFilter = {
+    kinds: [NDKKind.Text],
+    limit: Math.max(limit * 3, 30),
+  };
+
+  if (Array.isArray(authors) && authors.length > 0) {
+    filters.authors = authors;
+  }
+
+  if (typeof until === 'number') {
+    filters.until = until;
+  }
+
+  const streamedPrimaryEvents: NDKEvent[] = [];
+  const streamedPrimaryIds = new Set<string>();
+  const queuedPrimaryEvents: NDKEvent[] = [];
+  const queuedPrimaryIds = new Set<string>();
+  const pendingHydrations: Promise<void>[] = [];
+
+  const emitPrimaryBatch = async (batchEvents: NDKEvent[]): Promise<void> => {
+    if (batchEvents.length === 0) {
+      return;
+    }
+
+    for (const event of batchEvents) {
+      streamedPrimaryIds.add(event.id);
+      streamedPrimaryEvents.push(event);
+    }
+
+    await onChunk(buildPrimaryChunkFromEvents(batchEvents));
+
+    const hydrationPromise = hydrateEvents(
+      session,
+      appRelayEntries,
+      myRelayEntries,
+      batchEvents,
+    )
+      .then(async (hydratedChunk) => {
+        await onChunk({
+          primaryNotes: hydratedChunk.primaryNotes,
+          relatedNotes: hydratedChunk.relatedNotes,
+          rawEvents: hydratedChunk.rawEvents,
+          viewerState: hydratedChunk.viewerState,
+          authorPubkeys: hydratedChunk.authorPubkeys,
+        });
+      })
+      .catch((error) => {
+        console.warn('Failed to hydrate streamed home timeline batch', error);
+      });
+
+    pendingHydrations.push(hydrationPromise);
+  };
+
+  const flushQueuedPrimaryEvents = async (flushAll = false): Promise<void> => {
+    while (
+      queuedPrimaryEvents.length > 0 &&
+      streamedPrimaryEvents.length < limit &&
+      (flushAll || queuedPrimaryEvents.length >= HOME_TIMELINE_STREAM_BATCH_SIZE)
+    ) {
+      const remainingSlots = limit - streamedPrimaryEvents.length;
+      const currentBatchSize = Math.min(
+        flushAll ? queuedPrimaryEvents.length : HOME_TIMELINE_STREAM_BATCH_SIZE,
+        remainingSlots,
+      );
+      const nextBatch = queuedPrimaryEvents.splice(0, currentBatchSize);
+
+      for (const event of nextBatch) {
+        queuedPrimaryIds.delete(event.id);
+      }
+
+      await emitPrimaryBatch(nextBatch);
+    }
+  };
+
+  await streamEventsFromRelays(session, relayUrls, filters, 'fetch-events', {
+    batchSize: HOME_TIMELINE_STREAM_BATCH_SIZE,
+    onBatch: async (events) => {
+      if (streamedPrimaryEvents.length >= limit) {
+        return;
+      }
+
+      for (const event of events) {
+        if (getEventReplyId(event)) {
+          continue;
+        }
+        if (streamedPrimaryIds.has(event.id) || queuedPrimaryIds.has(event.id)) {
+          continue;
+        }
+        if (streamedPrimaryEvents.length + queuedPrimaryEvents.length >= limit) {
+          break;
+        }
+
+        queuedPrimaryEvents.push(event);
+        queuedPrimaryIds.add(event.id);
+      }
+
+      await flushQueuedPrimaryEvents(false);
+    },
+  });
+
+  await flushQueuedPrimaryEvents(true);
+  await Promise.all(pendingHydrations);
+
+  return {
+    nextCursor:
+      streamedPrimaryEvents.length > 0
+        ? Math.max((streamedPrimaryEvents.at(-1)?.created_at ?? 0) - 1, 0)
+        : null,
+    hasMore: streamedPrimaryEvents.length === limit,
+  };
 }
 
 export async function fetchNotesByIds(

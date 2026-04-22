@@ -105,6 +105,18 @@ function toReqFilters(
   return idOrFilter;
 }
 
+function sortEventsNewest(events: NDKEvent[]): NDKEvent[] {
+  return [...events].sort(
+    (first, second) => (second.created_at ?? 0) - (first.created_at ?? 0),
+  );
+}
+
+export interface StreamEventsFromRelaysOptions {
+  batchSize?: number;
+  onBatch: (events: NDKEvent[]) => Promise<void> | void;
+  subscriptionOptions?: NDKSubscriptionOptions;
+}
+
 export function createLoggedReqSubscriptionOptions(
   label: string,
   relayUrls: string[],
@@ -238,9 +250,88 @@ export async function fetchEventsFromRelays(
     relaySet,
   );
 
-  return Array.from(events).sort(
-    (first, second) => (second.created_at ?? 0) - (first.created_at ?? 0),
-  );
+  return sortEventsNewest(Array.from(events));
+}
+
+export async function streamEventsFromRelays(
+  session: NostrAuthSession,
+  relayUrls: string[],
+  filters: NDKFilter | NDKFilter[],
+  label: string,
+  options: StreamEventsFromRelaysOptions,
+): Promise<void> {
+  const ndk = createNdkClient(session, relayUrls);
+  await connectNdkClient(ndk);
+  const relaySet = createRelaySet(ndk, relayUrls);
+  const batchSize = Math.max(1, Math.trunc(options.batchSize ?? 5));
+
+  await new Promise<void>((resolve, reject) => {
+    const bufferedEvents: NDKEvent[] = [];
+    let subscription: ReturnType<NDK['subscribe']> | null = null;
+    let processingQueue = Promise.resolve();
+    let didFinish = false;
+
+    const finish = (error?: unknown): void => {
+      if (didFinish) {
+        return;
+      }
+
+      didFinish = true;
+      if (subscription) {
+        subscription.stop();
+        subscription = null;
+      }
+
+      if (error) {
+        reject(error);
+        return;
+      }
+
+      resolve();
+    };
+
+    const queueBatchProcessing = (flush = false): void => {
+      processingQueue = processingQueue
+        .then(async () => {
+          while ((flush ? bufferedEvents.length > 0 : bufferedEvents.length >= batchSize) && !didFinish) {
+            const currentBatchSize = flush ? Math.min(batchSize, bufferedEvents.length) : batchSize;
+            const nextBatch = bufferedEvents.splice(0, currentBatchSize);
+            await options.onBatch(sortEventsNewest(nextBatch));
+          }
+        })
+        .catch((error) => {
+          finish(error);
+        });
+    };
+
+    subscription = ndk.subscribe(
+      filters,
+      createLoggedReqSubscriptionOptions(label, relayUrls, filters, {
+        ...(options.subscriptionOptions ?? {}),
+        closeOnEose: true,
+        relaySet,
+        onEvent: (event) => {
+          if (didFinish) {
+            return;
+          }
+
+          const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+          bufferedEvents.push(wrappedEvent);
+          queueBatchProcessing(false);
+        },
+        onEose: () => {
+          queueBatchProcessing(true);
+          void processingQueue
+            .then(() => {
+              finish();
+            })
+            .catch((error) => {
+              finish(error);
+            });
+        },
+      }),
+    );
+  });
 }
 
 export async function fetchEventFromRelays(

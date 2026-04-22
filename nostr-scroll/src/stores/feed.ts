@@ -8,7 +8,6 @@ import { useProfilesStore } from './profiles';
 import { fetchFollowingPubkeys } from '../services/nostrProfileService';
 import {
   fetchBookmarksCollection,
-  fetchHomeTimelineBatch,
   mapRawEventToNote,
   fetchNotesByIds,
   fetchProfileTab,
@@ -19,7 +18,9 @@ import {
   publishReaction,
   publishReply,
   publishRepost,
+  streamHomeTimelineBatch,
 } from '../services/nostrNoteService';
+import type { HydratedNoteChunk } from '../services/nostrNoteService';
 import type { HomeTimelineTab, NostrNote, ProfileTab, ViewerPostState } from '../types/nostr';
 
 interface ThreadState {
@@ -167,6 +168,28 @@ export const useFeedStore = defineStore('feed', () => {
     for (const event of events) {
       rawEventsById.set(event.id, event);
     }
+  }
+
+  function applyHydratedNoteChunk(nextChunk: HydratedNoteChunk): void {
+    upsertNotes([...nextChunk.primaryNotes, ...nextChunk.relatedNotes]);
+    upsertRawEvents(nextChunk.rawEvents);
+    mergeViewerState(nextChunk.viewerState);
+    void hydrateProfilesForNotes(
+      [...nextChunk.primaryNotes, ...nextChunk.relatedNotes],
+      nextChunk.authorPubkeys,
+    ).catch((error) => {
+      console.warn('Failed to hydrate profiles for streamed timeline notes', error);
+    });
+  }
+
+  function appendHomeTimelineIds(tab: HomeTimelineTab, noteIds: string[]): void {
+    if (noteIds.length === 0) {
+      return;
+    }
+
+    setHomeState(tab, {
+      ids: uniqueIds([...homeTimelineState.value[tab].ids, ...noteIds]),
+    });
   }
 
   async function hydrateProfilesForNotes(nextNotes: NostrNote[], extraPubkeys: string[] = []): Promise<void> {
@@ -334,8 +357,12 @@ export const useFeedStore = defineStore('feed', () => {
 
     ensureRelayStoresInitialized();
     setHomeState(tab, {
+      ids: [],
       loading: true,
+      loaded: false,
       error: '',
+      nextCursor: null,
+      hasMore: false,
     });
 
     try {
@@ -366,30 +393,30 @@ export const useFeedStore = defineStore('feed', () => {
 
         authors = followPubkeys;
         setHomeState('following', {
+          ids: [],
           followPubkeys,
           followListEmpty: false,
         });
       }
 
-      const homeCollection = await fetchHomeTimelineBatch(
+      const homeStream = await streamHomeTimelineBatch(
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
         null,
         15,
         authors,
-      );
-      upsertNotes([...homeCollection.primaryNotes, ...homeCollection.relatedNotes]);
-      upsertRawEvents(homeCollection.rawEvents);
-      mergeViewerState(homeCollection.viewerState);
-      await hydrateProfilesForNotes(
-        [...homeCollection.primaryNotes, ...homeCollection.relatedNotes],
-        homeCollection.authorPubkeys,
+        (nextChunk) => {
+          applyHydratedNoteChunk(nextChunk);
+          appendHomeTimelineIds(
+            tab,
+            nextChunk.primaryNotes.map((note) => note.id),
+          );
+        },
       );
       setHomeState(tab, {
-        ids: homeCollection.primaryNotes.map((note) => note.id),
-        nextCursor: homeCollection.nextCursor,
-        hasMore: homeCollection.hasMore,
+        nextCursor: homeStream.nextCursor,
+        hasMore: homeStream.hasMore,
         loaded: true,
         loading: false,
       });
@@ -406,7 +433,7 @@ export const useFeedStore = defineStore('feed', () => {
 
   async function loadMoreHome(tab: HomeTimelineTab): Promise<void> {
     const homeState = getHomeState(tab);
-    if (homeState.loadingMore || !homeState.hasMore || !authStore.currentPubkey) {
+    if (homeState.loading || homeState.loadingMore || !homeState.hasMore || !authStore.currentPubkey) {
       return;
     }
     if (tab === 'following' && homeState.followListEmpty) {
@@ -419,28 +446,24 @@ export const useFeedStore = defineStore('feed', () => {
     });
 
     try {
-      const homeCollection = await fetchHomeTimelineBatch(
+      const homeStream = await streamHomeTimelineBatch(
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
         homeState.nextCursor,
         15,
         tab === 'following' ? homeState.followPubkeys : undefined,
-      );
-      upsertNotes([...homeCollection.primaryNotes, ...homeCollection.relatedNotes]);
-      upsertRawEvents(homeCollection.rawEvents);
-      mergeViewerState(homeCollection.viewerState);
-      await hydrateProfilesForNotes(
-        [...homeCollection.primaryNotes, ...homeCollection.relatedNotes],
-        homeCollection.authorPubkeys,
+        (nextChunk) => {
+          applyHydratedNoteChunk(nextChunk);
+          appendHomeTimelineIds(
+            tab,
+            nextChunk.primaryNotes.map((note) => note.id),
+          );
+        },
       );
       setHomeState(tab, {
-        ids: uniqueIds([
-          ...homeTimelineState.value[tab].ids,
-          ...homeCollection.primaryNotes.map((note) => note.id),
-        ]),
-        nextCursor: homeCollection.nextCursor,
-        hasMore: homeCollection.hasMore,
+        nextCursor: homeStream.nextCursor,
+        hasMore: homeStream.hasMore,
         loadingMore: false,
       });
     } catch (error) {
