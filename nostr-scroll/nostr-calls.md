@@ -272,22 +272,24 @@ Viewer-state rules:
 
 For the set of visible display note ids:
 
-- chunk size: `24`
-- queries per chunk:
-  - kind `1` replies with `#e = chunk`
-  - kind `6` reposts with `#e = chunk`
-  - kind `7` reactions with `#e = chunk`
+- chunk size: `6`
+- for each note id in the chunk, issue NIP-45 `COUNT` requests for:
+  - kind `1` with `#e = [noteId]`
+  - kind `6` with `#e = [noteId]`
+  - kind `7` with `#e = [noteId]`
 
 Counting rules:
 
-- replies: only direct replies where `getEventReplyId(replyEvent)` matches the target note id
+- replies/comments: all kind `1` events matching the target `#e` tag
 - reposts: count repost events targeting the note id
-- likes: count reactions whose content is `+` or empty string
+- likes: best-effort count of kind `7` reactions targeting the note id
 
 Important limitation:
 
 - counts are derived only from the relays queried for the current screen
-- they are best-effort, not guaranteed global totals
+- when relays return HLL data, the merged HLL estimate is used
+- otherwise the max count reported by responding relays is used
+- if no relay returns a count result, the existing local stat value is preserved
 
 ## Notes-by-id rules
 

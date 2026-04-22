@@ -12,6 +12,7 @@ import type { RelayListEntry } from '../types/relays';
 import {
   buildReadRelayUrls,
   buildWriteRelayUrls,
+  createLoggedCountOptions,
   createNdkClient,
   createRelaySet,
   fetchEventFromRelays,
@@ -214,6 +215,20 @@ function targetEventIdFromTag(tags: string[][]): string | null {
   return matchingTag?.[1] ?? null;
 }
 
+function resolveCountResult(
+  result: {
+    count: number;
+    relayResults: Map<string, unknown>;
+  },
+  fallback: number,
+): number {
+  if (result.relayResults.size === 0) {
+    return fallback;
+  }
+
+  return Math.max(0, result.count);
+}
+
 async function fetchBookmarkIds(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
@@ -336,56 +351,80 @@ async function applyInteractionStats(
   const repostCountById = new Map<string, number>();
   const likeCountById = new Map<string, number>();
 
-  for (let index = 0; index < displayNoteIds.length; index += 24) {
-    const currentChunk = displayNoteIds.slice(index, index + 24);
+  if (displayNoteIds.length === 0) {
+    return {
+      notes,
+      viewerState: {},
+    };
+  }
+
+  const ndk = createNdkClient(session, relayUrls);
+  await connectNdkClient(ndk);
+  const relaySet = createRelaySet(ndk, relayUrls);
+
+  if (!relaySet) {
+    const viewerState = await buildViewerState(session, appRelayEntries, myRelayEntries, displayNoteIds);
+    return {
+      notes,
+      viewerState,
+    };
+  }
+
+  for (let index = 0; index < displayNoteIds.length; index += 6) {
+    const currentChunk = displayNoteIds.slice(index, index + 6);
     if (currentChunk.length === 0) {
       continue;
     }
 
-    const [replyEvents, repostEvents, reactionEvents] = await Promise.all([
-      fetchEventsFromRelays(session, relayUrls, {
-        kinds: [NDKKind.Text],
-        '#e': currentChunk,
+    const chunkCounts = await Promise.all(
+      currentChunk.map(async (noteId) => {
+        const [replyCountResult, repostCountResult, reactionCountResult] = await Promise.all([
+          relaySet.count(
+            {
+              kinds: [NDKKind.Text],
+              '#e': [noteId],
+            },
+            createLoggedCountOptions('count-replies', relayUrls, {
+              kinds: [NDKKind.Text],
+              '#e': [noteId],
+            }),
+          ),
+          relaySet.count(
+            {
+              kinds: [NDKKind.Repost],
+              '#e': [noteId],
+            },
+            createLoggedCountOptions('count-reposts', relayUrls, {
+              kinds: [NDKKind.Repost],
+              '#e': [noteId],
+            }),
+          ),
+          relaySet.count(
+            {
+              kinds: [NDKKind.Reaction],
+              '#e': [noteId],
+            },
+            createLoggedCountOptions('count-reactions', relayUrls, {
+              kinds: [NDKKind.Reaction],
+              '#e': [noteId],
+            }),
+          ),
+        ]);
+
+        const existingNote = noteMap.get(noteId);
+        return {
+          noteId,
+          replies: resolveCountResult(replyCountResult, existingNote?.stats.replies ?? 0),
+          reposts: resolveCountResult(repostCountResult, existingNote?.stats.reposts ?? 0),
+          likes: resolveCountResult(reactionCountResult, existingNote?.stats.likes ?? 0),
+        };
       }),
-      fetchEventsFromRelays(session, relayUrls, {
-        kinds: [NDKKind.Repost],
-        '#e': currentChunk,
-      }),
-      fetchEventsFromRelays(session, relayUrls, {
-        kinds: [NDKKind.Reaction],
-        '#e': currentChunk,
-      }),
-    ]);
+    );
 
-    for (const replyEvent of replyEvents) {
-      const replyTargetId = getEventReplyId(replyEvent);
-      if (!replyTargetId || !currentChunk.includes(replyTargetId)) {
-        continue;
-      }
-
-      repliesCountById.set(replyTargetId, (repliesCountById.get(replyTargetId) ?? 0) + 1);
-    }
-
-    for (const repostEvent of repostEvents) {
-      const repostTargetId = parseRepostTargetId(repostEvent);
-      if (!repostTargetId || !currentChunk.includes(repostTargetId)) {
-        continue;
-      }
-
-      repostCountById.set(repostTargetId, (repostCountById.get(repostTargetId) ?? 0) + 1);
-    }
-
-    for (const reactionEvent of reactionEvents) {
-      if (!(reactionEvent.content === '+' || reactionEvent.content === '')) {
-        continue;
-      }
-
-      const reactionTargetId = targetEventIdFromTag(reactionEvent.tags);
-      if (!reactionTargetId || !currentChunk.includes(reactionTargetId)) {
-        continue;
-      }
-
-      likeCountById.set(reactionTargetId, (likeCountById.get(reactionTargetId) ?? 0) + 1);
+    for (const countSet of chunkCounts) {
+      repliesCountById.set(countSet.noteId, countSet.replies);
+      repostCountById.set(countSet.noteId, countSet.reposts);
+      likeCountById.set(countSet.noteId, countSet.likes);
     }
   }
 

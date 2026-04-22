@@ -79,7 +79,7 @@ withDefaults(defineProps<Props>(), {
 const { formatCompactCount } = useFormatters();
 
 function formatActionCount(value?: number): string {
-  if (!value) {
+  if (typeof value !== 'number' || Number.isNaN(value) || value < 0) {
     return '';
   }
 

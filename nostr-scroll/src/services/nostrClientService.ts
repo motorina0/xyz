@@ -1,5 +1,6 @@
 import NDK, {
   NDKEvent,
+  type NDKCountOptions,
   NDKNip07Signer,
   NDKPrivateKeySigner,
   NDKRelaySet,
@@ -14,6 +15,7 @@ import { normalizeReadableRelayUrls, normalizeWritableRelayUrls } from '../utils
 
 const NOSTR_WIRE_LOG_PREFIX = '[nostr-scroll:nostr-wire]';
 let reqSubscriptionCounter = 0;
+let countRequestCounter = 0;
 
 function uniqueRelayUrls(relayUrls: string[]): string[] {
   return Array.from(new Set(relayUrls));
@@ -29,12 +31,24 @@ function buildReqFrame(subId: string, filters: NDKFilter | NDKFilter[]): unknown
   return ['REQ', subId, ...normalizeReqFilters(filters)];
 }
 
+function buildCountFrame(countId: string, filters: NDKFilter | NDKFilter[]): unknown[] {
+  return ['COUNT', countId, ...normalizeReqFilters(filters)];
+}
+
 function createReqSubId(label: string): string {
   reqSubscriptionCounter += 1;
   const normalizedLabel =
     label.trim().replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '') || 'req';
 
   return `${normalizedLabel}-${reqSubscriptionCounter.toString(36)}`;
+}
+
+function createCountId(label: string): string {
+  countRequestCounter += 1;
+  const normalizedLabel =
+    label.trim().replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '') || 'count';
+
+  return `${normalizedLabel}-${countRequestCounter.toString(36)}`;
 }
 
 function logReqFrame(relayUrls: string[], subId: string, filters: NDKFilter | NDKFilter[]): void {
@@ -54,6 +68,30 @@ function logReqFrame(relayUrls: string[], subId: string, filters: NDKFilter | ND
     normalizedRelayUrls,
     JSON.stringify(reqFrame),
     reqFrame,
+  );
+}
+
+function logCountFrame(
+  relayUrls: string[],
+  countId: string,
+  filters: NDKFilter | NDKFilter[],
+): void {
+  const normalizedRelayUrls = uniqueRelayUrls(
+    relayUrls
+      .map((relayUrl) => relayUrl.trim())
+      .filter((relayUrl) => relayUrl.length > 0),
+  );
+  if (normalizedRelayUrls.length === 0) {
+    return;
+  }
+
+  const countFrame = buildCountFrame(countId, filters);
+  console.info(
+    NOSTR_WIRE_LOG_PREFIX,
+    'COUNT',
+    normalizedRelayUrls,
+    JSON.stringify(countFrame),
+    countFrame,
   );
 }
 
@@ -82,6 +120,21 @@ export function createLoggedReqSubscriptionOptions(
   };
 }
 
+export function createLoggedCountOptions(
+  label: string,
+  relayUrls: string[],
+  filters: NDKFilter | NDKFilter[],
+  options: NDKCountOptions = {},
+): NDKCountOptions {
+  const id = options.id ?? createCountId(label);
+  logCountFrame(relayUrls, id, filters);
+
+  return {
+    ...options,
+    id,
+  };
+}
+
 function parseWireFrame(message: string): unknown[] | null {
   try {
     const parsed = JSON.parse(message);
@@ -104,6 +157,11 @@ function logRelayTraffic(message: string, relayUrl: string, direction?: 'send' |
   const [command] = frame;
   if (command === 'EVENT') {
     console.info(NOSTR_WIRE_LOG_PREFIX, 'EVENT', relayUrl, message, frame);
+    return;
+  }
+
+  if (command === 'COUNT') {
+    console.info(NOSTR_WIRE_LOG_PREFIX, 'COUNT', relayUrl, message, frame);
   }
 }
 
