@@ -1,17 +1,13 @@
 import type { NostrEvent } from '@nostr-dev-kit/ndk';
-import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { useAppRelaysStore } from './appRelays';
-import { useAuthStore } from './auth';
-import { useFollowsStore } from './follows';
-import { useMyRelaysStore } from './myRelays';
-import { useProfilesStore } from './profiles';
+import { computed, ref } from 'vue';
+import type { HydratedNoteChunk } from '../services/nostrNoteService';
 import {
   fetchBookmarksCollection,
-  mapRawEventToNote,
   fetchNotesByIds,
   fetchProfileTab,
   fetchThreadCollection,
+  mapRawEventToNote,
   publishBookmarkList,
   publishDeletionForEvents,
   publishNote,
@@ -20,8 +16,12 @@ import {
   publishRepost,
   streamHomeTimelineBatch,
 } from '../services/nostrNoteService';
-import type { HydratedNoteChunk } from '../services/nostrNoteService';
 import type { HomeTimelineTab, NostrNote, ProfileTab, ViewerPostState } from '../types/nostr';
+import { useAppRelaysStore } from './appRelays';
+import { useAuthStore } from './auth';
+import { useFollowsStore } from './follows';
+import { useMyRelaysStore } from './myRelays';
+import { useProfilesStore } from './profiles';
 
 interface ThreadState {
   focusedId: string | null;
@@ -102,17 +102,17 @@ export const useFeedStore = defineStore('feed', () => {
   const allTimeline = computed(() =>
     homeTimelineState.value.all.ids
       .map((id) => notesById.value[id])
-      .filter((note): note is NostrNote => Boolean(note)),
+      .filter((note): note is NostrNote => Boolean(note))
   );
   const followingTimeline = computed(() =>
     homeTimelineState.value.following.ids
       .map((id) => notesById.value[id])
-      .filter((note): note is NostrNote => Boolean(note)),
+      .filter((note): note is NostrNote => Boolean(note))
   );
   const bookmarksTimeline = computed(() =>
     bookmarksTimelineIds.value
       .map((id) => notesById.value[id])
-      .filter((note): note is NostrNote => Boolean(note)),
+      .filter((note): note is NostrNote => Boolean(note))
   );
 
   function ensureRelayStoresInitialized(): void {
@@ -145,13 +145,16 @@ export const useFeedStore = defineStore('feed', () => {
       return;
     }
 
-    notesById.value = nextNotes.reduce<Record<string, NostrNote>>((accumulator, note) => {
-      accumulator[note.id] = {
-        ...(notesById.value[note.id] ?? {}),
-        ...note,
-      };
-      return accumulator;
-    }, { ...notesById.value });
+    notesById.value = nextNotes.reduce<Record<string, NostrNote>>(
+      (accumulator, note) => {
+        accumulator[note.id] = {
+          ...(notesById.value[note.id] ?? {}),
+          ...note,
+        };
+        return accumulator;
+      },
+      { ...notesById.value }
+    );
   }
 
   function removeNote(noteId: string): void {
@@ -177,7 +180,7 @@ export const useFeedStore = defineStore('feed', () => {
     mergeViewerState(nextChunk.viewerState);
     void hydrateProfilesForNotes(
       [...nextChunk.primaryNotes, ...nextChunk.relatedNotes],
-      nextChunk.authorPubkeys,
+      nextChunk.authorPubkeys
     ).catch((error) => {
       console.warn('Failed to hydrate profiles for streamed timeline notes', error);
     });
@@ -193,11 +196,11 @@ export const useFeedStore = defineStore('feed', () => {
     });
   }
 
-  async function hydrateProfilesForNotes(nextNotes: NostrNote[], extraPubkeys: string[] = []): Promise<void> {
-    const pubkeys = uniqueIds([
-      ...extraPubkeys,
-      ...nextNotes.map((note) => note.pubkey),
-    ]);
+  async function hydrateProfilesForNotes(
+    nextNotes: NostrNote[],
+    extraPubkeys: string[] = []
+  ): Promise<void> {
+    const pubkeys = uniqueIds([...extraPubkeys, ...nextNotes.map((note) => note.pubkey)]);
     await profilesStore.ensureProfiles(pubkeys);
   }
 
@@ -215,12 +218,14 @@ export const useFeedStore = defineStore('feed', () => {
             ...defaultViewerState(),
             ...(viewerState.value[noteId] ?? {}),
             ...state,
-            likeEventIds: uniqueIds(state.likeEventIds ?? viewerState.value[noteId]?.likeEventIds ?? []),
+            likeEventIds: uniqueIds(
+              state.likeEventIds ?? viewerState.value[noteId]?.likeEventIds ?? []
+            ),
             repostEventIds: uniqueIds(
-              state.repostEventIds ?? viewerState.value[noteId]?.repostEventIds ?? [],
+              state.repostEventIds ?? viewerState.value[noteId]?.repostEventIds ?? []
             ),
           },
-        ]),
+        ])
       ),
     };
   }
@@ -291,7 +296,9 @@ export const useFeedStore = defineStore('feed', () => {
         ids: homeTimelineState.value.following.ids.map((id) => (id === previousId ? nextId : id)),
       },
     };
-    bookmarksTimelineIds.value = bookmarksTimelineIds.value.map((id) => (id === previousId ? nextId : id));
+    bookmarksTimelineIds.value = bookmarksTimelineIds.value.map((id) =>
+      id === previousId ? nextId : id
+    );
     profileTabIds.value = Object.fromEntries(
       Object.entries(profileTabIds.value).map(([pubkey, tabs]) => [
         pubkey,
@@ -301,7 +308,7 @@ export const useFeedStore = defineStore('feed', () => {
           likes: (tabs.likes ?? []).map((id) => (id === previousId ? nextId : id)),
           reposts: (tabs.reposts ?? []).map((id) => (id === previousId ? nextId : id)),
         },
-      ]),
+      ])
     );
     threadStateByPostId.value = Object.fromEntries(
       Object.entries(threadStateByPostId.value).map(([postId, state]) => [
@@ -312,7 +319,7 @@ export const useFeedStore = defineStore('feed', () => {
           ancestors: state.ancestors.map((id) => (id === previousId ? nextId : id)),
           replies: state.replies.map((id) => (id === previousId ? nextId : id)),
         },
-      ]),
+      ])
     );
   }
 
@@ -328,14 +335,14 @@ export const useFeedStore = defineStore('feed', () => {
       authStore.session,
       appRelaysStore.relayEntries,
       myRelaysStore.relayEntries,
-      targetIds,
+      targetIds
     );
     upsertNotes([...refreshedCollection.primaryNotes, ...refreshedCollection.relatedNotes]);
     upsertRawEvents(refreshedCollection.rawEvents);
     mergeViewerState(refreshedCollection.viewerState);
     await hydrateProfilesForNotes(
       [...refreshedCollection.primaryNotes, ...refreshedCollection.relatedNotes],
-      refreshedCollection.authorPubkeys,
+      refreshedCollection.authorPubkeys
     );
   }
 
@@ -373,8 +380,8 @@ export const useFeedStore = defineStore('feed', () => {
       }
       followPubkeys = followsStore.getFollowedPubkeys(authStore.currentPubkey);
       hasFollowListChanged =
-        followPubkeys.join(',') !== homeState.followPubkeys.join(',')
-        || (followPubkeys.length === 0) !== homeState.followListEmpty;
+        followPubkeys.join(',') !== homeState.followPubkeys.join(',') ||
+        (followPubkeys.length === 0) !== homeState.followListEmpty;
     }
 
     if (homeState.loaded && !force && !(tab === 'following' && hasFollowListChanged)) {
@@ -432,9 +439,9 @@ export const useFeedStore = defineStore('feed', () => {
           applyHydratedNoteChunk(nextChunk);
           appendHomeTimelineIds(
             tab,
-            nextChunk.primaryNotes.map((note) => note.id),
+            nextChunk.primaryNotes.map((note) => note.id)
           );
-        },
+        }
       );
       setHomeState(tab, {
         nextCursor: homeStream.nextCursor,
@@ -455,7 +462,12 @@ export const useFeedStore = defineStore('feed', () => {
 
   async function loadMoreHome(tab: HomeTimelineTab): Promise<void> {
     const homeState = getHomeState(tab);
-    if (homeState.loading || homeState.loadingMore || !homeState.hasMore || !authStore.currentPubkey) {
+    if (
+      homeState.loading ||
+      homeState.loadingMore ||
+      !homeState.hasMore ||
+      !authStore.currentPubkey
+    ) {
       return;
     }
     if (tab === 'following' && homeState.followListEmpty) {
@@ -479,9 +491,9 @@ export const useFeedStore = defineStore('feed', () => {
           applyHydratedNoteChunk(nextChunk);
           appendHomeTimelineIds(
             tab,
-            nextChunk.primaryNotes.map((note) => note.id),
+            nextChunk.primaryNotes.map((note) => note.id)
           );
-        },
+        }
       );
       setHomeState(tab, {
         nextCursor: homeStream.nextCursor,
@@ -517,7 +529,7 @@ export const useFeedStore = defineStore('feed', () => {
       const bookmarkCollection = await fetchBookmarksCollection(
         authStore.session,
         appRelaysStore.relayEntries,
-        myRelaysStore.relayEntries,
+        myRelaysStore.relayEntries
       );
       upsertNotes(bookmarkCollection.notes);
       upsertRawEvents(bookmarkCollection.rawEvents);
@@ -537,7 +549,7 @@ export const useFeedStore = defineStore('feed', () => {
     pubkey: string,
     tab: ProfileTab,
     force = false,
-    extraReadRelayUrls: string[] = [],
+    extraReadRelayUrls: string[] = []
   ): Promise<void> {
     if (!authStore.currentPubkey) {
       return;
@@ -574,14 +586,14 @@ export const useFeedStore = defineStore('feed', () => {
         pubkey,
         tab,
         20,
-        extraReadRelayUrls,
+        extraReadRelayUrls
       );
       upsertNotes([...collection.primaryNotes, ...collection.relatedNotes]);
       upsertRawEvents(collection.rawEvents);
       mergeViewerState(collection.viewerState);
       await hydrateProfilesForNotes(
         [...collection.primaryNotes, ...collection.relatedNotes],
-        collection.authorPubkeys,
+        collection.authorPubkeys
       );
       profileTabIds.value = {
         ...profileTabIds.value,
@@ -643,7 +655,7 @@ export const useFeedStore = defineStore('feed', () => {
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        postId,
+        postId
       );
       upsertNotes([
         ...(threadCollection.focusedPost ? [threadCollection.focusedPost] : []),
@@ -658,7 +670,7 @@ export const useFeedStore = defineStore('feed', () => {
           ...threadCollection.ancestors,
           ...threadCollection.replies,
         ],
-        threadCollection.authorPubkeys,
+        threadCollection.authorPubkeys
       );
       threadStateByPostId.value = {
         ...threadStateByPostId.value,
@@ -680,8 +692,7 @@ export const useFeedStore = defineStore('feed', () => {
           replies: [],
           loading: false,
           loaded: false,
-          error:
-            error instanceof Error ? error.message : 'Failed to load the thread from relays.',
+          error: error instanceof Error ? error.message : 'Failed to load the thread from relays.',
         },
       };
     }
@@ -750,7 +761,7 @@ export const useFeedStore = defineStore('feed', () => {
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        content,
+        content
       );
       const publishedNote = mapRawEventToNote(rawEvent);
       if (publishedNote) {
@@ -760,7 +771,7 @@ export const useFeedStore = defineStore('feed', () => {
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        [rawEvent.id],
+        [rawEvent.id]
       );
       upsertNotes([
         ...(publishedNote ? [publishedNote] : []),
@@ -771,7 +782,7 @@ export const useFeedStore = defineStore('feed', () => {
       mergeViewerState(publishedCollection.viewerState);
       await hydrateProfilesForNotes(
         [...publishedCollection.primaryNotes, ...publishedCollection.relatedNotes],
-        publishedCollection.authorPubkeys,
+        publishedCollection.authorPubkeys
       );
       replaceIdInLists(optimisticId, rawEvent.id);
       removeNote(optimisticId);
@@ -855,7 +866,7 @@ export const useFeedStore = defineStore('feed', () => {
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
         parentRawEvent,
-        content,
+        content
       );
       const publishedReply = mapRawEventToNote(rawEvent);
       if (publishedReply) {
@@ -865,7 +876,7 @@ export const useFeedStore = defineStore('feed', () => {
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        [rawEvent.id, parentId],
+        [rawEvent.id, parentId]
       );
       upsertNotes([
         ...(publishedReply ? [publishedReply] : []),
@@ -876,7 +887,7 @@ export const useFeedStore = defineStore('feed', () => {
       mergeViewerState(publishedCollection.viewerState);
       await hydrateProfilesForNotes(
         [...publishedCollection.primaryNotes, ...publishedCollection.relatedNotes],
-        publishedCollection.authorPubkeys,
+        publishedCollection.authorPubkeys
       );
       replaceIdInLists(optimisticId, rawEvent.id);
       removeNote(optimisticId);
@@ -900,7 +911,9 @@ export const useFeedStore = defineStore('feed', () => {
           ...threadStateByPostId.value,
           [parentId]: {
             ...threadStateByPostId.value[parentId],
-            replies: threadStateByPostId.value[parentId].replies.filter((id) => id !== optimisticId),
+            replies: threadStateByPostId.value[parentId].replies.filter(
+              (id) => id !== optimisticId
+            ),
           },
         };
       }
@@ -947,14 +960,14 @@ export const useFeedStore = defineStore('feed', () => {
           authStore.session,
           appRelaysStore.relayEntries,
           myRelaysStore.relayEntries,
-          currentState.likeEventIds ?? [],
+          currentState.likeEventIds ?? []
         );
       } else {
         const reactionEvent = await publishReaction(
           authStore.session,
           appRelaysStore.relayEntries,
           myRelaysStore.relayEntries,
-          targetRawEvent,
+          targetRawEvent
         );
         upsertRawEvents([reactionEvent]);
       }
@@ -1009,14 +1022,14 @@ export const useFeedStore = defineStore('feed', () => {
           authStore.session,
           appRelaysStore.relayEntries,
           myRelaysStore.relayEntries,
-          currentState.repostEventIds ?? [],
+          currentState.repostEventIds ?? []
         );
       } else {
         const repostEvent = await publishRepost(
           authStore.session,
           appRelaysStore.relayEntries,
           myRelaysStore.relayEntries,
-          targetRawEvent,
+          targetRawEvent
         );
         upsertRawEvents([repostEvent]);
       }
@@ -1059,7 +1072,7 @@ export const useFeedStore = defineStore('feed', () => {
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        nextBookmarkIds,
+        nextBookmarkIds
       );
       await loadBookmarks(true);
     } catch (error) {

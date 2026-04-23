@@ -1,4 +1,5 @@
-import NDK, {
+import type NDK from '@nostr-dev-kit/ndk';
+import {
   NDKEvent,
   NDKKind,
   NDKRelayList,
@@ -6,7 +7,6 @@ import NDK, {
   NDKSubscriptionCacheUsage,
 } from '@nostr-dev-kit/ndk';
 import { DEFAULT_APP_RELAY_URLS } from '../constants/relays';
-import { createNdkClient } from './nostrClientService';
 import type { NostrAuthSession } from '../types/auth';
 import type { MyRelayFetchResult, RelayListEntry } from '../types/relays';
 import {
@@ -14,7 +14,7 @@ import {
   normalizeRelayListEntries,
   normalizeWritableRelayUrls,
 } from '../utils/relayList';
-import { createLoggedReqSubscriptionOptions } from './nostrClientService';
+import { createLoggedReqSubscriptionOptions, createNdkClient } from './nostrClientService';
 
 type NostrWindow = Window & {
   nostr?: {
@@ -57,15 +57,15 @@ function normalizeRelayHintUrls(relayHints: string[]): string[] {
         url,
         read: true,
         write: false,
-      })),
-    ),
+      }))
+    )
   );
 }
 
 async function fetchPublicRelayEntriesForPubkey(
   session: NostrAuthSession,
   pubkey: string,
-  seedRelayUrls: string[],
+  seedRelayUrls: string[]
 ): Promise<RelayListEntry[]> {
   if (!pubkey || seedRelayUrls.length === 0) {
     return [];
@@ -83,20 +83,20 @@ async function fetchPublicRelayEntriesForPubkey(
     createLoggedReqSubscriptionOptions('fetch-relay-list', seedRelayUrls, relayListFilter, {
       cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
     }),
-    relaySet,
+    relaySet
   );
 
   return relayListEvent
     ? relayEntriesFromRelayList(
         NDKRelayList.from(
-          relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent),
-        ),
+          relayListEvent instanceof NDKEvent ? relayListEvent : new NDKEvent(ndk, relayListEvent)
+        )
       )
     : [];
 }
 
 export async function fetchPrivateRelayEntries(
-  session: NostrAuthSession,
+  session: NostrAuthSession
 ): Promise<RelayListEntry[]> {
   if (session.method !== 'nip07' || typeof window === 'undefined') {
     return [];
@@ -113,7 +113,7 @@ export async function fetchPrivateRelayEntries(
         url,
         read: permissions?.read !== false,
         write: permissions?.write !== false,
-      })),
+      }))
     );
   } catch {
     return [];
@@ -122,7 +122,7 @@ export async function fetchPrivateRelayEntries(
 
 export async function fetchMyRelayEntries(
   session: NostrAuthSession,
-  seedRelayEntries: RelayListEntry[] = [],
+  seedRelayEntries: RelayListEntry[] = []
 ): Promise<MyRelayFetchResult> {
   if (!session.currentPubkey) {
     return {
@@ -138,7 +138,7 @@ export async function fetchMyRelayEntries(
       ...DEFAULT_APP_RELAY_URLS,
       ...normalizeReadableRelayUrls(seedRelayEntries),
       ...normalizeReadableRelayUrls(privateRelayEntries),
-    ]),
+    ])
   );
 
   if (seedRelayUrls.length === 0) {
@@ -152,14 +152,11 @@ export async function fetchMyRelayEntries(
   const publicRelayEntries = await fetchPublicRelayEntriesForPubkey(
     session,
     session.currentPubkey,
-    seedRelayUrls,
+    seedRelayUrls
   );
 
   return {
-    mergedRelayEntries: normalizeRelayListEntries([
-      ...publicRelayEntries,
-      ...privateRelayEntries,
-    ]),
+    mergedRelayEntries: normalizeRelayListEntries([...publicRelayEntries, ...privateRelayEntries]),
     privateRelayEntries,
     publicRelayEntries,
   };
@@ -170,7 +167,7 @@ export async function fetchUserRelayEntries(
   appRelayEntries: RelayListEntry[] = [],
   myRelayEntries: RelayListEntry[] = [],
   targetPubkey: string,
-  relayHints: string[] = [],
+  relayHints: string[] = []
 ): Promise<RelayListEntry[]> {
   if (!targetPubkey) {
     return [];
@@ -182,7 +179,7 @@ export async function fetchUserRelayEntries(
       ...normalizeReadableRelayUrls(appRelayEntries),
       ...normalizeReadableRelayUrls(myRelayEntries),
       ...normalizeRelayHintUrls(relayHints),
-    ]),
+    ])
   );
 
   return fetchPublicRelayEntriesForPubkey(session, targetPubkey, seedRelayUrls);
@@ -191,7 +188,7 @@ export async function fetchUserRelayEntries(
 export async function publishMyRelayEntries(
   session: NostrAuthSession,
   relayEntries: RelayListEntry[],
-  seedRelayEntries: RelayListEntry[] = [],
+  seedRelayEntries: RelayListEntry[] = []
 ): Promise<void> {
   if (!session.currentPubkey) {
     throw new Error('Login is required before publishing relays.');
@@ -203,7 +200,7 @@ export async function publishMyRelayEntries(
       ...DEFAULT_APP_RELAY_URLS,
       ...normalizeWritableRelayUrls(seedRelayEntries),
       ...normalizeWritableRelayUrls(normalizedRelayEntries),
-    ]),
+    ])
   );
   if (seedRelayUrls.length === 0) {
     throw new Error('Cannot publish relay list without at least one writable relay.');

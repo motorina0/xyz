@@ -42,7 +42,11 @@ export function normalizeProfileReference(input: string | null | undefined): {
 
   try {
     const decoded = nip19.decode(trimmedValue);
-    if (decoded.type === 'npub' && typeof decoded.data === 'string' && HEX_64_REGEX.test(decoded.data)) {
+    if (
+      decoded.type === 'npub' &&
+      typeof decoded.data === 'string' &&
+      HEX_64_REGEX.test(decoded.data)
+    ) {
       return {
         pubkey: decoded.data.toLowerCase(),
         relayHints: [],
@@ -82,7 +86,11 @@ export function normalizeEventReference(input: string | null | undefined): {
 
   try {
     const decoded = nip19.decode(trimmedValue);
-    if (decoded.type === 'note' && typeof decoded.data === 'string' && HEX_64_REGEX.test(decoded.data)) {
+    if (
+      decoded.type === 'note' &&
+      typeof decoded.data === 'string' &&
+      HEX_64_REGEX.test(decoded.data)
+    ) {
       return {
         id: decoded.data.toLowerCase(),
         relayHints: [],
@@ -117,7 +125,7 @@ export function encodeProfileReference(pubkey: string, relayHints: string[] = []
 export function encodeEventReference(
   id: string,
   relayHints: string[] = [],
-  author?: string,
+  author?: string
 ): string {
   return nip19.neventEncode({
     id,

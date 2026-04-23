@@ -1,5 +1,5 @@
-import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
+import { computed, ref } from 'vue';
 import {
   createAccount,
   defaultAuthSession,
@@ -11,20 +11,20 @@ import {
 } from '../services/nostrAuthService';
 import type { GeneratedNostrAccount, NostrAuthSession } from '../types/auth';
 import {
-  STORAGE_KEYS,
   readStorageItem,
   removeStorageItem,
+  STORAGE_KEYS,
   writeStorageItem,
 } from '../utils/storage';
 
 export const useAuthStore = defineStore('auth', () => {
   const session = ref<NostrAuthSession>(
-    normalizeStoredSession(readStorageItem(STORAGE_KEYS.auth, defaultAuthSession)),
+    normalizeStoredSession(readStorageItem(STORAGE_KEYS.auth, defaultAuthSession))
   );
   const loading = ref(false);
 
   const isAuthenticated = computed(
-    () => session.value.isAuthenticated && Boolean(session.value.currentPubkey),
+    () => session.value.isAuthenticated && Boolean(session.value.currentPubkey)
   );
   const currentPubkey = computed(() => session.value.currentPubkey);
   const currentAuthMethod = computed(() => session.value.method);

@@ -39,7 +39,8 @@ export const newsItems: NewsItem[] = [
   {
     id: 'news-6',
     category: 'Community',
-    headline: 'Smaller social clients are winning loyalty by feeling more intentional than giant networks.',
+    headline:
+      'Smaller social clients are winning loyalty by feeling more intentional than giant networks.',
     source: 'Today in Nostr',
     timeLabel: '12h ago',
   },

@@ -1,6 +1,8 @@
 <template>
   <article
     class="post-card scroll-divider"
+    :data-post-id="displayPost.id"
+    :data-testid="`post-card-${displayPost.id}`"
     :class="{
       'post-card--highlighted': highlighted,
       'post-card--static': disablePostNavigation,

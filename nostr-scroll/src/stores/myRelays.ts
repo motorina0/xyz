@@ -1,11 +1,16 @@
-import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
-import { useAuthStore } from './auth';
-import { useAppRelaysStore } from './appRelays';
-import type { RelayListEntry } from '../types/relays';
+import { computed, ref } from 'vue';
 import { fetchMyRelayEntries, publishMyRelayEntries } from '../services/nostrRelayService';
+import type { RelayListEntry } from '../types/relays';
 import { normalizeRelayListEntries } from '../utils/relayList';
-import { STORAGE_KEYS, readStorageItem, removeStorageItem, writeStorageItem } from '../utils/storage';
+import {
+  readStorageItem,
+  removeStorageItem,
+  STORAGE_KEYS,
+  writeStorageItem,
+} from '../utils/storage';
+import { useAppRelaysStore } from './appRelays';
+import { useAuthStore } from './auth';
 
 export const useMyRelaysStore = defineStore('myRelays', () => {
   const authStore = useAuthStore();
@@ -35,7 +40,7 @@ export const useMyRelaysStore = defineStore('myRelays', () => {
     }
 
     relayEntries.value = normalizeRelayListEntries(
-      readStorageItem<unknown[]>(STORAGE_KEYS.myRelays, []),
+      readStorageItem<unknown[]>(STORAGE_KEYS.myRelays, [])
     );
     persistRelayEntries();
     isInitialized.value = true;
@@ -100,7 +105,11 @@ export const useMyRelaysStore = defineStore('myRelays', () => {
     const publishPromise = publishQueue
       .catch(() => {})
       .then(async () => {
-        await publishMyRelayEntries(authStore.session, relayEntriesSnapshot, appRelaysStore.relayEntries);
+        await publishMyRelayEntries(
+          authStore.session,
+          relayEntriesSnapshot,
+          appRelaysStore.relayEntries
+        );
       });
     publishQueue = publishPromise;
 
@@ -151,7 +160,7 @@ export const useMyRelaysStore = defineStore('myRelays', () => {
 
   async function setRelayFlags(
     index: number,
-    flags: Partial<Pick<RelayListEntry, 'read' | 'write'>>,
+    flags: Partial<Pick<RelayListEntry, 'read' | 'write'>>
   ): Promise<void> {
     ensureInitialized();
     const relayEntry = relayEntries.value[index];
@@ -166,7 +175,7 @@ export const useMyRelaysStore = defineStore('myRelays', () => {
             read: typeof flags.read === 'boolean' ? flags.read : entry.read,
             write: typeof flags.write === 'boolean' ? flags.write : entry.write,
           }
-        : entry,
+        : entry
     );
     persistRelayEntries();
     await publishCurrentRelayEntries();

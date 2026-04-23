@@ -7,5 +7,5 @@ export const useAppRelaysStore = defineStore(
   createRelayListStoreSetup({
     defaultRelayUrls: DEFAULT_APP_RELAY_URLS,
     storageKey: 'nostr-scroll:app-relays',
-  }),
+  })
 );

@@ -1,16 +1,17 @@
 import {
   isValidNip05,
   isValidPubkey,
+  type NDKEvent,
   NDKKind,
   NDKUser,
+  type NDKUserProfile,
   profileFromEvent,
   serializeProfile,
-  type NDKEvent,
-  type NDKUserProfile,
 } from '@nostr-dev-kit/ndk';
 import type { NostrAuthSession } from '../types/auth';
 import type { NostrProfile } from '../types/nostr';
 import type { RelayListEntry } from '../types/relays';
+import { createFallbackAvatarDataUri, createFallbackBannerDataUri } from '../utils/visuals';
 import {
   buildReadRelayUrls,
   buildWriteRelayUrls,
@@ -28,7 +29,6 @@ import {
   shortenPubkey,
   slugifyHandle,
 } from './nostrEntityService';
-import { createFallbackAvatarDataUri, createFallbackBannerDataUri } from '../utils/visuals';
 
 export interface SaveProfileInput {
   displayName: string;
@@ -83,9 +83,15 @@ function normalizeWebsite(value: string | undefined): string | undefined {
   }
 }
 
-function mapProfile(pubkey: string, profile: NDKUserProfile | null, profileEvent?: NDKEvent | null): NostrProfile {
+function mapProfile(
+  pubkey: string,
+  profile: NDKUserProfile | null,
+  profileEvent?: NDKEvent | null
+): NostrProfile {
   const fallback = buildFallbackProfile(pubkey);
-  const displayName = `${profile?.displayName ?? profile?.name ?? fallback.displayName}`.trim() || fallback.displayName;
+  const displayName =
+    `${profile?.displayName ?? profile?.name ?? fallback.displayName}`.trim() ||
+    fallback.displayName;
   const name = `${profile?.name ?? slugifyHandle(displayName)}`.trim() || fallback.name;
   const picture = `${profile?.picture ?? profile?.image ?? ''}`.trim() || fallback.picture;
   const banner = `${profile?.banner ?? ''}`.trim() || fallback.banner;
@@ -116,7 +122,7 @@ export async function resolveProfileSearchInput(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  input: string,
+  input: string
 ): Promise<ProfileSearchResolution> {
   const value = input.trim();
   if (!value) {
@@ -199,7 +205,7 @@ export async function fetchProfiles(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   pubkeys: string[],
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<NostrProfile[]> {
   const uniquePubkeys = Array.from(new Set(pubkeys.filter(Boolean)));
   if (uniquePubkeys.length === 0) {
@@ -232,7 +238,7 @@ export async function fetchFollowingCount(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   pubkey: string,
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<number | undefined> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const ndk = createNdkClient(session, relayUrls);
@@ -247,7 +253,7 @@ export async function fetchFollowingCount(
     const followingSet = await user.followSet(
       createLoggedReqSubscriptionOptions('follow-set', relayUrls, followFilter, {
         groupable: false,
-      }),
+      })
     );
     return followingSet.size;
   } catch {
@@ -260,7 +266,7 @@ export async function fetchFollowingPubkeys(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   pubkey: string,
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<string[]> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const contactsEvent = await fetchEventFromRelays(session, relayUrls, {
@@ -276,8 +282,8 @@ export async function fetchFollowingPubkeys(
     new Set(
       contactsEvent.tags
         .filter((tag) => tag[0] === 'p' && typeof tag[1] === 'string' && tag[1].length > 0)
-        .map((tag) => tag[1] as string),
-    ),
+        .map((tag) => tag[1] as string)
+    )
   );
 }
 
@@ -285,7 +291,7 @@ export async function saveCurrentUserProfile(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  input: SaveProfileInput,
+  input: SaveProfileInput
 ): Promise<void> {
   if (!session.currentPubkey) {
     throw new Error('Login is required before updating the profile.');
@@ -298,15 +304,14 @@ export async function saveCurrentUserProfile(
   await connectNdkClient(ndk);
   const user = ndk.getUser({ pubkey: session.currentPubkey });
   const relaySet = createRelaySet(ndk, profileRelayUrls);
-  const existingProfile = (
-    await user.fetchProfile(
+  const existingProfile =
+    (await user.fetchProfile(
       createLoggedReqSubscriptionOptions('fetch-profile', profileRelayUrls, {
         kinds: [NDKKind.Metadata],
         authors: [session.currentPubkey],
       }),
-      true,
-    )
-  ) ?? {};
+      true
+    )) ?? {};
   const nextProfile: NDKUserProfile = {
     ...existingProfile,
     displayName: input.displayName.trim(),

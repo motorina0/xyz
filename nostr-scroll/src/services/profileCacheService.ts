@@ -46,10 +46,8 @@ function normalizeCachedProfileRecord(value: unknown): NostrProfile | null {
     nip05: typeof record.nip05 === 'string' ? record.nip05 : undefined,
     website: typeof record.website === 'string' ? record.website : undefined,
     lud16: typeof record.lud16 === 'string' ? record.lud16 : undefined,
-    followersCount:
-      typeof record.followersCount === 'number' ? record.followersCount : undefined,
-    followingCount:
-      typeof record.followingCount === 'number' ? record.followingCount : undefined,
+    followersCount: typeof record.followersCount === 'number' ? record.followersCount : undefined,
+    followingCount: typeof record.followingCount === 'number' ? record.followingCount : undefined,
     joinedAt: typeof record.joinedAt === 'string' ? record.joinedAt : undefined,
     location: typeof record.location === 'string' ? record.location : undefined,
   };
@@ -73,7 +71,7 @@ class ProfileCacheService {
         resolve(
           results
             .map((record) => normalizeCachedProfileRecord(record))
-            .filter((record): record is NostrProfile => record !== null),
+            .filter((record): record is NostrProfile => record !== null)
         );
       };
 
@@ -83,7 +81,10 @@ class ProfileCacheService {
       };
 
       transaction.onabort = () => {
-        console.error('IndexedDB transaction aborted while reading cached profiles.', transaction.error);
+        console.error(
+          'IndexedDB transaction aborted while reading cached profiles.',
+          transaction.error
+        );
         resolve([]);
       };
     });
@@ -119,12 +120,12 @@ class ProfileCacheService {
             transaction.onabort = () => {
               console.error(
                 'IndexedDB transaction aborted while reading a cached profile.',
-                transaction.error,
+                transaction.error
               );
               resolve(null);
             };
-          }),
-      ),
+          })
+      )
     ).then((profiles) => profiles.filter((profile): profile is NostrProfile => profile !== null));
   }
 
@@ -133,8 +134,8 @@ class ProfileCacheService {
       new Map(
         profiles
           .filter((profile) => Boolean(profile?.pubkey))
-          .map((profile) => [profile.pubkey, profile] as const),
-      ).values(),
+          .map((profile) => [profile.pubkey, profile] as const)
+      ).values()
     );
 
     if (normalizedProfiles.length === 0) {
@@ -167,7 +168,10 @@ class ProfileCacheService {
       };
 
       transaction.onabort = () => {
-        console.error('IndexedDB transaction aborted while writing cached profiles.', transaction.error);
+        console.error(
+          'IndexedDB transaction aborted while writing cached profiles.',
+          transaction.error
+        );
         resolve();
       };
     });

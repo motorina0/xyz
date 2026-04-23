@@ -1,5 +1,5 @@
 <template>
-  <div class="post-composer scroll-divider">
+  <div class="post-composer scroll-divider" data-testid="post-composer">
     <q-avatar size="40px" class="post-composer__avatar">
       <img :src="currentProfile?.picture" :alt="currentProfile?.displayName ?? 'Profile'" />
     </q-avatar>
@@ -10,6 +10,7 @@
         autogrow
         borderless
         class="post-composer__input"
+        data-testid="post-composer-input"
         :placeholder="placeholder"
         maxlength="280"
       />
@@ -36,6 +37,7 @@
             :label="buttonLabel"
             :disable="!canSubmit || submitting"
             class="scroll-button post-composer__submit"
+            data-testid="post-composer-submit"
             :class="{ 'post-composer__submit--active': canSubmit }"
             @click="submit"
           />

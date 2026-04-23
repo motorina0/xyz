@@ -1,5 +1,5 @@
 <template>
-  <div class="feed-list">
+  <div class="feed-list" data-testid="feed-list">
     <div v-if="loading && posts.length === 0" class="feed-list__status">
       <q-spinner color="primary" size="28px" />
     </div>

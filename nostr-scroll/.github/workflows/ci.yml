@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Run quality checks
+        run: npm run quality:all
+
+  unit-tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Build SPA
+        run: npm run build
+
+  e2e-smoke:
+    needs:
+      - quality
+      - unit-tests
+      - build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Start local relays
+        run: docker compose -f docker-compose.e2e.yml up -d
+
+      - name: Wait for relay startup
+        run: sleep 10
+
+      - name: Run relay-backed smoke test
+        run: npm run test:e2e:smoke
+
+      - name: Stop local relays
+        if: always()
+        run: docker compose -f docker-compose.e2e.yml down -v --remove-orphans
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-report-smoke
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: ignore

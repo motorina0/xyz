@@ -1,17 +1,17 @@
 import { isValidPubkey } from '@nostr-dev-kit/ndk';
-import { ref } from 'vue';
 import { defineStore } from 'pinia';
+import { ref } from 'vue';
+import {
+  appendFollowedPubkey,
+  createEmptyFollowList,
+  type FollowListSnapshot,
+  fetchFollowList,
+  publishFollowList,
+} from '../services/nostrFollowService';
 import { useAppRelaysStore } from './appRelays';
 import { useAuthStore } from './auth';
 import { useMyRelaysStore } from './myRelays';
 import { useProfilesStore } from './profiles';
-import {
-  appendFollowedPubkey,
-  createEmptyFollowList,
-  fetchFollowList,
-  publishFollowList,
-  type FollowListSnapshot,
-} from '../services/nostrFollowService';
 
 interface FollowListState {
   followedPubkeys: string[];
@@ -100,7 +100,7 @@ export const useFollowsStore = defineStore('follows', () => {
 
   function shouldAcceptFetchedSnapshot(
     existingState: FollowListState,
-    nextSnapshot: FollowListSnapshot,
+    nextSnapshot: FollowListSnapshot
   ): boolean {
     if (typeof nextSnapshot.createdAt !== 'number') {
       return typeof existingState.createdAt !== 'number';
@@ -116,13 +116,13 @@ export const useFollowsStore = defineStore('follows', () => {
   function applyFollowListSnapshot(
     pubkey: string,
     nextSnapshot: FollowListSnapshot | null,
-    mode: 'newer' | 'force' = 'newer',
+    mode: 'newer' | 'force' = 'newer'
   ): void {
     const existingState = getFollowListState(pubkey);
 
     if (
-      nextSnapshot
-      && (mode === 'force' || shouldAcceptFetchedSnapshot(existingState, nextSnapshot))
+      nextSnapshot &&
+      (mode === 'force' || shouldAcceptFetchedSnapshot(existingState, nextSnapshot))
     ) {
       patchFollowListState(pubkey, {
         followedPubkeys: [...nextSnapshot.followedPubkeys],
@@ -148,7 +148,7 @@ export const useFollowsStore = defineStore('follows', () => {
 
   async function ensureFollowList(
     pubkey?: string | null,
-    options: EnsureFollowListOptions = {},
+    options: EnsureFollowListOptions = {}
   ): Promise<void> {
     const normalizedPubkey = normalizePubkey(pubkey);
     if (!normalizedPubkey || !authStore.currentPubkey) {
@@ -179,7 +179,7 @@ export const useFollowsStore = defineStore('follows', () => {
           appRelaysStore.relayEntries,
           myRelaysStore.relayEntries,
           normalizedPubkey,
-          options.extraReadRelayUrls ?? [],
+          options.extraReadRelayUrls ?? []
         );
         applyFollowListSnapshot(normalizedPubkey, fetchedFollowList, 'newer');
       } catch (error) {
@@ -235,16 +235,25 @@ export const useFollowsStore = defineStore('follows', () => {
 
   function isFollowActionPending(targetPubkey?: string | null): boolean {
     const normalizedTargetPubkey = normalizePubkey(targetPubkey);
-    return normalizedTargetPubkey ? Boolean(pendingFollowTargets.value[normalizedTargetPubkey]) : false;
+    return normalizedTargetPubkey
+      ? Boolean(pendingFollowTargets.value[normalizedTargetPubkey])
+      : false;
   }
 
   async function followPubkey(targetPubkey?: string | null): Promise<void> {
     const currentUserPubkey = normalizePubkey(authStore.currentPubkey);
     const normalizedTargetPubkey = normalizePubkey(targetPubkey);
-    if (!currentUserPubkey || !normalizedTargetPubkey || normalizedTargetPubkey === currentUserPubkey) {
+    if (
+      !currentUserPubkey ||
+      !normalizedTargetPubkey ||
+      normalizedTargetPubkey === currentUserPubkey
+    ) {
       return;
     }
-    if (isFollowActionPending(normalizedTargetPubkey) || isCurrentUserFollowing(normalizedTargetPubkey)) {
+    if (
+      isFollowActionPending(normalizedTargetPubkey) ||
+      isCurrentUserFollowing(normalizedTargetPubkey)
+    ) {
       return;
     }
 
@@ -270,13 +279,13 @@ export const useFollowsStore = defineStore('follows', () => {
           ? toSnapshot(currentUserPubkey)
           : createEmptyFollowList(currentUserPubkey),
         currentUserPubkey,
-        normalizedTargetPubkey,
+        normalizedTargetPubkey
       );
       const publishedFollowList = await publishFollowList(
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        nextFollowList,
+        nextFollowList
       );
       applyFollowListSnapshot(currentUserPubkey, publishedFollowList, 'force');
     } finally {

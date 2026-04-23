@@ -2,16 +2,29 @@
   "name": "nostr-scroll",
   "version": "0.1.0",
   "private": true,
-  "description": "Mocked Nostr-shaped social feed prototype built with Quasar and Vue.",
+  "description": "Standalone relay-backed Nostr social feed built with Quasar and Vue.",
   "engines": {
     "node": ">=24 <25",
     "npm": ">=11 <12"
   },
   "scripts": {
     "dev": "node ./scripts/quasar.cjs dev",
+    "dev:e2e": "node ./scripts/dev-e2e.cjs",
     "build": "node ./scripts/quasar.cjs build",
+    "format": "biome format --write",
+    "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false",
+    "lint": "biome lint",
+    "lint:dead-code": "biome lint --only=lint/correctness/noUnusedImports --only=lint/correctness/noUnusedVariables",
+    "lint:fix": "biome check --write --unsafe --max-diagnostics=100",
+    "quality:all": "npm run format && npm run lint:fix && npm run format:check && npm run lint:dead-code && npm run lint && npm run typecheck",
     "prepare:quasar": "node ./scripts/quasar.cjs prepare",
-    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run",
+    "test:unit:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:smoke": "playwright test e2e/smoke.spec.ts",
+    "test:e2e:local": "node ./scripts/run-e2e-local.cjs",
+    "test:e2e:local:smoke": "node ./scripts/run-e2e-local.cjs e2e/smoke.spec.ts"
   },
   "dependencies": {
     "@nostr-dev-kit/ndk": "^3.0.0",
@@ -22,8 +35,12 @@
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
+    "@playwright/test": "^1.59.1",
     "@quasar/app-vite": "2.1.0",
     "typescript": "~5.7.2",
+    "@vitest/coverage-v8": "^3.2.4",
+    "vitest": "^3.2.4",
     "vue-tsc": "^2.2.0"
   }
 }

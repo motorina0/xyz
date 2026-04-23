@@ -2,8 +2,8 @@ import {
   getEventReplyId,
   getRootEventId,
   NDKEvent,
-  NDKKind,
   type NDKFilter,
+  NDKKind,
   type NostrEvent,
 } from '@nostr-dev-kit/ndk';
 import type { NostrAuthSession } from '../types/auth';
@@ -12,16 +12,16 @@ import type { RelayListEntry } from '../types/relays';
 import {
   buildReadRelayUrls,
   buildWriteRelayUrls,
+  connectNdkClient,
   createLoggedCountOptions,
   createNdkClient,
   createRelaySet,
   fetchEventFromRelays,
   fetchEventsFromRelays,
-  streamEventsFromRelays,
   publishEventToRelays,
   publishReplaceableEventToRelays,
+  streamEventsFromRelays,
   toRawEvent,
-  connectNdkClient,
 } from './nostrClientService';
 import { encodeEventReference, normalizeEventReference, toNostrUri } from './nostrEntityService';
 
@@ -153,13 +153,13 @@ export function mapRawEventToNote(rawEvent: NostrEvent): NostrNote | null {
 
 function sortNewest(notes: NostrNote[]): NostrNote[] {
   return [...notes].sort(
-    (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
+    (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
   );
 }
 
 function sortOldest(notes: NostrNote[]): NostrNote[] {
   return [...notes].sort(
-    (first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime(),
+    (first, second) => new Date(first.createdAt).getTime() - new Date(second.createdAt).getTime()
   );
 }
 
@@ -194,7 +194,7 @@ function buildPrimaryChunkFromEvents(primaryEvents: NDKEvent[]): HydratedNoteChu
 async function fetchEventsInChunks(
   session: NostrAuthSession,
   relayUrls: string[],
-  ids: string[],
+  ids: string[]
 ): Promise<NDKEvent[]> {
   const chunkSize = 40;
   const events: NDKEvent[] = [];
@@ -218,12 +218,12 @@ async function fetchRelatedEvents(
   session: NostrAuthSession,
   relayUrls: string[],
   notes: NostrNote[],
-  knownIds: Set<string>,
+  knownIds: Set<string>
 ): Promise<NDKEvent[]> {
   const relatedIds = unique(
-    notes.flatMap((note) => [note.replyTo, note.rootId, note.repostOf, note.quotedNoteId]).filter(
-      (value): value is string => Boolean(value && !knownIds.has(value)),
-    ),
+    notes
+      .flatMap((note) => [note.replyTo, note.rootId, note.repostOf, note.quotedNoteId])
+      .filter((value): value is string => Boolean(value && !knownIds.has(value)))
   );
 
   if (relatedIds.length === 0) {
@@ -234,10 +234,11 @@ async function fetchRelatedEvents(
 }
 
 function targetEventIdFromTag(tags: string[][]): string | null {
-  const matchingTag = tags
-    .filter((tag) => tag[0] === 'e' && typeof tag[1] === 'string')
-    .find((tag) => tag[3] === 'reply' || tag[3] === 'mention')
-    ?? tags.filter((tag) => tag[0] === 'e' && typeof tag[1] === 'string').at(-1);
+  const matchingTag =
+    tags
+      .filter((tag) => tag[0] === 'e' && typeof tag[1] === 'string')
+      .find((tag) => tag[3] === 'reply' || tag[3] === 'mention') ??
+    tags.filter((tag) => tag[0] === 'e' && typeof tag[1] === 'string').at(-1);
 
   return matchingTag?.[1] ?? null;
 }
@@ -247,7 +248,7 @@ function resolveCountResult(
     count: number;
     relayResults: Map<string, unknown>;
   },
-  fallback: number,
+  fallback: number
 ): number {
   if (result.relayResults.size === 0) {
     return fallback;
@@ -259,7 +260,7 @@ function resolveCountResult(
 async function fetchBookmarkIds(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
-  myRelayEntries: RelayListEntry[],
+  myRelayEntries: RelayListEntry[]
 ): Promise<string[]> {
   if (!session.currentPubkey) {
     return [];
@@ -277,7 +278,7 @@ async function fetchBookmarkIds(
   return unique(
     bookmarkEvent.tags
       .filter((tag) => tag[0] === 'e' && typeof tag[1] === 'string')
-      .map((tag) => tag[1] as string),
+      .map((tag) => tag[1] as string)
   );
 }
 
@@ -286,7 +287,7 @@ async function buildViewerState(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   displayNoteIds: string[],
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<Record<string, ViewerPostState>> {
   const bookmarkIds = await fetchBookmarkIds(session, appRelayEntries, myRelayEntries);
   const bookmarkedIdSet = new Set(bookmarkIds);
@@ -362,7 +363,7 @@ async function applyInteractionStats(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   notes: NostrNote[],
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<{
   notes: NostrNote[];
   viewerState: Record<string, ViewerPostState>;
@@ -373,7 +374,7 @@ async function applyInteractionStats(
   const displayNoteIds = unique(
     notes
       .map((note) => note.repostOf ?? note.id)
-      .filter((value): value is string => Boolean(value && noteMap.has(value))),
+      .filter((value): value is string => Boolean(value && noteMap.has(value)))
   );
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const repliesCountById = new Map<string, number>();
@@ -397,7 +398,7 @@ async function applyInteractionStats(
       appRelayEntries,
       myRelayEntries,
       displayNoteIds,
-      extraReadRelayUrls,
+      extraReadRelayUrls
     );
     return {
       notes,
@@ -422,7 +423,7 @@ async function applyInteractionStats(
             createLoggedCountOptions('count-replies', relayUrls, {
               kinds: [NDKKind.Text],
               '#e': [noteId],
-            }),
+            })
           ),
           relaySet.count(
             {
@@ -432,7 +433,7 @@ async function applyInteractionStats(
             createLoggedCountOptions('count-reposts', relayUrls, {
               kinds: [NDKKind.Repost],
               '#e': [noteId],
-            }),
+            })
           ),
           relaySet.count(
             {
@@ -442,7 +443,7 @@ async function applyInteractionStats(
             createLoggedCountOptions('count-reactions', relayUrls, {
               kinds: [NDKKind.Reaction],
               '#e': [noteId],
-            }),
+            })
           ),
         ]);
 
@@ -453,7 +454,7 @@ async function applyInteractionStats(
           reposts: resolveCountResult(repostCountResult, existingNote?.stats.reposts ?? 0),
           likes: resolveCountResult(reactionCountResult, existingNote?.stats.likes ?? 0),
         };
-      }),
+      })
     );
 
     for (const countSet of chunkCounts) {
@@ -468,7 +469,7 @@ async function applyInteractionStats(
     appRelayEntries,
     myRelayEntries,
     displayNoteIds,
-    extraReadRelayUrls,
+    extraReadRelayUrls
   );
 
   return {
@@ -483,7 +484,7 @@ async function applyInteractionStats(
               likes: likeCountById.get(note.id) ?? note.stats.likes,
             },
           }
-        : note,
+        : note
     ),
     viewerState,
   };
@@ -498,7 +499,7 @@ async function hydrateEvents(
     hasMore?: boolean;
     nextCursor?: number | null;
   } = {},
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<HydratedNoteCollection> {
   const primaryNotes = primaryEvents
     .map((event) => mapEventToNote(event))
@@ -516,7 +517,7 @@ async function hydrateEvents(
     appRelayEntries,
     myRelayEntries,
     allNotes,
-    extraReadRelayUrls,
+    extraReadRelayUrls
   );
 
   return {
@@ -541,7 +542,7 @@ export async function fetchHomeTimelineBatch(
   myRelayEntries: RelayListEntry[],
   until: number | null,
   limit = 15,
-  authors?: string[],
+  authors?: string[]
 ): Promise<HydratedNoteCollection> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
   const filters: NDKFilter = {
@@ -558,9 +559,7 @@ export async function fetchHomeTimelineBatch(
   }
 
   const events = await fetchEventsFromRelays(session, relayUrls, filters);
-  const primaryEvents = events
-    .filter((event) => !getEventReplyId(event))
-    .slice(0, limit);
+  const primaryEvents = events.filter((event) => !getEventReplyId(event)).slice(0, limit);
 
   return hydrateEvents(session, appRelayEntries, myRelayEntries, primaryEvents, {
     hasMore: primaryEvents.length === limit,
@@ -574,7 +573,7 @@ export async function streamHomeTimelineBatch(
   until: number | null,
   limit = 15,
   authors: string[] | undefined,
-  onChunk: (chunk: HydratedNoteChunk) => Promise<void> | void,
+  onChunk: (chunk: HydratedNoteChunk) => Promise<void> | void
 ): Promise<HomeTimelineStreamResult> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
   const filters: NDKFilter = {
@@ -608,12 +607,7 @@ export async function streamHomeTimelineBatch(
 
     await onChunk(buildPrimaryChunkFromEvents(batchEvents));
 
-    const hydrationPromise = hydrateEvents(
-      session,
-      appRelayEntries,
-      myRelayEntries,
-      batchEvents,
-    )
+    const hydrationPromise = hydrateEvents(session, appRelayEntries, myRelayEntries, batchEvents)
       .then(async (hydratedChunk) => {
         await onChunk({
           primaryNotes: hydratedChunk.primaryNotes,
@@ -639,7 +633,7 @@ export async function streamHomeTimelineBatch(
       const remainingSlots = limit - streamedPrimaryEvents.length;
       const currentBatchSize = Math.min(
         flushAll ? queuedPrimaryEvents.length : HOME_TIMELINE_STREAM_BATCH_SIZE,
-        remainingSlots,
+        remainingSlots
       );
       const nextBatch = queuedPrimaryEvents.splice(0, currentBatchSize);
 
@@ -694,14 +688,21 @@ export async function fetchNotesByIds(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   ids: string[],
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<HydratedNoteCollection> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
   const events = await fetchEventsInChunks(session, relayUrls, unique(ids));
-  return hydrateEvents(session, appRelayEntries, myRelayEntries, events, {
-    hasMore: false,
-    nextCursor: null,
-  }, extraReadRelayUrls);
+  return hydrateEvents(
+    session,
+    appRelayEntries,
+    myRelayEntries,
+    events,
+    {
+      hasMore: false,
+      nextCursor: null,
+    },
+    extraReadRelayUrls
+  );
 }
 
 export async function fetchProfileTab(
@@ -711,7 +712,7 @@ export async function fetchProfileTab(
   pubkey: string,
   tab: 'posts' | 'replies' | 'likes' | 'reposts',
   limit = 20,
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<HydratedNoteCollection> {
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
 
@@ -727,15 +728,9 @@ export async function fetchProfileTab(
       reactionEvents
         .filter((event) => event.content === '+' || event.content === '')
         .map((event) => targetEventIdFromTag(event.tags))
-        .filter((value): value is string => Boolean(value)),
+        .filter((value): value is string => Boolean(value))
     ).slice(0, limit);
-    return fetchNotesByIds(
-      session,
-      appRelayEntries,
-      myRelayEntries,
-      targetIds,
-      extraReadRelayUrls,
-    );
+    return fetchNotesByIds(session, appRelayEntries, myRelayEntries, targetIds, extraReadRelayUrls);
   }
 
   if (tab === 'reposts') {
@@ -744,9 +739,16 @@ export async function fetchProfileTab(
       kinds: [NDKKind.Repost],
       limit,
     });
-    return hydrateEvents(session, appRelayEntries, myRelayEntries, repostEvents, {
-      hasMore: repostEvents.length === limit,
-    }, extraReadRelayUrls);
+    return hydrateEvents(
+      session,
+      appRelayEntries,
+      myRelayEntries,
+      repostEvents,
+      {
+        hasMore: repostEvents.length === limit,
+      },
+      extraReadRelayUrls
+    );
   }
 
   const textEvents = await fetchEventsFromRelays(session, relayUrls, {
@@ -755,12 +757,21 @@ export async function fetchProfileTab(
     limit: limit * 3,
   });
   const filteredEvents = textEvents
-    .filter((event) => (tab === 'replies' ? Boolean(getEventReplyId(event)) : !getEventReplyId(event)))
+    .filter((event) =>
+      tab === 'replies' ? Boolean(getEventReplyId(event)) : !getEventReplyId(event)
+    )
     .slice(0, limit);
 
-  return hydrateEvents(session, appRelayEntries, myRelayEntries, filteredEvents, {
-    hasMore: filteredEvents.length === limit,
-  }, extraReadRelayUrls);
+  return hydrateEvents(
+    session,
+    appRelayEntries,
+    myRelayEntries,
+    filteredEvents,
+    {
+      hasMore: filteredEvents.length === limit,
+    },
+    extraReadRelayUrls
+  );
 }
 
 export async function fetchThreadCollection(
@@ -768,16 +779,17 @@ export async function fetchThreadCollection(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   postId: string,
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<ThreadCollection> {
   const focusedCollection = await fetchNotesByIds(
     session,
     appRelayEntries,
     myRelayEntries,
     [postId],
-    extraReadRelayUrls,
+    extraReadRelayUrls
   );
-  const focusedPost = focusedCollection.primaryNotes[0] ?? focusedCollection.relatedNotes[0] ?? null;
+  const focusedPost =
+    focusedCollection.primaryNotes[0] ?? focusedCollection.relatedNotes[0] ?? null;
   if (!focusedPost) {
     return {
       focusedPost: null,
@@ -790,7 +802,9 @@ export async function fetchThreadCollection(
   }
 
   const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries, extraReadRelayUrls);
-  const ancestorIds = unique([focusedPost.rootId, focusedPost.replyTo].filter((value): value is string => Boolean(value)));
+  const ancestorIds = unique(
+    [focusedPost.rootId, focusedPost.replyTo].filter((value): value is string => Boolean(value))
+  );
   const ancestorCollection =
     ancestorIds.length > 0
       ? await fetchNotesByIds(
@@ -798,7 +812,7 @@ export async function fetchThreadCollection(
           appRelayEntries,
           myRelayEntries,
           ancestorIds,
-          extraReadRelayUrls,
+          extraReadRelayUrls
         )
       : {
           primaryNotes: [],
@@ -823,10 +837,10 @@ export async function fetchThreadCollection(
       hasMore: false,
       nextCursor: null,
     },
-    extraReadRelayUrls,
+    extraReadRelayUrls
   );
   const ancestors = sortOldest(
-    ancestorCollection.primaryNotes.filter((note) => note.id !== focusedPost.id),
+    ancestorCollection.primaryNotes.filter((note) => note.id !== focusedPost.id)
   );
 
   return {
@@ -840,13 +854,16 @@ export async function fetchThreadCollection(
       ...ancestorCollection.relatedNotes,
       ...replyCollection.primaryNotes,
       ...replyCollection.relatedNotes,
-    ]).map((note) => {
-      const rawEvent =
-        [...focusedCollection.rawEvents, ...ancestorCollection.rawEvents, ...replyCollection.rawEvents].find(
-          (event) => event.id === note.id,
-        );
-      return rawEvent;
-    }).filter((event): event is NostrEvent => Boolean(event)),
+    ])
+      .map((note) => {
+        const rawEvent = [
+          ...focusedCollection.rawEvents,
+          ...ancestorCollection.rawEvents,
+          ...replyCollection.rawEvents,
+        ].find((event) => event.id === note.id);
+        return rawEvent;
+      })
+      .filter((event): event is NostrEvent => Boolean(event)),
     viewerState: {
       ...ancestorCollection.viewerState,
       ...focusedCollection.viewerState,
@@ -863,7 +880,7 @@ export async function fetchThreadCollection(
 export async function fetchBookmarksCollection(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
-  myRelayEntries: RelayListEntry[],
+  myRelayEntries: RelayListEntry[]
 ): Promise<BookmarkCollection> {
   const bookmarkIds = await fetchBookmarkIds(session, appRelayEntries, myRelayEntries);
   if (bookmarkIds.length === 0) {
@@ -895,7 +912,7 @@ export async function publishNote(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  content: string,
+  content: string
 ): Promise<NostrEvent> {
   const relayUrls = buildWriteRelayUrls(appRelayEntries, myRelayEntries);
   const event = await publishEventToRelays(session, relayUrls, {
@@ -912,7 +929,7 @@ export async function publishReply(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   parentRawEvent: NostrEvent,
-  content: string,
+  content: string
 ): Promise<NostrEvent> {
   const relayUrls = buildWriteRelayUrls(appRelayEntries, myRelayEntries);
   const ndk = createNdkClient(session, relayUrls);
@@ -929,7 +946,7 @@ export async function publishReaction(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  targetRawEvent: NostrEvent,
+  targetRawEvent: NostrEvent
 ): Promise<NostrEvent> {
   const relayUrls = buildWriteRelayUrls(appRelayEntries, myRelayEntries);
   const ndk = createNdkClient(session, relayUrls);
@@ -945,7 +962,7 @@ export async function publishRepost(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  targetRawEvent: NostrEvent,
+  targetRawEvent: NostrEvent
 ): Promise<NostrEvent> {
   const relayUrls = buildWriteRelayUrls(appRelayEntries, myRelayEntries);
   const ndk = createNdkClient(session, relayUrls);
@@ -961,7 +978,7 @@ export async function publishDeletionForEvents(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  eventIds: string[],
+  eventIds: string[]
 ): Promise<void> {
   if (eventIds.length === 0) {
     return;
@@ -979,7 +996,7 @@ export async function publishBookmarkList(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  bookmarkIds: string[],
+  bookmarkIds: string[]
 ): Promise<void> {
   const relayUrls = buildWriteRelayUrls(appRelayEntries, myRelayEntries);
   await publishReplaceableEventToRelays(session, relayUrls, {

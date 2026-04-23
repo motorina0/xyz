@@ -1,6 +1,6 @@
 import { useRouter } from 'vue-router';
-import { useAuthStore } from '../stores/auth';
 import { useAppRelaysStore } from '../stores/appRelays';
+import { useAuthStore } from '../stores/auth';
 import { useFeedStore } from '../stores/feed';
 import { useFollowsStore } from '../stores/follows';
 import { useMyRelaysStore } from '../stores/myRelays';

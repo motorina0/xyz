@@ -9,8 +9,18 @@ function normalizeRelayEntryValue(entry: unknown): RelayListEntry | null {
     }
 
     try {
+      const normalizedUrl = normalizeRelayUrl(trimmedValue);
+      const parsedUrl = new URL(normalizedUrl);
+      if (parsedUrl.protocol !== 'ws:' && parsedUrl.protocol !== 'wss:') {
+        return null;
+      }
+
+      if (!parsedUrl.hostname) {
+        return null;
+      }
+
       return {
-        url: normalizeRelayUrl(trimmedValue),
+        url: normalizedUrl,
         read: true,
         write: true,
       };
@@ -31,6 +41,15 @@ function normalizeRelayEntryValue(entry: unknown): RelayListEntry | null {
 
   try {
     const normalizedUrl = normalizeRelayUrl(rawUrl);
+    const parsedUrl = new URL(normalizedUrl);
+    if (parsedUrl.protocol !== 'ws:' && parsedUrl.protocol !== 'wss:') {
+      return null;
+    }
+
+    if (!parsedUrl.hostname) {
+      return null;
+    }
+
     const read = rawEntry.read !== false;
     const write = rawEntry.write !== false;
     if (!read && !write) {

@@ -1,11 +1,15 @@
-import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
+import { computed, ref } from 'vue';
+import {
+  buildFallbackProfile,
+  fetchProfiles,
+  saveCurrentUserProfile,
+} from '../services/nostrProfileService';
+import { profileCacheService } from '../services/profileCacheService';
+import type { NostrProfile } from '../types/nostr';
 import { useAppRelaysStore } from './appRelays';
 import { useAuthStore } from './auth';
 import { useMyRelaysStore } from './myRelays';
-import { profileCacheService } from '../services/profileCacheService';
-import { buildFallbackProfile, fetchProfiles, saveCurrentUserProfile } from '../services/nostrProfileService';
-import type { NostrProfile } from '../types/nostr';
 
 export const useProfilesStore = defineStore('profiles', () => {
   const authStore = useAuthStore();
@@ -23,7 +27,7 @@ export const useProfilesStore = defineStore('profiles', () => {
 
   const profilesMap = computed(() => profiles.value);
   const currentUserProfile = computed(() =>
-    authStore.currentPubkey ? getProfileByPubkey(authStore.currentPubkey) : null,
+    authStore.currentPubkey ? getProfileByPubkey(authStore.currentPubkey) : null
   );
 
   function upsertProfiles(nextProfiles: NostrProfile[]): void {
@@ -31,22 +35,25 @@ export const useProfilesStore = defineStore('profiles', () => {
       return;
     }
 
-    profiles.value = nextProfiles.reduce<Record<string, NostrProfile>>((accumulator, profile) => {
-      const existingProfile = profiles.value[profile.pubkey] ?? null;
-      accumulator[profile.pubkey] = {
-        ...(existingProfile ?? {}),
-        ...profile,
-        followingCount:
-          typeof profile.followingCount === 'number'
-            ? profile.followingCount
-            : existingProfile?.followingCount,
-        followersCount:
-          typeof profile.followersCount === 'number'
-            ? profile.followersCount
-            : existingProfile?.followersCount,
-      };
-      return accumulator;
-    }, { ...profiles.value });
+    profiles.value = nextProfiles.reduce<Record<string, NostrProfile>>(
+      (accumulator, profile) => {
+        const existingProfile = profiles.value[profile.pubkey] ?? null;
+        accumulator[profile.pubkey] = {
+          ...(existingProfile ?? {}),
+          ...profile,
+          followingCount:
+            typeof profile.followingCount === 'number'
+              ? profile.followingCount
+              : existingProfile?.followingCount,
+          followersCount:
+            typeof profile.followersCount === 'number'
+              ? profile.followersCount
+              : existingProfile?.followersCount,
+        };
+        return accumulator;
+      },
+      { ...profiles.value }
+    );
   }
 
   function ensureRelayStoresInitialized(): void {
@@ -85,7 +92,7 @@ export const useProfilesStore = defineStore('profiles', () => {
   async function ensureProfiles(
     pubkeys: string[],
     force = false,
-    extraReadRelayUrls: string[] = [],
+    extraReadRelayUrls: string[] = []
   ): Promise<void> {
     const uniquePubkeys = Array.from(new Set(pubkeys.filter(Boolean)));
     if (uniquePubkeys.length === 0) {
@@ -144,18 +151,18 @@ export const useProfilesStore = defineStore('profiles', () => {
           appRelaysStore.relayEntries,
           myRelaysStore.relayEntries,
           pendingPubkeys,
-          extraReadRelayUrls,
+          extraReadRelayUrls
         );
         upsertProfiles(fetchedProfiles);
         await profileCacheService.saveProfiles(
-          fetchedProfiles.map((profile) => profiles.value[profile.pubkey] ?? profile),
+          fetchedProfiles.map((profile) => profiles.value[profile.pubkey] ?? profile)
         );
         loadedPubkeys.value = pendingPubkeys.reduce<Record<string, boolean>>(
           (accumulator, pubkey) => {
             accumulator[pubkey] = true;
             return accumulator;
           },
-          { ...loadedPubkeys.value },
+          { ...loadedPubkeys.value }
         );
       } catch (error) {
         const errorMessage =
@@ -165,7 +172,7 @@ export const useProfilesStore = defineStore('profiles', () => {
             accumulator[pubkey] = errorMessage;
             return accumulator;
           },
-          { ...errorsByPubkey.value },
+          { ...errorsByPubkey.value }
         );
         const missingPubkeys = pendingPubkeys.filter((pubkey) => !profiles.value[pubkey]);
         if (missingPubkeys.length > 0) {
@@ -177,7 +184,7 @@ export const useProfilesStore = defineStore('profiles', () => {
             accumulator[pubkey] = false;
             return accumulator;
           },
-          { ...loadingPubkeys.value },
+          { ...loadingPubkeys.value }
         );
 
         for (const pubkey of pendingPubkeys) {
@@ -200,7 +207,7 @@ export const useProfilesStore = defineStore('profiles', () => {
     pubkey?: string | null,
     force = false,
     _includeFollowingCount = false,
-    extraReadRelayUrls: string[] = [],
+    extraReadRelayUrls: string[] = []
   ): Promise<void> {
     if (!pubkey) {
       return;
@@ -252,7 +259,7 @@ export const useProfilesStore = defineStore('profiles', () => {
         authStore.session,
         appRelaysStore.relayEntries,
         myRelaysStore.relayEntries,
-        updates,
+        updates
       );
       await ensureProfile(authStore.currentPubkey, true);
     } finally {
@@ -265,7 +272,7 @@ export const useProfilesStore = defineStore('profiles', () => {
   }
 
   function getProfileError(pubkey?: string | null): string {
-    return pubkey ? errorsByPubkey.value[pubkey] ?? '' : '';
+    return pubkey ? (errorsByPubkey.value[pubkey] ?? '') : '';
   }
 
   function reset(): void {

@@ -38,7 +38,8 @@ export function normalizeStoredSession(value: unknown): NostrAuthSession {
   const rawSession = value as Partial<NostrAuthSession>;
   const currentPubkey =
     typeof rawSession.currentPubkey === 'string' ? normalizeHexKey(rawSession.currentPubkey) : null;
-  const method = rawSession.method === 'nip07' || rawSession.method === 'nsec' ? rawSession.method : null;
+  const method =
+    rawSession.method === 'nip07' || rawSession.method === 'nsec' ? rawSession.method : null;
   const privateKeyHex =
     typeof rawSession.privateKeyHex === 'string' ? normalizeHexKey(rawSession.privateKeyHex) : null;
 

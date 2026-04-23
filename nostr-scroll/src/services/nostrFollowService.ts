@@ -35,16 +35,19 @@ function buildFollowedPubkeys(tags: string[][]): string[] {
     tags
       .filter((tag) => tag[0] === 'p')
       .map((tag) => normalizeFollowedPubkey(tag[1]))
-      .filter((pubkey): pubkey is string => Boolean(pubkey)),
+      .filter((pubkey): pubkey is string => Boolean(pubkey))
   );
 }
 
-function mapContactsEventToFollowList(ownerPubkey: string, event: {
-  id: string;
-  created_at?: number;
-  tags: string[][];
-  content?: string;
-}): FollowListSnapshot {
+function mapContactsEventToFollowList(
+  ownerPubkey: string,
+  event: {
+    id: string;
+    created_at?: number;
+    tags: string[][];
+    content?: string;
+  }
+): FollowListSnapshot {
   return {
     ownerPubkey,
     followedPubkeys: buildFollowedPubkeys(event.tags),
@@ -59,7 +62,7 @@ function buildFollowListTags(existingTags: string[][], followedPubkeys: string[]
   const normalizedFollowedPubkeys = uniquePubkeys(
     followedPubkeys
       .map((pubkey) => normalizeFollowedPubkey(pubkey))
-      .filter((pubkey): pubkey is string => Boolean(pubkey)),
+      .filter((pubkey): pubkey is string => Boolean(pubkey))
   );
   const preservedContactTags = new Map<string, string[]>();
   const nonContactTags: string[][] = [];
@@ -80,9 +83,7 @@ function buildFollowListTags(existingTags: string[][], followedPubkeys: string[]
 
   return [
     ...nonContactTags,
-    ...normalizedFollowedPubkeys.map(
-      (pubkey) => preservedContactTags.get(pubkey) ?? ['p', pubkey],
-    ),
+    ...normalizedFollowedPubkeys.map((pubkey) => preservedContactTags.get(pubkey) ?? ['p', pubkey]),
   ];
 }
 
@@ -100,7 +101,7 @@ export function createEmptyFollowList(ownerPubkey: string): FollowListSnapshot {
 export function appendFollowedPubkey(
   followList: FollowListSnapshot | null,
   ownerPubkey: string,
-  targetPubkey: string,
+  targetPubkey: string
 ): FollowListSnapshot {
   const normalizedTargetPubkey = normalizeFollowedPubkey(targetPubkey);
   if (!normalizedTargetPubkey) {
@@ -126,7 +127,7 @@ export async function fetchFollowList(
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
   ownerPubkey: string,
-  extraReadRelayUrls: string[] = [],
+  extraReadRelayUrls: string[] = []
 ): Promise<FollowListSnapshot | null> {
   const normalizedOwnerPubkey = normalizeFollowedPubkey(ownerPubkey);
   if (!normalizedOwnerPubkey) {
@@ -140,7 +141,7 @@ export async function fetchFollowList(
     limit: 12,
   });
   const latestContactsEvent = contactsEvents.find(
-    (event) => normalizeFollowedPubkey(event.pubkey) === normalizedOwnerPubkey,
+    (event) => normalizeFollowedPubkey(event.pubkey) === normalizedOwnerPubkey
   );
 
   return latestContactsEvent
@@ -152,7 +153,7 @@ export async function publishFollowList(
   session: NostrAuthSession,
   appRelayEntries: RelayListEntry[],
   myRelayEntries: RelayListEntry[],
-  followList: FollowListSnapshot,
+  followList: FollowListSnapshot
 ): Promise<FollowListSnapshot> {
   const relayUrls = buildWriteRelayUrls(appRelayEntries, myRelayEntries);
   const publishedEvent = await publishReplaceableEventToRelays(session, relayUrls, {

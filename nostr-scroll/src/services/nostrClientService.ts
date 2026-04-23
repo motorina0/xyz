@@ -1,10 +1,10 @@
 import NDK, {
-  NDKEvent,
   type NDKCountOptions,
+  NDKEvent,
+  type NDKFilter,
   NDKNip07Signer,
   NDKPrivateKeySigner,
   NDKRelaySet,
-  type NDKFilter,
   type NDKSubscriptionOptions,
   type NostrEvent,
 } from '@nostr-dev-kit/ndk';
@@ -23,7 +23,7 @@ function uniqueRelayUrls(relayUrls: string[]): string[] {
 
 function normalizeReqFilters(filters: NDKFilter | NDKFilter[]): NDKFilter[] {
   return (Array.isArray(filters) ? filters : [filters]).map(
-    (filter) => JSON.parse(JSON.stringify(filter)) as NDKFilter,
+    (filter) => JSON.parse(JSON.stringify(filter)) as NDKFilter
   );
 }
 
@@ -38,7 +38,10 @@ function buildCountFrame(countId: string, filters: NDKFilter | NDKFilter[]): unk
 function createReqSubId(label: string): string {
   reqSubscriptionCounter += 1;
   const normalizedLabel =
-    label.trim().replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '') || 'req';
+    label
+      .trim()
+      .replace(/[^a-z0-9-]+/gi, '-')
+      .replace(/^-+|-+$/g, '') || 'req';
 
   return `${normalizedLabel}-${reqSubscriptionCounter.toString(36)}`;
 }
@@ -46,16 +49,17 @@ function createReqSubId(label: string): string {
 function createCountId(label: string): string {
   countRequestCounter += 1;
   const normalizedLabel =
-    label.trim().replace(/[^a-z0-9-]+/gi, '-').replace(/^-+|-+$/g, '') || 'count';
+    label
+      .trim()
+      .replace(/[^a-z0-9-]+/gi, '-')
+      .replace(/^-+|-+$/g, '') || 'count';
 
   return `${normalizedLabel}-${countRequestCounter.toString(36)}`;
 }
 
 function logReqFrame(relayUrls: string[], subId: string, filters: NDKFilter | NDKFilter[]): void {
   const normalizedRelayUrls = uniqueRelayUrls(
-    relayUrls
-      .map((relayUrl) => relayUrl.trim())
-      .filter((relayUrl) => relayUrl.length > 0),
+    relayUrls.map((relayUrl) => relayUrl.trim()).filter((relayUrl) => relayUrl.length > 0)
   );
   if (normalizedRelayUrls.length === 0) {
     return;
@@ -67,19 +71,17 @@ function logReqFrame(relayUrls: string[], subId: string, filters: NDKFilter | ND
     'REQ',
     normalizedRelayUrls,
     JSON.stringify(reqFrame),
-    reqFrame,
+    reqFrame
   );
 }
 
 function logCountFrame(
   relayUrls: string[],
   countId: string,
-  filters: NDKFilter | NDKFilter[],
+  filters: NDKFilter | NDKFilter[]
 ): void {
   const normalizedRelayUrls = uniqueRelayUrls(
-    relayUrls
-      .map((relayUrl) => relayUrl.trim())
-      .filter((relayUrl) => relayUrl.length > 0),
+    relayUrls.map((relayUrl) => relayUrl.trim()).filter((relayUrl) => relayUrl.length > 0)
   );
   if (normalizedRelayUrls.length === 0) {
     return;
@@ -91,13 +93,11 @@ function logCountFrame(
     'COUNT',
     normalizedRelayUrls,
     JSON.stringify(countFrame),
-    countFrame,
+    countFrame
   );
 }
 
-function toReqFilters(
-  idOrFilter: string | NDKFilter | NDKFilter[],
-): NDKFilter | NDKFilter[] {
+function toReqFilters(idOrFilter: string | NDKFilter | NDKFilter[]): NDKFilter | NDKFilter[] {
   if (typeof idOrFilter === 'string') {
     return { ids: [idOrFilter] };
   }
@@ -106,9 +106,7 @@ function toReqFilters(
 }
 
 function sortEventsNewest(events: NDKEvent[]): NDKEvent[] {
-  return [...events].sort(
-    (first, second) => (second.created_at ?? 0) - (first.created_at ?? 0),
-  );
+  return [...events].sort((first, second) => (second.created_at ?? 0) - (first.created_at ?? 0));
 }
 
 export interface StreamEventsFromRelaysOptions {
@@ -121,7 +119,7 @@ export function createLoggedReqSubscriptionOptions(
   label: string,
   relayUrls: string[],
   filters: NDKFilter | NDKFilter[],
-  options: NDKSubscriptionOptions = {},
+  options: NDKSubscriptionOptions = {}
 ): NDKSubscriptionOptions {
   const subId = options.subId ?? createReqSubId(label);
   logReqFrame(relayUrls, subId, filters);
@@ -136,7 +134,7 @@ export function createLoggedCountOptions(
   label: string,
   relayUrls: string[],
   filters: NDKFilter | NDKFilter[],
-  options: NDKCountOptions = {},
+  options: NDKCountOptions = {}
 ): NDKCountOptions {
   const id = options.id ?? createCountId(label);
   logCountFrame(relayUrls, id, filters);
@@ -180,7 +178,7 @@ function logRelayTraffic(message: string, relayUrl: string, direction?: 'send' |
 export function buildReadRelayUrls(
   appRelayEntries: RelayListEntry[] = [],
   myRelayEntries: RelayListEntry[] = [],
-  relayHints: string[] = [],
+  relayHints: string[] = []
 ): string[] {
   return uniqueRelayUrls([
     ...relayHints,
@@ -193,7 +191,7 @@ export function buildReadRelayUrls(
 export function buildWriteRelayUrls(
   appRelayEntries: RelayListEntry[] = [],
   myRelayEntries: RelayListEntry[] = [],
-  relayHints: string[] = [],
+  relayHints: string[] = []
 ): string[] {
   return uniqueRelayUrls([
     ...relayHints,
@@ -239,7 +237,7 @@ export function createRelaySet(ndk: NDK, relayUrls: string[]): NDKRelaySet | und
 export async function fetchEventsFromRelays(
   session: NostrAuthSession,
   relayUrls: string[],
-  filters: NDKFilter | NDKFilter[],
+  filters: NDKFilter | NDKFilter[]
 ): Promise<NDKEvent[]> {
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
@@ -247,7 +245,7 @@ export async function fetchEventsFromRelays(
   const events = await ndk.fetchEvents(
     filters,
     createLoggedReqSubscriptionOptions('fetch-events', relayUrls, filters),
-    relaySet,
+    relaySet
   );
 
   return sortEventsNewest(Array.from(events));
@@ -258,7 +256,7 @@ export async function streamEventsFromRelays(
   relayUrls: string[],
   filters: NDKFilter | NDKFilter[],
   label: string,
-  options: StreamEventsFromRelaysOptions,
+  options: StreamEventsFromRelaysOptions
 ): Promise<void> {
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
@@ -293,7 +291,10 @@ export async function streamEventsFromRelays(
     const queueBatchProcessing = (flush = false): void => {
       processingQueue = processingQueue
         .then(async () => {
-          while ((flush ? bufferedEvents.length > 0 : bufferedEvents.length >= batchSize) && !didFinish) {
+          while (
+            (flush ? bufferedEvents.length > 0 : bufferedEvents.length >= batchSize) &&
+            !didFinish
+          ) {
             const currentBatchSize = flush ? Math.min(batchSize, bufferedEvents.length) : batchSize;
             const nextBatch = bufferedEvents.splice(0, currentBatchSize);
             await options.onBatch(sortEventsNewest(nextBatch));
@@ -329,7 +330,7 @@ export async function streamEventsFromRelays(
               finish(error);
             });
         },
-      }),
+      })
     );
   });
 }
@@ -338,27 +339,22 @@ export async function fetchEventFromRelays(
   session: NostrAuthSession,
   relayUrls: string[],
   idOrFilter: string | NDKFilter | NDKFilter[],
-  options?: NDKSubscriptionOptions,
+  options?: NDKSubscriptionOptions
 ): Promise<NDKEvent | null> {
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
   const relaySet = createRelaySet(ndk, relayUrls);
   return ndk.fetchEvent(
     idOrFilter,
-    createLoggedReqSubscriptionOptions(
-      'fetch-event',
-      relayUrls,
-      toReqFilters(idOrFilter),
-      options,
-    ),
-    relaySet,
+    createLoggedReqSubscriptionOptions('fetch-event', relayUrls, toReqFilters(idOrFilter), options),
+    relaySet
   );
 }
 
 export async function publishEventToRelays(
   session: NostrAuthSession,
   relayUrls: string[],
-  rawEvent: Partial<NostrEvent> & Pick<NostrEvent, 'kind' | 'content' | 'tags'>,
+  rawEvent: Partial<NostrEvent> & Pick<NostrEvent, 'kind' | 'content' | 'tags'>
 ): Promise<NDKEvent> {
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);
@@ -367,18 +363,14 @@ export async function publishEventToRelays(
   event.kind = rawEvent.kind;
   event.content = rawEvent.content;
   event.tags = rawEvent.tags;
-  await event.publish(
-    relaySet,
-    6_000,
-    relayUrls.length > 0 ? 1 : undefined,
-  );
+  await event.publish(relaySet, 6_000, relayUrls.length > 0 ? 1 : undefined);
   return event;
 }
 
 export async function publishReplaceableEventToRelays(
   session: NostrAuthSession,
   relayUrls: string[],
-  rawEvent: Partial<NostrEvent> & Pick<NostrEvent, 'kind' | 'content' | 'tags'>,
+  rawEvent: Partial<NostrEvent> & Pick<NostrEvent, 'kind' | 'content' | 'tags'>
 ): Promise<NDKEvent> {
   const ndk = createNdkClient(session, relayUrls);
   await connectNdkClient(ndk);

@@ -4,10 +4,7 @@ const { spawnSync } = require('node:child_process');
 
 require('./crypto-hash-polyfill.cjs');
 
-const quasarEntrypoint = path.resolve(
-  __dirname,
-  '../node_modules/@quasar/app-vite/bin/quasar.js',
-);
+const quasarEntrypoint = path.resolve(__dirname, '../node_modules/@quasar/app-vite/bin/quasar.js');
 
 if (!fs.existsSync(quasarEntrypoint)) {
   console.error('Missing local dependencies for nostr-scroll.');

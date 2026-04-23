@@ -22,10 +22,7 @@ function hashSeed(seed: string): number {
 }
 
 function deriveInitials(label: string): string {
-  const parts = label
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean);
+  const parts = label.trim().split(/\s+/).filter(Boolean);
 
   if (parts.length === 0) {
     return 'NS';

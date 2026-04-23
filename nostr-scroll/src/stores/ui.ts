@@ -1,7 +1,12 @@
-import { ref } from 'vue';
 import { defineStore } from 'pinia';
+import { ref } from 'vue';
 import type { HomeTimelineTab, ProfileTab } from '../types/nostr';
-import { STORAGE_KEYS, readStorageItem, removeStorageItem, writeStorageItem } from '../utils/storage';
+import {
+  readStorageItem,
+  removeStorageItem,
+  STORAGE_KEYS,
+  writeStorageItem,
+} from '../utils/storage';
 
 type StoredUiState = {
   homeTimelineTab: HomeTimelineTab;

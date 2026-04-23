@@ -1,5 +1,5 @@
 <template>
-  <q-page class="login-page">
+  <q-page class="login-page" data-testid="login-page">
     <div class="login-shell">
       <div class="login-card scroll-card">
         <div class="login-card__eyebrow">real nostr sign-in</div>
@@ -16,6 +16,7 @@
             color="primary"
             class="scroll-button login-card__button"
             label="Login"
+            data-testid="login-open-button"
             @click="openLoginOptions"
           />
 
@@ -55,6 +56,7 @@
             class="scroll-button login-card__button"
             icon="vpn_key"
             label="Login with Key"
+            data-testid="login-key-method-button"
             @click="openKeyLogin"
           />
 
@@ -85,6 +87,7 @@
             type="password"
             class="login-card__input"
             label="Private Key (nsec or hex)"
+            data-testid="login-key-input"
             :error="Boolean(privateKeyError)"
             :error-message="privateKeyError"
             @keydown.enter.prevent="handleKeyLogin"
@@ -107,6 +110,7 @@
               color="primary"
               class="scroll-button login-card__button"
               label="Login"
+              data-testid="login-key-submit"
               :loading="isKeyLoginInProgress"
               :disable="!canLoginWithKey"
               @click="handleKeyLogin"

@@ -1,9 +1,9 @@
 import { route } from 'quasar/wrappers';
 import { createMemoryHistory, createRouter, createWebHistory } from 'vue-router';
-import routes from './routes';
-import type { NostrAuthSession } from '../types/auth';
 import { defaultAuthSession, normalizeStoredSession } from '../services/nostrAuthService';
-import { STORAGE_KEYS, readStorageItem } from '../utils/storage';
+import type { NostrAuthSession } from '../types/auth';
+import { readStorageItem, STORAGE_KEYS } from '../utils/storage';
+import routes from './routes';
 
 function readStoredSession(): NostrAuthSession {
   return normalizeStoredSession(readStorageItem(STORAGE_KEYS.auth, defaultAuthSession));

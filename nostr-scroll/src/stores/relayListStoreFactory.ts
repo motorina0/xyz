@@ -37,7 +37,7 @@ export function createRelayListStoreSetup({
       }
 
       relayEntries.value = normalizeRelayListEntries(
-        readStorageItem<unknown[]>(storageKey, defaultRelayEntries()),
+        readStorageItem<unknown[]>(storageKey, defaultRelayEntries())
       );
       persistRelayEntries();
       isInitialized.value = true;
@@ -92,7 +92,7 @@ export function createRelayListStoreSetup({
 
     function setRelayFlags(
       index: number,
-      flags: Partial<Pick<RelayListEntry, 'read' | 'write'>>,
+      flags: Partial<Pick<RelayListEntry, 'read' | 'write'>>
     ): void {
       ensureInitialized();
       const relayEntry = relayEntries.value[index];
@@ -107,7 +107,7 @@ export function createRelayListStoreSetup({
               read: typeof flags.read === 'boolean' ? flags.read : entry.read,
               write: typeof flags.write === 'boolean' ? flags.write : entry.write,
             }
-          : entry,
+          : entry
       );
       persistRelayEntries();
     }
