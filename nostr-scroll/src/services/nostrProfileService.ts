@@ -1,4 +1,13 @@
-import { NDKKind, NDKUser, profileFromEvent, serializeProfile, type NDKEvent, type NDKUserProfile } from '@nostr-dev-kit/ndk';
+import {
+  isValidNip05,
+  isValidPubkey,
+  NDKKind,
+  NDKUser,
+  profileFromEvent,
+  serializeProfile,
+  type NDKEvent,
+  type NDKUserProfile,
+} from '@nostr-dev-kit/ndk';
 import type { NostrAuthSession } from '../types/auth';
 import type { NostrProfile } from '../types/nostr';
 import type { RelayListEntry } from '../types/relays';
@@ -13,7 +22,12 @@ import {
   fetchEventsFromRelays,
   publishReplaceableEventToRelays,
 } from './nostrClientService';
-import { encodeProfileReference, shortenPubkey, slugifyHandle } from './nostrEntityService';
+import {
+  encodeProfileReference,
+  normalizeProfileReference,
+  shortenPubkey,
+  slugifyHandle,
+} from './nostrEntityService';
 import { createFallbackAvatarDataUri, createFallbackBannerDataUri } from '../utils/visuals';
 
 export interface SaveProfileInput {
@@ -23,6 +37,14 @@ export interface SaveProfileInput {
   website?: string;
   picture?: string;
   banner?: string;
+}
+
+export interface ProfileSearchResolution {
+  isValid: boolean;
+  normalizedPubkey: string | null;
+  relayHints: string[];
+  identifierType: 'pubkey' | 'nip05' | null;
+  error: 'invalid' | 'nip05_unresolved' | null;
 }
 
 export function buildFallbackProfile(pubkey: string): NostrProfile {
@@ -88,6 +110,88 @@ function mapProfile(pubkey: string, profile: NDKUserProfile | null, profileEvent
         : undefined,
     verified: Boolean(profile?.nip05),
   };
+}
+
+export async function resolveProfileSearchInput(
+  session: NostrAuthSession,
+  appRelayEntries: RelayListEntry[],
+  myRelayEntries: RelayListEntry[],
+  input: string,
+): Promise<ProfileSearchResolution> {
+  const value = input.trim();
+  if (!value) {
+    return {
+      isValid: false,
+      normalizedPubkey: null,
+      relayHints: [],
+      identifierType: null,
+      error: 'invalid',
+    };
+  }
+
+  const normalizedReference = normalizeProfileReference(value);
+  if (normalizedReference) {
+    return {
+      isValid: true,
+      normalizedPubkey: normalizedReference.pubkey,
+      relayHints: normalizedReference.relayHints,
+      identifierType: 'pubkey',
+      error: null,
+    };
+  }
+
+  if (!value.includes('@')) {
+    return {
+      isValid: false,
+      normalizedPubkey: null,
+      relayHints: [],
+      identifierType: null,
+      error: 'invalid',
+    };
+  }
+
+  if (!isValidNip05(value)) {
+    return {
+      isValid: false,
+      normalizedPubkey: null,
+      relayHints: [],
+      identifierType: 'nip05',
+      error: 'invalid',
+    };
+  }
+
+  try {
+    const relayUrls = buildReadRelayUrls(appRelayEntries, myRelayEntries);
+    const ndk = createNdkClient(session, relayUrls);
+    const user = await NDKUser.fromNip05(value, ndk, true);
+    const normalizedPubkey = user?.pubkey?.toLowerCase() ?? null;
+
+    if (!normalizedPubkey || !isValidPubkey(normalizedPubkey)) {
+      return {
+        isValid: false,
+        normalizedPubkey: null,
+        relayHints: [],
+        identifierType: 'nip05',
+        error: 'nip05_unresolved',
+      };
+    }
+
+    return {
+      isValid: true,
+      normalizedPubkey,
+      relayHints: Array.isArray(user?.relayUrls) ? user.relayUrls : [],
+      identifierType: 'nip05',
+      error: null,
+    };
+  } catch {
+    return {
+      isValid: false,
+      normalizedPubkey: null,
+      relayHints: [],
+      identifierType: 'nip05',
+      error: 'nip05_unresolved',
+    };
+  }
 }
 
 export async function fetchProfiles(
