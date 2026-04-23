@@ -215,12 +215,14 @@ describe('relay and subscription runtimes', () => {
       },
       {
         cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
+        relayUrls: ['wss://relay.one', 'wss://relay.two'],
       } as never,
       {
         source: 'test',
       }
     );
     expect(subscription.subId).toMatch(/^Relay-Refresh-1$/i);
+    expect(logDeveloperTrace).toHaveBeenCalledTimes(1);
     expect(logDeveloperTrace).toHaveBeenCalledWith(
       'info',
       'subscription:my-relay-list',
@@ -234,6 +236,16 @@ describe('relay and subscription runtimes', () => {
             since: 123,
           },
         ],
+        reqStatement: [
+          'REQ',
+          subscription.subId,
+          JSON.stringify({
+            kinds: [NDKKind.RelayList],
+            since: 123,
+          }),
+        ],
+        relayCount: 2,
+        relayUrls: ['wss://relay.one', 'wss://relay.two'],
         source: 'test',
       })
     );

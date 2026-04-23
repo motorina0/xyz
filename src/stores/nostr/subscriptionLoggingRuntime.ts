@@ -228,6 +228,18 @@ export function createSubscriptionLoggingRuntime({
     return ['REQ', subId, ...serializedFilters];
   }
 
+  function buildLoggedNostrReqStatement(subId: string, filters: NDKFilter | NDKFilter[]): string[] {
+    const normalizedFilters = Array.isArray(filters) ? filters : [filters];
+
+    return [
+      'REQ',
+      subId,
+      ...normalizedFilters.map((filter) =>
+        JSON.stringify(JSON.parse(JSON.stringify(filter)) as Record<string, unknown>)
+      ),
+    ];
+  }
+
   function createLoggedSubscriptionSubId(label: string): string {
     subscriptionRequestCounter += 1;
     const normalizedLabel =
@@ -251,6 +263,7 @@ export function createSubscriptionLoggingRuntime({
       subId,
     });
     const reqFrame = buildNostrReqFrame(subId, subscription.filters);
+    const reqStatement = buildLoggedNostrReqStatement(subId, subscription.filters);
     const relayUrls = Array.from(
       new Set<string>(
         [...(options.relaySet?.relayUrls ?? []), ...(options.relayUrls ?? [])].filter(
@@ -262,20 +275,10 @@ export function createSubscriptionLoggingRuntime({
     logDeveloperTrace('info', `subscription:${name}`, 'req', {
       subId,
       reqFrame,
+      reqStatement,
       ...buildSubscriptionRelayDetails(relayUrls),
       ...details,
     });
-
-    for (const [relayIndex, relayUrl] of relayUrls.entries()) {
-      logDeveloperTrace('info', `subscription:${name}`, 'req-relay', {
-        subId,
-        relayIndex,
-        relayCount: relayUrls.length,
-        relayUrl,
-        reqFrame,
-        ...details,
-      });
-    }
 
     return subscription;
   }

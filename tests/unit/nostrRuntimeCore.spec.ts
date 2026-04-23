@@ -473,11 +473,34 @@ describe('nostr runtime core logic', () => {
         id: EVENT_ID_A,
       },
     });
+    runtime.logDeveloperTrace('info', 'subscription:private-messages', 'req', {
+      relayUrls: ['wss://relay.one', 'wss://relay.two'],
+      reqStatement: ['REQ', 'private-messages-1', '{"kinds":[4],"limit":100}'],
+      subId: 'private-messages-1',
+    });
     await flushPromises();
 
-    expect(developerTraceDataServiceMock.appendEntry).toHaveBeenCalledTimes(1);
-    expect(developerTraceVersion.value).toBe(1);
-    expect(console.info).toHaveBeenCalled();
+    expect(
+      runtime.buildConsoleTracePrefixArgs('subscription:private-messages', 'req', {
+        relayUrls: ['wss://relay.one', 'wss://relay.two'],
+        reqStatement: ['REQ', 'private-messages-1', '{"kinds":[4],"limit":100}'],
+      })
+    ).toEqual([
+      'relays=wss://relay.one, wss://relay.two',
+      'reqStatement=["REQ","private-messages-1","{\\"kinds\\":[4],\\"limit\\":100}"]',
+    ]);
+    expect(developerTraceDataServiceMock.appendEntry).toHaveBeenCalledTimes(2);
+    expect(developerTraceVersion.value).toBe(2);
+    expect(console.info).toHaveBeenCalledWith(
+      '[subscription:private-messages] req',
+      'relays=wss://relay.one, wss://relay.two',
+      'reqStatement=["REQ","private-messages-1","{\\"kinds\\":[4],\\"limit\\":100}"]',
+      expect.objectContaining({
+        relayUrls: ['wss://relay.one', 'wss://relay.two'],
+        reqStatement: ['REQ', 'private-messages-1', '{"kinds":[4],"limit":100}'],
+        subId: 'private-messages-1',
+      })
+    );
 
     runtime.setDeveloperDiagnosticsEnabled(false);
     await flushPromises();

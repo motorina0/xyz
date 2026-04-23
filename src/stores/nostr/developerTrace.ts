@@ -118,7 +118,6 @@ export function createDeveloperTraceRuntime({
       return (
         phase === 'start' ||
         phase === 'req' ||
-        phase === 'req-relay' ||
         phase === 'backfill-window-subscribe' ||
         phase === 'epoch-history-subscribe'
       );
@@ -132,6 +131,33 @@ export function createDeveloperTraceRuntime({
     );
   }
 
+  function buildConsoleTracePrefixArgs(
+    scope: string,
+    phase: string,
+    details: Record<string, unknown>
+  ): unknown[] {
+    if (scope !== 'subscription:private-messages' || phase !== 'req') {
+      return [];
+    }
+
+    const prefixArgs: unknown[] = [];
+    const relayUrls = Array.isArray(details.relayUrls)
+      ? details.relayUrls.filter(
+          (relayUrl): relayUrl is string =>
+            typeof relayUrl === 'string' && relayUrl.trim().length > 0
+        )
+      : [];
+    if (relayUrls.length > 0) {
+      prefixArgs.push(`relays=${relayUrls.join(', ')}`);
+    }
+
+    if (Array.isArray(details.reqStatement)) {
+      prefixArgs.push(`reqStatement=${JSON.stringify(details.reqStatement)}`);
+    }
+
+    return prefixArgs;
+  }
+
   function echoDeveloperTraceToConsole(
     level: DeveloperTraceLevel,
     scope: string,
@@ -139,17 +165,18 @@ export function createDeveloperTraceRuntime({
     details: Record<string, unknown>
   ): void {
     const label = `[${scope}] ${phase}`;
+    const prefixArgs = buildConsoleTracePrefixArgs(scope, phase, details);
     if (level === 'error') {
-      console.error(label, details);
+      console.error(label, ...prefixArgs, details);
       return;
     }
 
     if (level === 'warn') {
-      console.warn(label, details);
+      console.warn(label, ...prefixArgs, details);
       return;
     }
 
-    console.info(label, details);
+    console.info(label, ...prefixArgs, details);
   }
 
   function logDeveloperTrace(
@@ -216,6 +243,7 @@ export function createDeveloperTraceRuntime({
     bumpDeveloperDiagnosticsVersion,
     bumpDeveloperTraceVersion,
     clearDeveloperTraceEntries,
+    buildConsoleTracePrefixArgs,
     echoDeveloperTraceToConsole,
     listDeveloperTraceEntries,
     logDeveloperTrace,
