@@ -1,9 +1,32 @@
 const { spawn } = require('child_process');
+const fs = require('fs');
 const net = require('net');
+const path = require('path');
 
 const composeArgs = ['compose', '-f', 'docker-compose.e2e.yml'];
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker';
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const commandEnv = buildCommandEnv();
+const playwrightCli = require.resolve('@playwright/test/cli');
+
+function buildCommandEnv() {
+  const pathEntries = (process.env.PATH || '').split(path.delimiter).filter(Boolean);
+  const extraPathEntries = [];
+
+  if (process.platform === 'darwin') {
+    extraPathEntries.push(
+      '/Applications/Docker.app/Contents/Resources/bin',
+      '/opt/homebrew/bin',
+      '/usr/local/bin'
+    );
+  }
+
+  const nextPath = [...new Set([...extraPathEntries.filter((entry) => fs.existsSync(entry)), ...pathEntries])];
+
+  return {
+    ...process.env,
+    PATH: nextPath.join(path.delimiter)
+  };
+}
 
 function runCommand(command, args, options = {}) {
   const {
@@ -12,6 +35,7 @@ function runCommand(command, args, options = {}) {
 
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
+      env: commandEnv,
       stdio: 'inherit'
     });
 
@@ -69,7 +93,7 @@ async function main() {
   try {
     await waitForTcpPort('127.0.0.1', 7000, 30_000);
     await waitForTcpPort('127.0.0.1', 7001, 30_000);
-    await runCommand(npmCommand, ['run', 'test:e2e', '--', ...playwrightArgs]);
+    await runCommand(process.execPath, [playwrightCli, 'test', ...playwrightArgs]);
   } finally {
     await runCommand(dockerCommand, [...composeArgs, 'down', '-v', '--remove-orphans'], {
       allowFailure: true

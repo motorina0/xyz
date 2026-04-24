@@ -42,6 +42,7 @@ export function createPrivateMessagesIngestRuntime({
   queueBackgroundGroupContactRefresh,
   queuePrivateMessagesUiRefresh,
   readReplyTargetEventId,
+  refreshReplyPreviewsForTargetMessage,
   resolveCurrentGroupChatEpochEntry,
   resolveGroupDisplayName,
   resolveIncomingChatInboxStateValue,
@@ -243,8 +244,9 @@ export function createPrivateMessagesIngestRuntime({
           recipients,
         }),
       });
-      await processIncomingDeletionRumorEvent(rumorEvent, senderPubkeyHex, {
+      await processIncomingDeletionRumorEvent(rumorEvent, chatPubkey, senderPubkeyHex, {
         uiThrottleMs,
+        seedRelayUrls: wrappedRelayUrls,
       });
       return;
     }
@@ -477,8 +479,10 @@ export function createPrivateMessagesIngestRuntime({
           eventId: rumorEventId,
           uiThrottleMs,
         });
+        const refreshedExistingMessage =
+          (await chatDataService.getMessageById(existingMessage.id)) ?? existingMessage;
         let updatedExistingMessage = await applyPendingIncomingReactionsForMessage(
-          existingMessage,
+          refreshedExistingMessage,
           {
             uiThrottleMs,
           }
@@ -489,6 +493,9 @@ export function createPrivateMessagesIngestRuntime({
             uiThrottleMs,
           }
         );
+        await refreshReplyPreviewsForTargetMessage(updatedExistingMessage, {
+          uiThrottleMs,
+        });
         logInboundEvent('message-persisted', {
           persistence: 'duplicate-existing-message',
           direction,
@@ -584,7 +591,11 @@ export function createPrivateMessagesIngestRuntime({
           replyTargetEventId,
           chatPubkey,
           loggedInPubkeyHex,
-          contact
+          contact,
+          {
+            referenceCreatedAt: rumorEvent.created_at,
+            seedRelayUrls: wrappedRelayUrls,
+          }
         )
       : null;
     const createdMessage = await chatDataService.createMessage({
@@ -622,6 +633,9 @@ export function createPrivateMessagesIngestRuntime({
       uiThrottleMs,
     });
     nextMessageRow = await applyPendingIncomingDeletionsForMessage(nextMessageRow, {
+      uiThrottleMs,
+    });
+    await refreshReplyPreviewsForTargetMessage(nextMessageRow, {
       uiThrottleMs,
     });
 

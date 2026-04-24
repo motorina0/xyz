@@ -54,6 +54,17 @@ interface MessageMutationRuntimeDeps {
     reactionEventId: string,
     reactorPublicKey: string
   ) => void;
+  repairMissingMessageDependency: (
+    chatPublicKey: string,
+    targetEventId: string,
+    options: {
+      reason: 'reply-target-missing' | 'reaction-target-missing' | 'deletion-target-missing';
+      immediate?: boolean;
+      referenceCreatedAt?: number | null;
+      seedRelayUrls?: string[];
+    }
+  ) => Promise<boolean>;
+  resolveMissingMessageDependencyRepair: (targetEventId: string) => void;
   toIsoTimestampFromUnix: (value: number | undefined) => string;
   consumePendingIncomingDeletions: (targetEventId: string) => PendingIncomingDeletion[];
   consumePendingIncomingReactions: (targetEventId: string) => PendingIncomingReaction[];
@@ -76,6 +87,8 @@ export function createMessageMutationRuntime({
   readReactionTargetEventId,
   refreshMessageInLiveState,
   removePendingIncomingReaction,
+  repairMissingMessageDependency,
+  resolveMissingMessageDependencyRepair,
   toIsoTimestampFromUnix,
   consumePendingIncomingDeletions,
   consumePendingIncomingReactions,
@@ -103,6 +116,71 @@ export function createMessageMutationRuntime({
     } catch (error) {
       console.warn('Failed to synchronize unseen reaction count for chat', chatPublicKey, error);
     }
+  }
+
+  function queueMissingMessageDependencyRepair(
+    chatPubkey: string,
+    targetEventId: string,
+    options: {
+      reason: 'reply-target-missing' | 'reaction-target-missing' | 'deletion-target-missing';
+      referenceCreatedAt?: number | null;
+      seedRelayUrls?: string[];
+    }
+  ): void {
+    const normalizedChatPubkey = inputSanitizerService.normalizeHexKey(chatPubkey);
+    const normalizedTargetEventId = normalizeEventId(targetEventId);
+    if (!normalizedChatPubkey || !normalizedTargetEventId) {
+      return;
+    }
+
+    void repairMissingMessageDependency(normalizedChatPubkey, normalizedTargetEventId, {
+      reason: options.reason,
+      immediate: true,
+      referenceCreatedAt: options.referenceCreatedAt ?? null,
+      seedRelayUrls: options.seedRelayUrls,
+    }).catch((error) => {
+      console.warn(
+        'Failed to queue missing message dependency repair',
+        normalizedChatPubkey,
+        normalizedTargetEventId,
+        error
+      );
+    });
+  }
+
+  function buildUnknownReplyPreview(targetEventId: string | null): MessageReplyPreview {
+    return {
+      messageId: targetEventId ?? '',
+      text: UNKNOWN_REPLY_MESSAGE_TEXT,
+      sender: 'them',
+      authorName: 'Unknown',
+      authorPublicKey: '',
+      sentAt: '',
+      eventId: targetEventId,
+    };
+  }
+
+  async function buildReplyPreviewFromMessageRow(
+    targetMessage: MessageRow,
+    chatPubkey: string,
+    loggedInPubkeyHex: string,
+    contact?: ContactRecord | null
+  ): Promise<MessageReplyPreview> {
+    const targetAuthorPublicKey =
+      inputSanitizerService.normalizeHexKey(targetMessage.author_public_key) ?? '';
+    const isOwnTargetMessage = targetAuthorPublicKey === loggedInPubkeyHex;
+    const replyContact =
+      contact === undefined ? await contactsService.getContactByPublicKey(chatPubkey) : contact;
+
+    return {
+      messageId: String(targetMessage.id),
+      text: targetMessage.message.trim() || UNKNOWN_REPLY_MESSAGE_TEXT,
+      sender: isOwnTargetMessage ? 'me' : 'them',
+      authorName: isOwnTargetMessage ? 'You' : deriveChatName(replyContact, chatPubkey),
+      authorPublicKey: targetAuthorPublicKey,
+      sentAt: targetMessage.created_at,
+      eventId: normalizeEventId(targetMessage.event_id),
+    };
   }
 
   async function upsertReactionOnMessageRow(
@@ -504,6 +582,7 @@ export function createMessageMutationRuntime({
           }),
         });
         await nostrEventDataService.deleteEventsByIds([reactionEventId]);
+        resolveMissingMessageDependencyRepair(reactionEventId);
         return;
       }
     }
@@ -545,6 +624,11 @@ export function createMessageMutationRuntime({
         }),
       });
       queuePendingIncomingReaction(targetEventId, pendingReaction);
+      queueMissingMessageDependencyRepair(chatPubkey, targetEventId, {
+        reason: 'reaction-target-missing',
+        referenceCreatedAt: rumorEvent.created_at,
+        seedRelayUrls: relayUrls,
+      });
       return;
     }
 
@@ -566,49 +650,114 @@ export function createMessageMutationRuntime({
     targetEventId: string,
     chatPubkey: string,
     loggedInPubkeyHex: string,
-    contact?: ContactRecord | null
+    contact?: ContactRecord | null,
+    options: {
+      referenceCreatedAt?: number | null;
+      seedRelayUrls?: string[];
+    } = {}
   ): Promise<MessageReplyPreview> {
     const normalizedTargetEventId = normalizeEventId(targetEventId);
     if (!normalizedTargetEventId) {
-      return {
-        messageId: '',
-        text: UNKNOWN_REPLY_MESSAGE_TEXT,
-        sender: 'them',
-        authorName: 'Unknown',
-        authorPublicKey: '',
-        sentAt: '',
-        eventId: null,
-      };
+      return buildUnknownReplyPreview(null);
     }
 
     const targetMessage = await chatDataService.getMessageByEventId(normalizedTargetEventId);
     if (!targetMessage) {
-      return {
-        messageId: normalizedTargetEventId,
-        text: UNKNOWN_REPLY_MESSAGE_TEXT,
-        sender: 'them',
-        authorName: 'Unknown',
-        authorPublicKey: '',
-        sentAt: '',
-        eventId: normalizedTargetEventId,
-      };
+      queueMissingMessageDependencyRepair(chatPubkey, normalizedTargetEventId, {
+        reason: 'reply-target-missing',
+        referenceCreatedAt: options.referenceCreatedAt,
+        seedRelayUrls: options.seedRelayUrls,
+      });
+      return buildUnknownReplyPreview(normalizedTargetEventId);
     }
 
-    const targetAuthorPublicKey =
-      inputSanitizerService.normalizeHexKey(targetMessage.author_public_key) ?? '';
-    const isOwnTargetMessage = targetAuthorPublicKey === loggedInPubkeyHex;
-    const replyContact =
-      contact === undefined ? await contactsService.getContactByPublicKey(chatPubkey) : contact;
+    return buildReplyPreviewFromMessageRow(targetMessage, chatPubkey, loggedInPubkeyHex, contact);
+  }
 
-    return {
-      messageId: String(targetMessage.id),
-      text: targetMessage.message.trim() || UNKNOWN_REPLY_MESSAGE_TEXT,
-      sender: isOwnTargetMessage ? 'me' : 'them',
-      authorName: isOwnTargetMessage ? 'You' : deriveChatName(replyContact, chatPubkey),
-      authorPublicKey: targetAuthorPublicKey,
-      sentAt: targetMessage.created_at,
-      eventId: normalizedTargetEventId,
-    };
+  async function refreshReplyPreviewsForTargetMessage(
+    targetMessage: MessageRow,
+    options: {
+      uiThrottleMs?: number;
+    } = {}
+  ): Promise<number> {
+    const normalizedTargetEventId = normalizeEventId(targetMessage.event_id);
+    const normalizedChatPubkey = inputSanitizerService.normalizeHexKey(
+      targetMessage.chat_public_key
+    );
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!normalizedTargetEventId || !normalizedChatPubkey || !loggedInPubkeyHex) {
+      return 0;
+    }
+
+    resolveMissingMessageDependencyRepair(normalizedTargetEventId);
+    await Promise.all([chatDataService.init(), contactsService.init()]);
+    const replyContact = await contactsService.getContactByPublicKey(normalizedChatPubkey);
+    const nextReplyPreview = await buildReplyPreviewFromMessageRow(
+      targetMessage,
+      normalizedChatPubkey,
+      loggedInPubkeyHex,
+      replyContact
+    );
+    const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
+    const chatMessages = await chatDataService.listMessages(normalizedChatPubkey);
+    let updatedCount = 0;
+
+    for (const messageRow of chatMessages) {
+      const candidateReply = messageRow.meta.reply;
+      if (!candidateReply || typeof candidateReply !== 'object' || Array.isArray(candidateReply)) {
+        continue;
+      }
+
+      const currentReply = candidateReply as Record<string, unknown>;
+      if (normalizeEventId(currentReply.eventId) !== normalizedTargetEventId) {
+        continue;
+      }
+
+      const currentMessageId =
+        typeof currentReply.messageId === 'string' ? currentReply.messageId.trim() : '';
+      const currentText = typeof currentReply.text === 'string' ? currentReply.text.trim() : '';
+      const currentSender = currentReply.sender === 'me' ? 'me' : 'them';
+      const currentAuthorName =
+        typeof currentReply.authorName === 'string' ? currentReply.authorName.trim() : '';
+      const currentAuthorPublicKey =
+        typeof currentReply.authorPublicKey === 'string' ? currentReply.authorPublicKey.trim() : '';
+      const currentSentAt =
+        typeof currentReply.sentAt === 'string' ? currentReply.sentAt.trim() : '';
+      const isUnchanged =
+        currentMessageId === nextReplyPreview.messageId &&
+        currentText === nextReplyPreview.text &&
+        currentSender === nextReplyPreview.sender &&
+        currentAuthorName === nextReplyPreview.authorName &&
+        currentAuthorPublicKey === nextReplyPreview.authorPublicKey &&
+        currentSentAt === nextReplyPreview.sentAt;
+      if (isUnchanged) {
+        continue;
+      }
+
+      const updatedRow = await chatDataService.updateMessageMeta(messageRow.id, {
+        ...messageRow.meta,
+        reply: nextReplyPreview,
+      });
+      if (!updatedRow) {
+        continue;
+      }
+
+      updatedCount += 1;
+      if (uiThrottleMs > 0) {
+        continue;
+      }
+
+      await refreshMessageInLiveState(updatedRow.id);
+    }
+
+    if (updatedCount > 0 && uiThrottleMs > 0) {
+      queuePrivateMessagesUiRefresh({
+        throttleMs: uiThrottleMs,
+        reloadMessages: true,
+      });
+    }
+
+    return updatedCount;
   }
 
   async function processIncomingReactionDeletion(
@@ -736,9 +885,11 @@ export function createMessageMutationRuntime({
 
   async function processIncomingDeletionRumorEvent(
     rumorEvent: NDKEvent,
+    chatPubkey: string,
     senderPubkeyHex: string,
     options: {
       uiThrottleMs?: number;
+      seedRelayUrls?: string[];
     } = {}
   ): Promise<void> {
     await Promise.all([chatDataService.init(), nostrEventDataService.init()]);
@@ -788,7 +939,15 @@ export function createMessageMutationRuntime({
           deletedAt,
           targetKind,
         });
+        queueMissingMessageDependencyRepair(chatPubkey, target.eventId, {
+          reason: 'deletion-target-missing',
+          referenceCreatedAt: rumorEvent.created_at,
+          seedRelayUrls: options.seedRelayUrls,
+        });
+        continue;
       }
+
+      resolveMissingMessageDependencyRepair(target.eventId);
     }
   }
 
@@ -796,6 +955,7 @@ export function createMessageMutationRuntime({
     applyPendingIncomingDeletionsForMessage,
     applyPendingIncomingReactionsForMessage,
     buildReplyPreviewFromTargetEvent,
+    refreshReplyPreviewsForTargetMessage,
     processIncomingDeletionRumorEvent,
     processIncomingReactionDeletion,
     processIncomingReactionRumorEvent,

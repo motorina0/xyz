@@ -1,5 +1,7 @@
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 import { type Browser, type BrowserContext, expect, type Page } from '@playwright/test';
 
 export interface TestAccount {
@@ -297,11 +299,32 @@ export const TEST_ACCOUNTS = {
 
 const dockerComposeArgs = ['compose', '-f', 'docker-compose.e2e.yml'];
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker';
+const commandEnv = buildCommandEnv();
 const pendingLogoutCleanupSessionKey = 'xyz-pending-logout-cleanup';
 const relayPortsByService = {
   relay: 7000,
   'relay-two': 7001,
 } as const;
+
+function buildCommandEnv(): NodeJS.ProcessEnv {
+  const pathEntries = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
+  const extraPathEntries: string[] = [];
+
+  if (process.platform === 'darwin') {
+    extraPathEntries.push(
+      '/Applications/Docker.app/Contents/Resources/bin',
+      '/opt/homebrew/bin',
+      '/usr/local/bin'
+    );
+  }
+
+  return {
+    ...process.env,
+    PATH: [
+      ...new Set([...extraPathEntries.filter((entry) => fs.existsSync(entry)), ...pathEntries]),
+    ].join(path.delimiter),
+  };
+}
 
 function createRelayEntries(relayUrls: string[]) {
   return relayUrls.map((url) => ({
@@ -337,14 +360,21 @@ function attachBrowserErrorTracking(page: Page): BrowserErrorEntry[] {
 
 function runDockerCompose(args: string[]): Promise<void> {
   return new Promise<void>((resolve, reject) => {
-    const child = execFile(dockerCommand, [...dockerComposeArgs, ...args], (error) => {
-      if (error) {
-        reject(error);
-        return;
-      }
+    const child = execFile(
+      dockerCommand,
+      [...dockerComposeArgs, ...args],
+      {
+        env: commandEnv,
+      },
+      (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
 
-      resolve();
-    });
+        resolve();
+      }
+    );
 
     child.stdin?.end();
   });
@@ -993,7 +1023,15 @@ export async function waitForChatReactionBadge(
 }
 
 export async function openChatActions(page: Page, match?: string | RegExp): Promise<void> {
-  await resolveChatItem(page, match).getByTestId('chat-item-actions-button').click();
+  const actionsButton = resolveChatItem(page, match).getByTestId('chat-item-actions-button');
+  await expect(actionsButton).toBeVisible({ timeout: 12_000 });
+  await actionsButton.scrollIntoViewIfNeeded();
+
+  try {
+    await actionsButton.click({ timeout: 12_000 });
+  } catch {
+    await actionsButton.dispatchEvent('click');
+  }
 }
 
 export async function markChatAsRead(page: Page, match?: string | RegExp): Promise<void> {

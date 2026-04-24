@@ -1256,6 +1256,45 @@ export const useMessageStore = defineStore('messageStore', () => {
     return getMessageFromState(normalizedChatId, String(normalizedMessageId)) ?? null;
   }
 
+  async function ensureMessageLoadedByEventId(
+    chatId: string,
+    eventId: string
+  ): Promise<Message | null> {
+    const normalizedChatId = normalizeChatIdentifier(chatId);
+    const normalizedEventId = normalizeEventId(eventId);
+    if (!normalizedChatId || !normalizedEventId) {
+      return null;
+    }
+
+    const existingMessage =
+      messagesByChat.value[normalizedChatId]?.find((message) => {
+        return normalizeEventId(message.eventId) === normalizedEventId;
+      }) ?? null;
+    if (existingMessage) {
+      return existingMessage;
+    }
+
+    if (!loadedChatIds.has(normalizedChatId)) {
+      await loadMessages(normalizedChatId);
+    }
+
+    const loadedMessage =
+      messagesByChat.value[normalizedChatId]?.find((message) => {
+        return normalizeEventId(message.eventId) === normalizedEventId;
+      }) ?? null;
+    if (loadedMessage) {
+      return loadedMessage;
+    }
+
+    await chatDataService.init();
+    const targetRow = await chatDataService.getMessageByEventId(normalizedEventId);
+    if (!targetRow || normalizeChatIdentifier(targetRow.chat_public_key) !== normalizedChatId) {
+      return null;
+    }
+
+    return ensureMessageLoaded(normalizedChatId, String(targetRow.id));
+  }
+
   async function loadOlderMessages(chatId: string): Promise<void> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
@@ -2089,6 +2128,7 @@ export const useMessageStore = defineStore('messageStore', () => {
     reloadLoadedMessages,
     searchMessages,
     ensureMessageLoaded,
+    ensureMessageLoadedByEventId,
     getMessages,
     getPaginationState,
     sendMessage,

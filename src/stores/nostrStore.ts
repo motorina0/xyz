@@ -72,6 +72,7 @@ import type {
   PendingIncomingReaction,
   PrivatePreferences,
   RelaySaveStatus,
+  RepairMissingMessageDependencyOptions,
   SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
 import { createUserActions } from 'src/stores/nostr/userActions';
@@ -263,6 +264,15 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<void> = async () => {
     throw new Error('Private messages for recipient runtime is not initialized.');
   };
+  let repairMissingMessageDependencyRuntime: (
+    chatPublicKey: string,
+    targetEventId: string,
+    options: RepairMissingMessageDependencyOptions
+  ) => Promise<boolean> = async () => {
+    throw new Error('Missing message dependency repair runtime is not initialized.');
+  };
+  let resolveMissingMessageDependencyRepairRuntime: (targetEventId: string) => void = () => {};
+  let resetPrivateMessagesBackfillRuntimeStateRuntime: () => void = () => {};
   let upsertIncomingGroupInviteRequestChatRuntime: (
     groupPublicKey: string,
     createdAt: string,
@@ -1084,6 +1094,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     processIncomingDeletionRumorEvent,
     processIncomingReactionDeletion,
     processIncomingReactionRumorEvent,
+    refreshReplyPreviewsForTargetMessage,
   } = createMessageMutationRuntime({
     buildInboundTraceDetails,
     deriveChatName,
@@ -1101,6 +1112,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     readReactionTargetEventId,
     refreshMessageInLiveState: refreshMessageInLiveStateRuntime,
     removePendingIncomingReaction: removePendingIncomingReactionRuntime,
+    repairMissingMessageDependency: (chatPublicKey, targetEventId, options) =>
+      repairMissingMessageDependencyRuntime(chatPublicKey, targetEventId, options),
+    resolveMissingMessageDependencyRepair: (targetEventId) => {
+      resolveMissingMessageDependencyRepairRuntime(targetEventId);
+    },
     toIsoTimestampFromUnix,
     consumePendingIncomingDeletions: consumePendingIncomingDeletionsRuntime,
     consumePendingIncomingReactions: consumePendingIncomingReactionsRuntime,
@@ -1146,6 +1162,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     },
     queuePrivateMessagesUiRefresh,
     readReplyTargetEventId,
+    refreshReplyPreviewsForTargetMessage,
     resolveCurrentGroupChatEpochEntry,
     resolveGroupDisplayName,
     resolveIncomingChatInboxStateValue,
@@ -1241,6 +1258,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ensurePrivateMessagesWatchdogImpl();
 
   const {
+    repairMissingMessageDependency: repairMissingMessageDependencyImpl,
+    resetPrivateMessagesBackfillRuntimeState: resetPrivateMessagesBackfillRuntimeStateImpl,
+    resolveMissingMessageDependencyRepair: resolveMissingMessageDependencyRepairImpl,
     restoreGroupEpochHistory: restoreGroupEpochHistoryImpl,
     restorePrivateMessagesForRecipient: restorePrivateMessagesForRecipientImpl,
     startPrivateMessagesStartupBackfill: startPrivateMessagesStartupBackfillImpl,
@@ -1271,6 +1291,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStoredPrivateMessagesLastReceivedFromCreatedAt,
     writePrivateMessagesBackfillState,
   });
+  repairMissingMessageDependencyRuntime = repairMissingMessageDependencyImpl;
+  resetPrivateMessagesBackfillRuntimeStateRuntime = resetPrivateMessagesBackfillRuntimeStateImpl;
+  resolveMissingMessageDependencyRepairRuntime = resolveMissingMessageDependencyRepairImpl;
   restoreGroupEpochHistoryRuntime = restoreGroupEpochHistoryImpl;
   restorePrivateMessagesForRecipientRuntime = restorePrivateMessagesForRecipientImpl;
   startPrivateMessagesStartupBackfillRuntime = startPrivateMessagesStartupBackfillImpl;
@@ -1621,6 +1644,9 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resetOutboundMessageReplayRuntimeState: () => {
       resetOutboundMessageReplayRuntimeStateRuntime();
     },
+    resetPrivateMessagesBackfillRuntimeState: () => {
+      resetPrivateMessagesBackfillRuntimeStateRuntime();
+    },
     resetPrivateContactListRuntimeState,
     resetReconnectHealingRuntimeState: () => {
       resetReconnectHealingRuntimeStateRuntime();
@@ -1877,6 +1903,11 @@ export const useNostrStore = defineStore('nostrStore', () => {
     restoreStartupState,
     reconnectAllDeveloperRelays,
     reconnectDeveloperRelay,
+    repairMissingMessageDependency: (
+      chatPublicKey: string,
+      targetEventId: string,
+      options: RepairMissingMessageDependencyOptions
+    ) => repairMissingMessageDependencyRuntime(chatPublicKey, targetEventId, options),
     restartPrivateMessagesDiagnosticsSubscription,
     retryDirectMessageRelay,
     retryGroupEpochTicketRelay,

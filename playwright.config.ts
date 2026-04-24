@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 const appBaseUrl = process.env.APP_BASE_URL ?? 'http://127.0.0.1:4100';
 const isCi = Boolean(process.env.CI);
+const webServerCommand = `${JSON.stringify(process.execPath)} ./scripts/quasar.cjs dev --port 4100 --hostname 127.0.0.1`;
 
 export default defineConfig({
   testDir: './e2e',
@@ -30,7 +31,7 @@ export default defineConfig({
     video: 'on',
   },
   webServer: {
-    command: 'npm run dev:e2e',
+    command: webServerCommand,
     url: appBaseUrl,
     reuseExistingServer: !isCi,
     timeout: 120_000,

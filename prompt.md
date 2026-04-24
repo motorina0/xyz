@@ -64,3 +64,29 @@ node 24
 
 do not subscribe to all your contacts relays?
 remove xyz and tg references
+
+
+
+
+What Reliability Work Comes Next
+
+Build a durable outbox with automatic replay. Right now outbound relay state is tracked well in relayPublishRuntime.ts (line 145), but recovery still leans too much on manual retry. We should retry failed recipient publishes automatically with exponential backoff, jitter, retry budgets, and idempotent replay after app restart.
+
+Make reconnect more aggressive than “re-subscribe and hope.” The watchdog is good, but after wake, focus regain, relay-set changes, or long offline windows, the app should run a targeted gap-repair pass per active or recently active chat, not just a generic live resubscribe. This is where Telegram feels “instant and correct” after bad connectivity.
+
+Define message success in product terms, not raw relay terms. Users care about sending, sent, needs attention, and eventually seen. Today the app records per-relay truth, which is excellent for diagnostics, but we still need a higher-level delivery state derived from those statuses so users aren’t forced to interpret relay internals.
+
+Strengthen multi-device convergence beyond read cursors. Read state already syncs, but mute/archive/pin/draft state does not, and those are part of reliability too because mismatched device state feels broken. The private-state channel in privateStateRuntime.ts (line 2084) is the right place to extend.
+
+Add second-layer dedupe for resend and multi-device races. Current dedupe is event_id based, which is necessary but not sufficient if the same logical message is republished with a different event id from another device or retry path. A client-generated message UUID/tag would let us collapse “same intent, different event” duplicates.
+
+- Repair dependency holes automatically. Reactions, deletions, and replies already queue pending work when targets are missing, which is good, but the app should actively fetch missing targets around those references instead of waiting for them to arrive incidentally. That would reduce “reply to unknown” and delayed reaction/deletion consistency issues.
+
+- Make background behavior first-class. Web currently has browser notifications, and Electron currently exposes unread badge wiring in electron-preload.ts (line 1), but Telegram-level reliability needs service-worker/push or equivalent background catch-up semantics, plus desktop notifications/tray behavior that survives app backgrounding.
+
+Add “honest sync” UI. A tiny offline/reconnecting/catching-up indicator would prevent the app from looking broken during recovery windows. Reliability is partly actual correctness and partly whether the user understands what the app is doing.
+
+Expand chaos testing. The next missing tests are long offline periods, relay flapping during send, two devices sending in the same chat simultaneously, wake-from-sleep recovery, and notification/background resume. The existing e2e base is strong enough that this should be very achievable.
+
+If We Prioritize Ruthlessly
+Start with durable outbox + auto replay, then targeted gap repair on resume/reconnect, then logical-message dedupe + multi-device convergence. Those three would move nostr-chat the most toward Telegram’s “it just catches up and does the right thing” feel.

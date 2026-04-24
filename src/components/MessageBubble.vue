@@ -375,7 +375,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: 'reply', message: Message): void;
-  (event: 'open-reply-target', messageId: string): void;
+  (event: 'open-reply-target', messageId: string, referenceSentAt?: string): void;
   (event: 'open-profile', publicKey: string): void;
   (event: 'react', payload: { message: Message; emoji: string }): void;
   (event: 'delete-message', message: Message): void;
@@ -761,7 +761,7 @@ function handleOpenReplyTarget(): void {
     return;
   }
 
-  emit('open-reply-target', replyPreview.value.messageId);
+  emit('open-reply-target', replyPreview.value.messageId, props.message.sentAt);
 }
 
 function handleEmojiReaction(emoji: string): void {

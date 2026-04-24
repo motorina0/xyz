@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PUBKEY_HEX = 'a'.repeat(64);
 
@@ -109,6 +109,10 @@ vi.mock('src/services/contactsService', () => ({
 }));
 
 describe('e2eBridge', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
@@ -187,6 +191,36 @@ describe('e2eBridge', () => {
     ]);
     expect(moduleMocks.chatStore.reload).toHaveBeenCalledTimes(1);
     expect(moduleMocks.messageStore.reloadLoadedMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries transient relay publish failures during bootstrap', async () => {
+    vi.useFakeTimers();
+    moduleMocks.nostrStore.publishMyRelayList
+      .mockRejectedValueOnce(
+        new Error('Not enough relays received the event (0 published, 1 required)')
+      )
+      .mockRejectedValueOnce(
+        new Error('Not enough relays received the event (0 published, 1 required)')
+      )
+      .mockResolvedValue(undefined);
+
+    const { installAppE2EBridge } = await import('src/testing/e2eBridge');
+    installAppE2EBridge();
+
+    const bridge = (globalThis.window as typeof window & { __appE2E__: any }).__appE2E__;
+    const bootstrapPromise = bridge.bootstrapSession({
+      privateKey: 'private-key',
+      relayUrls: ['ws://relay.one'],
+    });
+
+    await vi.advanceTimersByTimeAsync(900);
+
+    await expect(bootstrapPromise).resolves.toEqual({
+      publicKey: PUBKEY_HEX,
+      npub: `npub-${PUBKEY_HEX}`,
+      relayUrls: ['ws://relay.one'],
+    });
+    expect(moduleMocks.nostrStore.publishMyRelayList).toHaveBeenCalledTimes(3);
   });
 
   it('returns the current session snapshot from the mocked stores', async () => {

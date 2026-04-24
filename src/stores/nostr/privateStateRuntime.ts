@@ -1329,9 +1329,14 @@ export function createPrivateStateRuntime({
 
     return (
       message.includes('invalid MAC') ||
+      message.includes('Group contact not found.') ||
+      message.includes('Group chat not found.') ||
       message.includes('Current epoch key is not available for this group.') ||
       message.includes('Failed to decrypt the current epoch private key.') ||
-      message.includes('Decrypted epoch private key does not match the current epoch public key.')
+      message.includes(
+        'Decrypted epoch private key does not match the current epoch public key.'
+      ) ||
+      message.includes('Failed to persist refreshed group members.')
     );
   }
 
@@ -1379,7 +1384,7 @@ export function createPrivateStateRuntime({
       return result.didChange;
     } catch (error) {
       if (isSkippableGroupMembershipRosterEventError(error)) {
-        console.warn('Skipping unreadable group roster event', {
+        console.warn('Skipping group roster event until group context is ready or readable', {
           eventId: normalizeEventId(event.id),
           groupPublicKey: normalizedGroupPublicKey,
           error,

@@ -196,6 +196,7 @@ function createAuthSessionHarness() {
     resetGroupRosterSubscriptionRuntimeState: vi.fn(),
     resetMyRelayListRuntimeState: vi.fn(),
     resetOutboundMessageReplayRuntimeState: vi.fn(),
+    resetPrivateMessagesBackfillRuntimeState: vi.fn(),
     resetPrivateContactListRuntimeState: vi.fn(),
     resetReconnectHealingRuntimeState: vi.fn(),
     resetPrivateMessagesIngestRuntimeState: vi.fn(),
@@ -688,6 +689,7 @@ describe('nostr runtime messaging logic', () => {
     expect(deps.clearPrivatePreferencesStorage).toHaveBeenCalled();
     expect(deps.stopPrivateMessagesSubscription).toHaveBeenCalled();
     expect(deps.clearPrivateMessagesBackfillState).toHaveBeenCalled();
+    expect(deps.resetPrivateMessagesBackfillRuntimeState).toHaveBeenCalled();
     expect(deps.resetReconnectHealingRuntimeState).toHaveBeenCalled();
 
     await runtime.logout();

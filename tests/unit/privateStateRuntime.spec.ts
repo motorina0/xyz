@@ -1,4 +1,4 @@
-import type { NDKEvent } from '@nostr-dev-kit/ndk';
+import { type NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
 import { createPrivateStateRuntime } from 'src/stores/nostr/privateStateRuntime';
 import type { MessageRelayStatus } from 'src/types/chat';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -766,6 +766,118 @@ describe('privateStateRuntime', () => {
         ],
       }),
     });
+  });
+
+  it('skips incoming group roster events until the group contact exists locally', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateStateRuntime(deps);
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const rosterEvent = {
+      kind: NDKKind.FollowSet,
+      id: 'ROSTER-EVENT',
+      pubkey: ndkMocks.groupPubkey,
+      content: 'encrypted-roster',
+      tags: [['d', 'roster']],
+      getMatchingTags: (tagName: string) => (tagName === 'd' ? [['d', 'roster']] : []),
+    } as unknown as NDKEvent;
+
+    await expect(
+      runtime.applyGroupMembershipRosterEvent(rosterEvent, {
+        seedRelayUrls: ['wss://seed.example'],
+      })
+    ).resolves.toBe(false);
+
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      'Skipping group roster event until group context is ready or readable',
+      expect.objectContaining({
+        eventId: 'roster-event',
+        groupPublicKey: ndkMocks.groupPubkey,
+        error: expect.objectContaining({
+          message: 'Group contact not found.',
+        }),
+      })
+    );
+
+    consoleWarnSpy.mockRestore();
+  });
+
+  it('skips incoming group roster events when shared-roster persistence misses during startup races', async () => {
+    const deps = createDeps({
+      decryptPrivateStringContent: vi.fn(async () => 'b'.repeat(64)),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+    const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const groupContact = {
+      id: 7,
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      name: 'Race Group',
+      given_name: null,
+      meta: {
+        owner_public_key: 'f'.repeat(64),
+        group_members: [],
+      },
+      relays: [{ url: 'wss://relay.example/', read: true, write: true }],
+      sendMessagesToAppRelays: false,
+    };
+    const groupChat = {
+      public_key: ndkMocks.groupPubkey,
+      type: 'group',
+      meta: {
+        current_epoch_public_key: ndkMocks.groupPubkey,
+        current_epoch_private_key_encrypted: 'encrypted-current-epoch',
+      },
+    };
+    const rosterEvent = {
+      kind: NDKKind.FollowSet,
+      id: 'roster-persist-race',
+      pubkey: ndkMocks.groupPubkey,
+      content: 'encrypted-roster',
+      tags: [['d', 'roster']],
+      getMatchingTags: (tagName: string) => (tagName === 'd' ? [['d', 'roster']] : []),
+    } as unknown as NDKEvent;
+
+    serviceMocks.contactsService.getContactByPublicKey.mockImplementation(
+      async (pubkey: string) => {
+        if (pubkey === ndkMocks.groupPubkey) {
+          return groupContact;
+        }
+
+        return null;
+      }
+    );
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(groupChat);
+    serviceMocks.contactsService.updateContact.mockResolvedValue(null);
+    ndkMocks.signerDecrypt.mockImplementation(async (_user: unknown, content: string) => {
+      if (content === 'encrypted-roster') {
+        return JSON.stringify([
+          ['p', 'f'.repeat(64)],
+          ['p', 'c'.repeat(64)],
+        ]);
+      }
+
+      return content.startsWith('encrypted:') ? content.slice('encrypted:'.length) : content;
+    });
+
+    await expect(
+      runtime.applyGroupMembershipRosterEvent(rosterEvent, {
+        seedRelayUrls: ['wss://seed.example'],
+      })
+    ).resolves.toBe(false);
+
+    expect(serviceMocks.contactsService.updateContact).toHaveBeenCalledTimes(2);
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      'Skipping group roster event until group context is ready or readable',
+      expect.objectContaining({
+        eventId: 'roster-persist-race',
+        groupPublicKey: ndkMocks.groupPubkey,
+        error: expect.objectContaining({
+          message: 'Failed to persist refreshed group members.',
+        }),
+      })
+    );
+
+    consoleWarnSpy.mockRestore();
   });
 
   it('retries missing member previews once when refreshing the shared roster', async () => {

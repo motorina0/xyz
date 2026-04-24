@@ -12,6 +12,7 @@ const serviceMocks = vi.hoisted(() => ({
     createChat: vi.fn(),
     createMessage: vi.fn(),
     getChatByPublicKey: vi.fn(),
+    getMessageById: vi.fn(),
     getMessageByEventId: vi.fn(),
     init: vi.fn(),
     updateChatPreview: vi.fn(),
@@ -142,6 +143,7 @@ function createDeps() {
     queueBackgroundGroupContactRefresh: vi.fn(),
     queuePrivateMessagesUiRefresh: vi.fn(),
     readReplyTargetEventId: vi.fn(() => null),
+    refreshReplyPreviewsForTargetMessage: vi.fn().mockResolvedValue(0),
     resolveCurrentGroupChatEpochEntry: vi.fn(() => null),
     resolveGroupDisplayName: vi.fn(
       (groupPublicKey: string) => `Group ${groupPublicKey.slice(0, 8)}`
@@ -188,6 +190,7 @@ describe('privateMessagesIngestRuntime', () => {
     vi.clearAllMocks();
     serviceMocks.chatDataService.init.mockResolvedValue(undefined);
     serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(null);
+    serviceMocks.chatDataService.getMessageById.mockResolvedValue(null);
     serviceMocks.chatDataService.getMessageByEventId.mockResolvedValue(null);
     serviceMocks.chatDataService.updateChatPreview.mockResolvedValue(undefined);
     serviceMocks.chatDataService.updateChatUnreadCount.mockResolvedValue(undefined);
@@ -340,6 +343,7 @@ describe('privateMessagesIngestRuntime', () => {
     };
 
     ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getMessageById.mockResolvedValue(existingMessage);
     serviceMocks.chatDataService.getMessageByEventId.mockResolvedValue(existingMessage);
 
     runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
@@ -418,9 +422,11 @@ describe('privateMessagesIngestRuntime', () => {
     expect(deps.processIncomingDeletionRumorEvent).toHaveBeenCalledWith(
       rumorEvent,
       'a'.repeat(64),
-      {
+      'a'.repeat(64),
+      expect.objectContaining({
         uiThrottleMs: 25,
-      }
+        seedRelayUrls: ['wss://relay.example'],
+      })
     );
     expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
   });

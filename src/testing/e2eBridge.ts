@@ -57,6 +57,7 @@ export interface AppE2EBridge {
 }
 
 const WINDOW_BRIDGE_KEY = '__appE2E__';
+const E2E_BOOTSTRAP_RETRY_DELAYS_MS = [300, 600, 1_000];
 
 function normalizeRelayUrls(relayUrls: string[]): string[] {
   return inputSanitizerService.normalizeRelayEntriesFromUrls(relayUrls).map((entry) => entry.url);
@@ -78,6 +79,20 @@ function createSessionSnapshot(
       relayUrls: normalizedRelayUrls,
     })
   );
+}
+
+function getBootstrapErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error ?? '');
+}
+
+function isRetryableBootstrapError(error: unknown): boolean {
+  return getBootstrapErrorMessage(error).includes('Not enough relays received the event');
+}
+
+async function waitForBootstrapRetry(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    globalThis.setTimeout(resolve, delayMs);
+  });
 }
 
 async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2ESessionSnapshot> {
@@ -130,8 +145,27 @@ async function bootstrapSession(options: AppE2EBootstrapOptions): Promise<AppE2E
     throw new Error('Invalid private key supplied for e2e bootstrap.');
   }
 
-  await nostrStore.updateLoggedInUserRelayList(relayEntries);
-  await nostrStore.publishMyRelayList(relayEntries, relayUrls);
+  let bootstrapPublishError: unknown = null;
+  for (let attempt = 0; attempt <= E2E_BOOTSTRAP_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      await nostrStore.updateLoggedInUserRelayList(relayEntries);
+      await nostrStore.publishMyRelayList(relayEntries, relayUrls);
+      bootstrapPublishError = null;
+      break;
+    } catch (error) {
+      bootstrapPublishError = error;
+      if (!isRetryableBootstrapError(error) || attempt >= E2E_BOOTSTRAP_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+
+      await waitForBootstrapRetry(E2E_BOOTSTRAP_RETRY_DELAYS_MS[attempt] ?? 300);
+    }
+  }
+
+  if (bootstrapPublishError) {
+    throw bootstrapPublishError;
+  }
+
   await nostrStore.restoreStartupState(relayUrls);
   await Promise.all([chatStore.init(), messageStore.init()]);
   await Promise.all([chatStore.reload(), messageStore.reloadLoadedMessages()]);

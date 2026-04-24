@@ -1789,13 +1789,46 @@ async function handleReactionJump(): Promise<void> {
   }
 }
 
-async function handleOpenReplyTarget(messageId: string): Promise<void> {
+async function handleOpenReplyTarget(messageId: string, referenceSentAt?: string): Promise<void> {
   try {
-    await revealMessageById(messageId, {
+    let didReveal = await revealMessageById(messageId, {
       behavior: 'smooth',
       block: 'center',
       ensureLoaded: true
     });
+    if (didReveal) {
+      return;
+    }
+
+    const currentChatId = props.chat?.id ?? null;
+    if (!currentChatId) {
+      return;
+    }
+
+    const referenceCreatedAtMs =
+      typeof referenceSentAt === 'string' && referenceSentAt.trim()
+        ? Date.parse(referenceSentAt)
+        : Number.NaN;
+    await nostrStore.repairMissingMessageDependency(currentChatId, messageId, {
+      reason: 'reply-open',
+      immediate: true,
+      force: true,
+      ...(Number.isFinite(referenceCreatedAtMs)
+        ? { referenceCreatedAt: Math.floor(referenceCreatedAtMs / 1000) }
+        : {}),
+    });
+    const ensuredMessage = await messageStore.ensureMessageLoadedByEventId(currentChatId, messageId);
+    if (!ensuredMessage) {
+      return;
+    }
+
+    didReveal = await revealMessageById(ensuredMessage.id, {
+      behavior: 'smooth',
+      block: 'center',
+    });
+    if (!didReveal) {
+      return;
+    }
   } catch (error) {
     reportUiError('Failed to focus replied message', error);
   }

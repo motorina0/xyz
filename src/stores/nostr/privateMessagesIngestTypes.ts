@@ -79,7 +79,11 @@ export interface PrivateMessagesIngestRuntimeDeps {
     targetEventId: string,
     chatPubkey: string,
     loggedInPubkeyHex: string,
-    contact?: ContactRecord | null
+    contact?: ContactRecord | null,
+    options?: {
+      referenceCreatedAt?: number | null;
+      seedRelayUrls?: string[];
+    }
   ) => Promise<MessageReplyPreview>;
   buildSubscriptionEventDetails: (
     event: Pick<NDKEvent, 'id' | 'kind' | 'created_at' | 'pubkey'>
@@ -149,9 +153,11 @@ export interface PrivateMessagesIngestRuntimeDeps {
   ) => Promise<void>;
   processIncomingDeletionRumorEvent: (
     rumorEvent: NDKEvent,
+    chatPubkey: string,
     senderPubkeyHex: string,
     options?: {
       uiThrottleMs?: number;
+      seedRelayUrls?: string[];
     }
   ) => Promise<void>;
   processIncomingReactionRumorEvent: (
@@ -165,6 +171,12 @@ export interface PrivateMessagesIngestRuntimeDeps {
       relayStatuses: MessageRelayStatus[];
     }
   ) => Promise<void>;
+  refreshReplyPreviewsForTargetMessage: (
+    messageRow: MessageRow,
+    options?: {
+      uiThrottleMs?: number;
+    }
+  ) => Promise<number>;
   queueBackgroundGroupContactRefresh: (
     groupPublicKey: string,
     fallbackName: string,

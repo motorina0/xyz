@@ -143,6 +143,20 @@ export interface QueuePrivateMessageUiRefreshOptions {
   reloadMessages?: boolean;
 }
 
+export type MissingMessageDependencyRepairReason =
+  | 'reply-target-missing'
+  | 'reaction-target-missing'
+  | 'deletion-target-missing'
+  | 'reply-open';
+
+export interface RepairMissingMessageDependencyOptions {
+  reason: MissingMessageDependencyRepairReason;
+  immediate?: boolean;
+  force?: boolean;
+  referenceCreatedAt?: number | null;
+  seedRelayUrls?: string[];
+}
+
 export interface PendingIncomingReaction {
   chatPublicKey: string;
   targetAuthorPublicKey: string | null;

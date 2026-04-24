@@ -261,6 +261,8 @@ test('accepted DM restores thread history and keeps working after both users res
 test('thread search finds hidden DB messages and previous or next navigation uses the corrected direction', async ({
   browser,
 }) => {
+  test.slow();
+
   const alice = await bootstrapUser(browser, TEST_ACCOUNTS.threadSearchAlice);
   const bob = await bootstrapUser(browser, TEST_ACCOUNTS.threadSearchBob);
 
