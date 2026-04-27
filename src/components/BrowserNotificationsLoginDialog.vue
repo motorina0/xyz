@@ -21,6 +21,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import AppDialog from 'src/components/AppDialog.vue';
+import { isAndroidPushNotificationSupported } from 'src/services/androidPushNotificationService';
 
 const props = defineProps<{
   modelValue: boolean;
@@ -40,14 +41,23 @@ const dialogModel = computed({
 const isDesktopRuntime = computed(
   () => typeof window !== 'undefined' && Boolean(window.desktopRuntime?.isElectron)
 );
-const dialogTitle = computed(() =>
-  isDesktopRuntime.value ? 'Enable Notifications' : 'Enable Browser Notifications'
-);
-const dialogSubtitle = computed(() =>
-  isDesktopRuntime.value
+const isAndroidRuntime = computed(() => isAndroidPushNotificationSupported());
+const dialogTitle = computed(() => {
+  if (isAndroidRuntime.value || isDesktopRuntime.value) {
+    return 'Enable Notifications';
+  }
+
+  return 'Enable Browser Notifications';
+});
+const dialogSubtitle = computed(() => {
+  if (isAndroidRuntime.value) {
+    return 'Get notified when new messages arrive. If you continue, Android will ask for notification permission.';
+  }
+
+  return isDesktopRuntime.value
     ? 'Get notified when new messages arrive. If you continue, desktop notifications will be enabled for this app.'
-    : 'Get notified when new messages arrive. If you continue, your browser will ask for permission next.'
-);
+    : 'Get notified when new messages arrive. If you continue, your browser will ask for permission next.';
+});
 
 function handleEnable(): void {
   emit('update:modelValue', false);

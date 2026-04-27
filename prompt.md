@@ -4,6 +4,8 @@ App init:
  - if no relays ask the user if it wants the app relays on its profile
  - always use app relays to listen for messages
 
+- login and secrets on mobile
+
 My Relays (NIP-65)
 some contacts have weird relays, we should not listen there
 

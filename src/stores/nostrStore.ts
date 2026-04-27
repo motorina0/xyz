@@ -1,5 +1,5 @@
 import NDK, {
-  type NDKEvent,
+  NDKEvent,
   NDKPrivateKeySigner,
   type NDKSigner,
   normalizeRelayUrl,
@@ -1644,6 +1644,50 @@ export const useNostrStore = defineStore('nostrStore', () => {
     relayStatusVersion.value += 1;
   }
 
+  function encodeBase64Utf8(value: string): string {
+    const bytes = new TextEncoder().encode(value);
+    let binary = '';
+    for (const byte of bytes) {
+      binary += String.fromCharCode(byte);
+    }
+    return globalThis.btoa(binary);
+  }
+
+  async function signHttpAuthHeader(input: {
+    url: string;
+    method: string;
+    body?: string;
+  }): Promise<string> {
+    const loggedInPubkeyHex = getLoggedInPublicKeyHex();
+    if (!loggedInPubkeyHex) {
+      throw new Error('A logged-in public key is required to sign HTTP auth.');
+    }
+
+    const normalizedUrl = input.url.trim();
+    const normalizedMethod = input.method.trim().toUpperCase();
+    if (!normalizedUrl || !normalizedMethod) {
+      throw new Error('A URL and method are required to sign HTTP auth.');
+    }
+
+    const tags = [
+      ['u', normalizedUrl],
+      ['method', normalizedMethod],
+    ];
+    if (input.body !== undefined) {
+      tags.push(['payload', await sha256Hex(input.body)]);
+    }
+
+    const authEvent = new NDKEvent(ndk, {
+      kind: 27235,
+      created_at: Math.floor(Date.now() / 1000),
+      pubkey: loggedInPubkeyHex,
+      content: '',
+      tags,
+    });
+    await authEvent.sign(await getOrCreateSignerRuntime());
+    return `Nostr ${encodeBase64Utf8(JSON.stringify(await authEvent.toNostrEvent()))}`;
+  }
+
   const {
     clearPrivateKey: clearPrivateKeyImpl,
     getPrivateKeyHex: getPrivateKeyHexImpl,
@@ -1929,6 +1973,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     isReconnectHealing,
     isRestoringStartupState,
     listDeveloperTraceEntries,
+    listPrivateMessageRecipientPubkeys,
     loginWithExtension: loginWithExtensionImpl,
     logout: logoutImpl,
     publishPrivateContactList,
@@ -1968,6 +2013,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     scheduleContactCursorPublish,
     sendGroupEpochTicket,
     sendDirectMessage,
+    signHttpAuthHeader,
     sendDirectMessageDeletion,
     sendDirectMessageReaction,
     savePrivateKey,

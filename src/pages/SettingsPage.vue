@@ -113,6 +113,7 @@ import { useRoute, useRouter } from 'vue-router';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
+import { unregisterAndroidPushNotifications } from 'src/services/androidPushNotificationService';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { schedulePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import { reportUiError } from 'src/utils/uiErrorHandler';
@@ -220,6 +221,9 @@ async function handleConfirmLogout(): Promise<void> {
   isLoggingOut.value = true;
 
   try {
+    await unregisterAndroidPushNotifications().catch((error) => {
+      console.warn('Failed to unregister Android push notifications during logout.', error);
+    });
     await nostrStore.logout();
     await router.replace({ name: 'auth' });
     schedulePendingLogoutCleanup();
