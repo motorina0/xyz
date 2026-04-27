@@ -11,7 +11,7 @@ Nostr Chat is a private messaging app for Nostr. It gives you a clean place to t
 **Mobile**
 
 <p>
-  <img src="./docs/screenshots/mobile-chats.png" alt="Nostr Chat mobile chat list" width="320">
+  <img src="./docs/screenshots/mobile-chats.png" alt="Nostr Chat mobile chat list" width="320">&nbsp;&nbsp;&nbsp;&nbsp;
   <img src="./docs/screenshots/mobile-groups.png" alt="Nostr Chat mobile group conversation" width="320">
 </p>
 
