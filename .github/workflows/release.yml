@@ -28,38 +28,7 @@ jobs:
       - name: Validate release tag
         id: validate
         shell: bash
-        run: |
-          set -euo pipefail
-
-          tag="${GITHUB_REF_NAME}"
-          if [[ ! "${tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tags must match v<major>.<minor>.<patch>.<build>; got ${tag}" >&2
-            exit 1
-          fi
-
-          git fetch --force origin \
-            +refs/heads/main:refs/remotes/origin/main \
-            +refs/heads/dev:refs/remotes/origin/dev
-          commit="$(git rev-list -n 1 "${tag}")"
-
-          is_allowed_commit=false
-          for allowed_ref in refs/remotes/origin/main refs/remotes/origin/dev; do
-            if git merge-base --is-ancestor "${commit}" "${allowed_ref}"; then
-              is_allowed_commit=true
-              break
-            fi
-          done
-
-          if [[ "${is_allowed_commit}" != true ]]; then
-            echo "Tag ${tag} points to ${commit}, which is not reachable from origin/main or origin/dev." >&2
-            exit 1
-          fi
-
-          {
-            echo "tag=${tag}"
-            echo "version=${tag#v}"
-            echo "commit=${commit}"
-          } >> "${GITHUB_OUTPUT}"
+        run: bash .github/scripts/validate-release-tag.sh
 
   build-android:
     name: Build Android APK
@@ -78,18 +47,7 @@ jobs:
 
       - name: Stage Android release asset
         shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p release-assets
-          apk="$(find dist/capacitor/android -type f -name '*.apk' | sort | head -n 1)"
-
-          if [[ -z "${apk}" ]]; then
-            echo "No APK found under dist/capacitor/android." >&2
-            exit 1
-          fi
-
-          cp "${apk}" release-assets/nostr-chat-android.apk
+        run: bash .github/scripts/stage-release-asset.sh dist/capacitor/android '*.apk' release-assets/nostr-chat-android.apk
 
       - uses: actions/upload-artifact@v6
         with:
@@ -123,18 +81,7 @@ jobs:
 
       - name: Stage Linux release asset
         shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p release-assets
-          appimage="$(find dist/electron/Packaged -type f -name '*.AppImage' | sort | head -n 1)"
-
-          if [[ -z "${appimage}" ]]; then
-            echo "No AppImage found under dist/electron/Packaged." >&2
-            exit 1
-          fi
-
-          cp "${appimage}" release-assets/nostr-chat-linux.AppImage
+        run: bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.AppImage' release-assets/nostr-chat-linux.AppImage
 
       - uses: actions/upload-artifact@v6
         with:
@@ -168,18 +115,7 @@ jobs:
 
       - name: Stage macOS release asset
         shell: bash
-        run: |
-          set -euo pipefail
-
-          mkdir -p release-assets
-          dmg="$(find dist/electron/Packaged -type f -name '*.dmg' | sort | head -n 1)"
-
-          if [[ -z "${dmg}" ]]; then
-            echo "No DMG found under dist/electron/Packaged." >&2
-            exit 1
-          fi
-
-          cp "${dmg}" release-assets/nostr-chat-macos.dmg
+        run: bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.dmg' release-assets/nostr-chat-macos.dmg
 
       - uses: actions/upload-artifact@v6
         with:
@@ -213,17 +149,7 @@ jobs:
 
       - name: Stage Windows release asset
         shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force release-assets | Out-Null
-          $exe = Get-ChildItem -Path dist/electron/Packaged -File -Filter *.exe |
-            Sort-Object Name |
-            Select-Object -First 1
-
-          if (-not $exe) {
-            throw 'No EXE found under dist/electron/Packaged.'
-          }
-
-          Copy-Item $exe.FullName release-assets/nostr-chat-windows.exe
+        run: .github/scripts/stage-release-asset.ps1 -SearchRoot dist/electron/Packaged -Pattern '*.exe' -OutputPath release-assets/nostr-chat-windows.exe
 
       - uses: actions/upload-artifact@v6
         with:
@@ -257,52 +183,4 @@ jobs:
           TAG: ${{ needs.validate-tag.outputs.tag }}
           COMMIT: ${{ needs.validate-tag.outputs.commit }}
           REPOSITORY: ${{ github.repository }}
-        run: |
-          set -euo pipefail
-
-          required_assets=(
-            nostr-chat-android.apk
-            nostr-chat-linux.AppImage
-            nostr-chat-macos.dmg
-            nostr-chat-windows.exe
-          )
-
-          for asset in "${required_assets[@]}"; do
-            if [[ ! -f "release-assets/${asset}" ]]; then
-              echo "Missing release asset: ${asset}" >&2
-              exit 1
-            fi
-          done
-
-          sha256sum release-assets/* > release-assets/SHA256SUMS
-
-          cat > release-notes.md <<EOF
-          Automated binary release for ${TAG}.
-
-          Commit: ${COMMIT}
-
-          Versioned asset URLs:
-
-          - Android APK: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-android.apk
-          - Linux AppImage: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-linux.AppImage
-          - macOS DMG: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-macos.dmg
-          - Windows EXE: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-windows.exe
-
-          Latest asset URLs:
-
-          - Android APK: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-android.apk
-          - Linux AppImage: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-linux.AppImage
-          - macOS DMG: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-macos.dmg
-          - Windows EXE: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-windows.exe
-          EOF
-
-          if gh release view "${TAG}" > /dev/null 2>&1; then
-            gh release upload "${TAG}" release-assets/* --clobber
-            gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md --latest
-          else
-            gh release create "${TAG}" release-assets/* \
-              --verify-tag \
-              --title "${TAG}" \
-              --notes-file release-notes.md \
-              --latest
-          fi
+        run: bash .github/scripts/publish-release.sh
