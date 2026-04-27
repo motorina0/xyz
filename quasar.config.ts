@@ -40,7 +40,8 @@ export default configure(() => {
         },
         linux: {
           category: 'Network',
-          target: ['AppImage', 'deb'],
+          icon: 'icons/icon.png',
+          target: ['AppImage'],
         },
       },
     },
