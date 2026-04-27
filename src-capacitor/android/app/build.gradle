@@ -20,7 +20,7 @@ def readAndroidConfigValue = { String name ->
 
 def capacitorPackageJson = new JsonSlurper().parse(file("${rootDir}/../package.json"))
 def resolvedVersionName = readAndroidConfigValue('ANDROID_VERSION_NAME') ?: capacitorPackageJson.version ?: '1.0.0'
-def resolvedVersionCode = Integer.parseInt(readAndroidConfigValue('ANDROID_VERSION_CODE') ?: '1')
+def resolvedVersionCode = Integer.parseInt(readAndroidConfigValue('ANDROID_VERSION_CODE') ?: "${capacitorPackageJson.androidVersionCode ?: 1}")
 
 def releaseKeystorePath = readAndroidConfigValue('ANDROID_KEYSTORE_PATH')
 def releaseKeystorePassword = readAndroidConfigValue('ANDROID_KEYSTORE_PASSWORD')

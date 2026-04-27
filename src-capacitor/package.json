@@ -1,6 +1,7 @@
 {
   "name": "nostr-chat",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "androidVersionCode": 2,
   "description": "Desktop and web Nostr chat client.",
   "private": true,
   "dependencies": {

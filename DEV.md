@@ -153,6 +153,17 @@ Build the web app:
 npm run build
 ```
 
+Bump the app version across web, Electron, and Android metadata:
+
+```bash
+npm run version:bump -- patch
+npm run version:bump -- minor
+npm run version:bump -- major
+npm run version:bump -- 0.2.0
+```
+
+The version bump command updates the root package metadata used by web and Electron builds, the Capacitor package metadata used by Android `versionName`, both npm lockfiles, and Android `versionCode`. Use `--android-version-code <number>` when you need to set a specific Android code.
+
 Build Electron output without packaging into an installer:
 
 ```bash

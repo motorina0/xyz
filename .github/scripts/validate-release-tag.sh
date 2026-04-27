@@ -4,8 +4,8 @@ set -euo pipefail
 allowed_refs=(refs/remotes/origin/main refs/remotes/origin/dev)
 
 validate_tag_format() {
-  if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "Release tags must match v<major>.<minor>.<patch>.<build>; got ${GITHUB_REF_NAME}" >&2
+  if [[ ! "${GITHUB_REF_NAME}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
+    echo "Release tags must match v<major>.<minor>.<patch>; got ${GITHUB_REF_NAME}" >&2
     exit 1
   fi
 }
