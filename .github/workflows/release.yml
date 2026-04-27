@@ -1,0 +1,186 @@
+name: Release binaries
+
+on:
+  push:
+    tags:
+      - 'v*.*.*.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+      commit: ${{ steps.validate.outputs.commit }}
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Validate release tag
+        id: validate
+        shell: bash
+        run: bash .github/scripts/validate-release-tag.sh
+
+  build-android:
+    name: Build Android APK
+    needs: validate-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      - name: Build Android APK
+        run: npm run build:android:apk:release
+
+      - name: Stage Android release asset
+        shell: bash
+        run: bash .github/scripts/stage-release-asset.sh dist/capacitor/android '*.apk' release-assets/nostr-chat-android.apk
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-android
+          path: release-assets/nostr-chat-android.apk
+          if-no-files-found: error
+
+  build-linux:
+    name: Build Linux AppImage
+    needs: validate-tag
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Build Linux AppImage
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run build:electron:linux
+
+      - name: Stage Linux release asset
+        shell: bash
+        run: bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.AppImage' release-assets/nostr-chat-linux.AppImage
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-linux
+          path: release-assets/nostr-chat-linux.AppImage
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS DMG
+    needs: validate-tag
+    runs-on: macos-13
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Build macOS DMG
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run build:electron:mac
+
+      - name: Stage macOS release asset
+        shell: bash
+        run: bash .github/scripts/stage-release-asset.sh dist/electron/Packaged '*.dmg' release-assets/nostr-chat-macos.dmg
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-macos
+          path: release-assets/nostr-chat-macos.dmg
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows EXE
+    needs: validate-tag
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prepare Quasar files
+        run: npm run prepare:quasar
+
+      - name: Build Windows EXE
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run build:electron:win
+
+      - name: Stage Windows release asset
+        shell: pwsh
+        run: .github/scripts/stage-release-asset.ps1 -SearchRoot dist/electron/Packaged -Pattern '*.exe' -OutputPath release-assets/nostr-chat-windows.exe
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: release-windows
+          path: release-assets/nostr-chat-windows.exe
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs:
+      - validate-tag
+      - build-android
+      - build-linux
+      - build-macos
+      - build-windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate-tag.outputs.tag }}
+          COMMIT: ${{ needs.validate-tag.outputs.commit }}
+          REPOSITORY: ${{ github.repository }}
+        run: bash .github/scripts/publish-release.sh

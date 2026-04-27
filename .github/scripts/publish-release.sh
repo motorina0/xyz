@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+required_env_vars=(GH_TOKEN TAG COMMIT REPOSITORY)
+required_assets=(
+  nostr-chat-android.apk
+  nostr-chat-linux.AppImage
+  nostr-chat-macos.dmg
+  nostr-chat-windows.exe
+)
+
+validate_env() {
+  for env_var in "${required_env_vars[@]}"; do
+    if [[ -z "${!env_var:-}" ]]; then
+      echo "Missing required environment variable: ${env_var}" >&2
+      exit 1
+    fi
+  done
+}
+
+validate_assets() {
+  asset_paths=()
+
+  for asset in "${required_assets[@]}"; do
+    local asset_path="release-assets/${asset}"
+    if [[ ! -f "${asset_path}" ]]; then
+      echo "Missing release asset: ${asset}" >&2
+      exit 1
+    fi
+
+    asset_paths+=("${asset_path}")
+  done
+}
+
+write_checksums() {
+  rm -f release-assets/SHA256SUMS
+  sha256sum "${asset_paths[@]}" > release-assets/SHA256SUMS
+}
+
+write_release_notes() {
+  cat > release-notes.md <<EOF
+Automated binary release for ${TAG}.
+
+Commit: ${COMMIT}
+
+Versioned asset URLs:
+
+- Android APK: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-android.apk
+- Linux AppImage: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-linux.AppImage
+- macOS DMG: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-macos.dmg
+- Windows EXE: https://github.com/${REPOSITORY}/releases/download/${TAG}/nostr-chat-windows.exe
+
+Latest asset URLs:
+
+- Android APK: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-android.apk
+- Linux AppImage: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-linux.AppImage
+- macOS DMG: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-macos.dmg
+- Windows EXE: https://github.com/${REPOSITORY}/releases/latest/download/nostr-chat-windows.exe
+EOF
+}
+
+publish_release() {
+  if gh release view "${TAG}" > /dev/null 2>&1; then
+    gh release upload "${TAG}" release-assets/* --clobber
+    gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.md --latest
+    return
+  fi
+
+  gh release create "${TAG}" release-assets/* \
+    --verify-tag \
+    --title "${TAG}" \
+    --notes-file release-notes.md \
+    --latest
+}
+
+validate_env
+validate_assets
+write_checksums
+write_release_notes
+publish_release
