@@ -18,7 +18,8 @@ This document is the implementation contract for Codex. Do not implement broad r
 - Auth: every device registration update must prove Nostr pubkey ownership.
 - Relay scope: subscribe only to user-defined relay URLs registered by the app.
 - Platform scope: Android v1, with clear extension points for iOS.
-- Notification naming: include sender or chat name where technically available and explicitly registered. Do not include message bodies in v1.
+- Gateway scope: the gateway only watches NIP-17 delivery wrappers for app-supplied recipient pubkeys. It does not know whether a pubkey is a user inbox, a group epoch, or any future recipient key.
+- Notification naming: generic title/body only in v1. Do not send display names, chat names, sender names, or message bodies to the gateway.
 
 ## Critical Nostr Constraint
 
@@ -36,9 +37,10 @@ The gateway must never receive or store user private keys, group private keys, e
 
 V1 behavior:
 
-- Direct-message relay notifications use a generic title/body such as `Nostr Chat` and `New message`.
-- Group notifications may use a registered group display name when the app registers the current epoch public key with that label.
-- Rich direct-message notifications with sender/chat name require a future sender-side push-hint flow or a protocol-level notification hint. That is not part of the relay-observed v1 path.
+- All relay-detected notifications use a generic title/body such as `Nostr Chat` and `New message`.
+- The gateway stores only device data, relay URLs, and watched recipient pubkeys.
+- The app owns the meaning of every watched pubkey. For this app, the list contains the logged-in user pubkey and the latest epoch public keys for groups.
+- Rich notifications with sender/chat names require a future sender-side push-hint flow or a protocol-level notification hint. That is not part of the relay-observed v1 path.
 
 ## Architecture
 
@@ -47,13 +49,13 @@ Android app
   - requests Android notification permission
   - obtains FCM registration token
   - signs Nostr HTTP auth proof
-  - registers token, pubkey, relays, and notification targets
+  - registers token, owner pubkey, relays, and watched recipient pubkeys
 
 Push gateway
   - validates signed registration requests
-  - stores device/token/relay/target metadata in SQLite
+  - stores device/token/relay/watched-pubkey data in SQLite
   - keeps relay websocket subscriptions active
-  - detects kind:1059 gift wraps for registered targets
+  - detects kind:1059 gift wraps for watched recipient pubkeys
   - sends FCM notification + data payloads
 
 Firebase Cloud Messaging
@@ -151,23 +153,18 @@ Do not send fallback/default relays from runtime helpers. If no user-defined rea
 
 Normalize relay URLs with the existing sanitizer/value helpers before sending them.
 
-### Registered Notification Targets
+### Registered Watched Pubkeys
 
-The app sends the gateway a target list that lets the gateway subscribe without secrets.
+The app sends the gateway a watched-pubkey list that lets the gateway subscribe without secrets or app semantics.
 
-Required targets:
+Required watched pubkeys:
 
-- direct inbox target:
-  - `targetPubkey`: logged-in user pubkey
-  - `targetKind`: `direct`
-  - display name: optional account display name, not a sender name
-- group epoch targets:
-  - `targetPubkey`: current epoch public key
-  - `targetKind`: `group_epoch`
-  - `chatPubkey`: stable group identity pubkey
-  - display name: local group display name
+- logged-in user pubkey,
+- latest group epoch public keys for groups the user can currently receive.
 
-When a group epoch rotates, the app must update the gateway target list so the gateway stops listening to old epoch public keys for live notifications.
+The gateway must treat every watched pubkey as an opaque NIP-17 recipient key. It must not store target kind, chat pubkey, route, title, display name, or group metadata.
+
+When a group epoch rotates, the app must replace the old epoch public key with the new one so the gateway stops listening to old epoch public keys for live notifications.
 
 ## Gateway Scope
 
@@ -254,18 +251,9 @@ Request:
   "relays": [
     { "url": "wss://relay.example", "read": true }
   ],
-  "targets": [
-    {
-      "targetKind": "direct",
-      "targetPubkey": "<owner pubkey>",
-      "displayName": "Nostr Chat"
-    },
-    {
-      "targetKind": "group_epoch",
-      "targetPubkey": "<current epoch pubkey>",
-      "chatPubkey": "<group identity pubkey>",
-      "displayName": "Group name"
-    }
+  "watchedPubkeys": [
+    "<owner pubkey>",
+    "<current group epoch pubkey>"
   ],
   "notificationsEnabled": true
 }
@@ -275,10 +263,10 @@ Behavior:
 
 - normalize and validate pubkeys,
 - normalize and validate relay URLs,
-- replace all relays and targets for that owner/device atomically,
+- replace all relays and watched pubkeys for that owner/device atomically,
 - store the FCM token for delivery,
 - restart affected relay subscriptions,
-- return registered target and relay counts.
+- return registered watched pubkey and relay counts.
 
 #### `POST /v1/devices/unregister`
 
@@ -297,13 +285,13 @@ Behavior:
 
 - mark the device disabled or delete it,
 - remove its FCM token,
-- remove target subscriptions if no remaining device needs them.
+- remove watched pubkey subscriptions if no remaining device needs them.
 
 #### `POST /v1/devices/refresh`
 
 NIP-98 auth required.
 
-Same payload shape as register, but intended for relay list, group epoch, display name, or token refresh updates.
+Same payload shape as register, but intended for relay list, watched pubkey, or token refresh updates.
 
 V1 may implement this by calling the same service function as register.
 
@@ -331,56 +319,53 @@ Minimum tables:
   - `read`
   - `created_at`
   - unique `(owner_pubkey, device_id, relay_url)`
-- `notification_targets`
+- `watched_pubkeys`
   - `id`
   - `owner_pubkey`
   - `device_id`
-  - `target_kind`
-  - `target_pubkey`
-  - `chat_pubkey`
-  - `display_name`
+  - `recipient_pubkey`
   - `created_at`
   - `updated_at`
-  - unique `(owner_pubkey, device_id, target_kind, target_pubkey)`
+  - unique `(owner_pubkey, device_id, recipient_pubkey)`
 - `seen_events`
   - `event_id`
-  - `target_pubkey`
+  - `recipient_pubkey`
   - `relay_url`
   - `first_seen_at`
   - `notified_at`
-  - unique `(event_id, target_pubkey)`
+  - unique `(event_id, recipient_pubkey)`
 
 Timestamps are ISO strings.
 
 ### Relay Worker
 
-The gateway maintains live relay subscriptions for registered targets.
+The gateway maintains live relay subscriptions for registered watched recipient pubkeys.
 
 Filter:
 
 ```json
 {
   "kinds": [1059],
-  "#p": ["<target pubkey 1>", "<target pubkey 2>"]
+  "#p": ["<recipient pubkey 1>", "<recipient pubkey 2>"]
 }
 ```
 
 Implementation rules:
 
-- group targets by relay URL,
+- group watched pubkeys by relay URL,
 - subscribe only to read relays registered by users,
 - reconnect with backoff,
-- deduplicate events by `(event id, target pubkey)`,
+- deduplicate events by `(event id, recipient pubkey)`,
 - never unwrap or decrypt events,
 - never publish to relays,
 - avoid sending multiple notifications for the same event seen on multiple relays,
-- rebuild subscriptions when registrations, unregisters, or target refreshes change the active target set.
+- rebuild subscriptions when registrations, unregisters, or refreshes change the active watched pubkey set.
 
 ### Notification Rendering
 
-FCM payloads must include both notification and data fields so Android can display while killed and the app can route after tap.
+FCM payloads must include both notification and data fields so Android can display while killed and the app can decide what to do after tap.
 
-Direct relay-detected notification:
+Relay-detected notification:
 
 ```json
 {
@@ -389,31 +374,13 @@ Direct relay-detected notification:
     "body": "New message"
   },
   "data": {
-    "route": "/chats",
-    "targetKind": "direct",
-    "targetPubkey": "<owner pubkey>"
+    "recipientPubkey": "<matched watched recipient pubkey>",
+    "eventId": "<gift wrap event id>"
   }
 }
 ```
 
-Group relay-detected notification:
-
-```json
-{
-  "notification": {
-    "title": "<registered group display name>",
-    "body": "New message"
-  },
-  "data": {
-    "route": "/chats/<group identity pubkey>",
-    "targetKind": "group_epoch",
-    "targetPubkey": "<epoch pubkey>",
-    "chatPubkey": "<group identity pubkey>"
-  }
-}
-```
-
-Do not send decrypted message content in v1.
+The gateway must not include route, target kind, chat pubkey, title overrides, display names, sender names, or decrypted message content in v1. The app may use `recipientPubkey` locally after launch to decide whether it maps to the user inbox, a current group epoch, or an unknown/stale recipient.
 
 ### iOS Extension Points
 
@@ -422,6 +389,7 @@ Keep platform fields generic:
 - `platform`: `android` in v1, later `ios`
 - push provider module: `fcmProvider` in v1 behind a small `PushProvider` interface
 - token column name may remain `fcm_token` for v1, but service-level types should use `providerToken`
+- watched recipient pubkeys stay platform-neutral
 
 Do not implement APNs in v1.
 
@@ -430,7 +398,7 @@ Do not implement APNs in v1.
 - Never send private keys to the gateway.
 - Never send decrypted message content to the gateway.
 - Never log FCM tokens, auth headers, Firebase credentials, or full registration payloads.
-- Treat display names and group names as metadata leaked to the gateway and FCM.
+- Do not send display names, group names, sender names, chat routes, or chat metadata to the gateway.
 - Validate all pubkeys and relay URLs before storing.
 - Use constant, bounded request body sizes for registration endpoints.
 - Use rate limits per pubkey and per IP.
@@ -466,9 +434,9 @@ Do not implement APNs in v1.
 
 ### Phase 4: Group Epoch Updates
 
-- Register current group epoch targets after restore.
-- Refresh gateway targets after group creation, ticket receipt, and epoch rotation.
-- Remove stale epoch targets from the gateway.
+- Add current group epoch public keys to the watched pubkey list after restore.
+- Refresh watched pubkeys after group creation, ticket receipt, and epoch rotation.
+- Remove stale epoch public keys from the watched pubkey list.
 
 ### Phase 5: Hardening
 
@@ -485,12 +453,13 @@ Gateway:
 - `GET /healthz` returns success without auth.
 - Registration requests without valid NIP-98 auth are rejected.
 - Registration requests with mismatched `ownerPubkey` are rejected.
-- Registration stores Android FCM token, user relays, and targets in SQLite.
-- Refresh replaces relays and targets atomically.
+- Registration stores Android FCM token, user relays, and watched pubkeys in SQLite.
+- Refresh replaces relays and watched pubkeys atomically.
 - Unregister disables/removes the device token.
 - Gateway subscribes only to user-registered relays.
-- Gateway watches only registered `kind:1059` `#p` targets.
-- Duplicate event sightings across relays produce at most one FCM send per target/device.
+- Gateway watches only registered `kind:1059` `#p` recipient pubkeys.
+- Gateway has no direct-message or group-specific branching.
+- Duplicate event sightings across relays produce at most one FCM send per recipient pubkey/device.
 - FCM invalid-token responses disable that device.
 - Logs redact tokens and auth headers.
 
@@ -502,15 +471,15 @@ Android app:
 - Toggle-on registers the device with the gateway only after pubkey ownership proof is signed.
 - Toggle-off unregisters the device from the gateway.
 - Logout attempts gateway unregister and still completes local logout if the gateway is unavailable.
-- Notification tap routes to `/chats` for direct notifications and `/chats/:pubkey` for group notifications.
+- Notification tap opens the app and lets the app resolve the matched `recipientPubkey` locally.
 - No fallback/default relays are sent to the gateway.
-- Group epoch rotation refreshes gateway targets.
+- Group epoch rotation refreshes watched pubkeys.
 
 Protocol and privacy:
 
 - User private keys, group private keys, epoch private keys, and decrypted message bodies are never sent to the gateway.
 - Direct-message sender names are not claimed in relay-detected v1 notifications because the gateway cannot know them without decryption.
-- Group display names may appear in notifications only because the app explicitly registered the label.
+- Group display names, chat names, routes, and target kinds are not sent to the gateway.
 
 ## Validation Commands
 
@@ -522,7 +491,7 @@ npm run test:unit
 npm run test:e2e:local:dm-smoke
 ```
 
-After group target or epoch-related changes:
+After group epoch watched-pubkey changes:
 
 ```bash
 npm run quality:all
@@ -568,10 +537,10 @@ Manual device validation:
 - Foreground app notification behavior.
 - Backgrounded app notification behavior.
 - Killed/swiped app notification behavior.
-- Notification tap route.
+- Notification tap handling.
 - Token refresh.
 - Logout unregister.
-- Group epoch rotation target refresh.
+- Group epoch rotation watched-pubkey refresh.
 
 ## References
 
