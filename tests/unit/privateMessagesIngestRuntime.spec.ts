@@ -264,6 +264,61 @@ describe('privateMessagesIngestRuntime', () => {
     });
   });
 
+  it('updates the preview when an incoming message shares the current preview second', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const chatPublicKey = 'a'.repeat(64);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const existingPreviewAt = '2023-11-14T22:13:20.842Z';
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: 'b'.repeat(64),
+      senderPubkey: chatPublicKey,
+      content: '  Same-second inbound  ',
+    });
+
+    deps.resolveIncomingChatInboxStateValue.mockReturnValue('accepted');
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: chatPublicKey,
+      public_key: chatPublicKey,
+      type: 'user',
+      name: 'Alice',
+      last_message: 'Local reply',
+      last_message_at: existingPreviewAt,
+      unread_count: 0,
+      meta: {
+        inbox_state: 'accepted',
+        accepted_at: '2023-11-14T22:13:19.000Z',
+      },
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 43,
+      chat_public_key: chatPublicKey,
+      author_public_key: chatPublicKey,
+      created_at: createdAt,
+      event_id: 'rumor-event',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), 'b'.repeat(64), {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(serviceMocks.chatDataService.updateChatPreview).toHaveBeenCalledWith(
+      chatPublicKey,
+      'Same-second inbound',
+      existingPreviewAt,
+      1
+    );
+    expect(serviceMocks.chatDataService.updateChatUnreadCount).not.toHaveBeenCalled();
+    expect(deps.queuePrivateMessagesUiRefresh).toHaveBeenCalledWith({
+      throttleMs: 25,
+      reloadChats: true,
+      reloadMessages: true,
+    });
+  });
+
   it('promotes existing chats to accepted when messages arrive from accepted contacts', async () => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);

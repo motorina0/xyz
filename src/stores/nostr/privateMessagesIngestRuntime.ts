@@ -66,6 +66,30 @@ export function createPrivateMessagesIngestRuntime({
     privateMessagesIngestQueue = Promise.resolve();
   }
 
+  function isSameNostrSecond(firstTimestamp: string, secondTimestamp: string): boolean {
+    const firstComparableTimestamp = toComparableTimestamp(firstTimestamp);
+    const secondComparableTimestamp = toComparableTimestamp(secondTimestamp);
+
+    return (
+      firstComparableTimestamp > 0 &&
+      secondComparableTimestamp > 0 &&
+      Math.floor(firstComparableTimestamp / 1000) === Math.floor(secondComparableTimestamp / 1000)
+    );
+  }
+
+  function shouldUseIncomingMessagePreview(createdAt: string, currentPreviewAt: string): boolean {
+    return (
+      toComparableTimestamp(createdAt) >= toComparableTimestamp(currentPreviewAt) ||
+      isSameNostrSecond(createdAt, currentPreviewAt)
+    );
+  }
+
+  function resolveIncomingPreviewTimestamp(createdAt: string, currentPreviewAt: string): string {
+    return toComparableTimestamp(createdAt) >= toComparableTimestamp(currentPreviewAt)
+      ? createdAt
+      : currentPreviewAt;
+  }
+
   function queuePrivateMessageIngestion(
     wrappedEvent: NDKEvent,
     loggedInPubkeyHex: string,
@@ -660,8 +684,13 @@ export function createPrivateMessagesIngestRuntime({
         : shouldIncrementUnreadCount
           ? currentUnreadCount + 1
           : currentUnreadCount;
-    const shouldUpdateChatPreview =
-      toComparableTimestamp(createdAt) >= toComparableTimestamp(chat.last_message_at);
+    const shouldUpdateChatPreview = shouldUseIncomingMessagePreview(
+      createdAt,
+      chat.last_message_at
+    );
+    const nextPreviewAt = shouldUpdateChatPreview
+      ? resolveIncomingPreviewTimestamp(createdAt, chat.last_message_at)
+      : chat.last_message_at;
     const currentGroupEpochEntry = resolvedGroupChatPublicKey
       ? resolveCurrentGroupChatEpochEntry(chat)
       : null;
@@ -677,7 +706,7 @@ export function createPrivateMessagesIngestRuntime({
       await chatDataService.updateChatPreview(
         chat.public_key,
         messageText,
-        createdAt,
+        nextPreviewAt,
         nextUnreadCount
       );
     } else if (nextUnreadCount !== currentUnreadCount) {
@@ -782,7 +811,7 @@ export function createPrivateMessagesIngestRuntime({
           publicKey: chat.public_key,
           fallbackName: deriveChatName(contact, chatPubkey),
           messageText,
-          at: createdAt,
+          at: nextPreviewAt,
           unreadCount: nextUnreadCount,
           meta: {
             ...(chat.meta ?? {}),

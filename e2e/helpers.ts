@@ -1711,9 +1711,22 @@ export async function establishAcceptedDirectChat(
   await sendMessage(sender.page, openingMessage, {
     chatId: recipient.session.publicKey,
   });
-  await openRequests(recipient.page);
-  await acceptFirstRequest(recipient.page);
-  await navigateToChat(recipient.page, sender.session.publicKey);
+  let recipientChatIsOpen = false;
+  try {
+    await openRequests(recipient.page);
+    await acceptFirstRequest(recipient.page);
+  } catch (requestError) {
+    try {
+      await navigateToChat(recipient.page, sender.session.publicKey);
+      recipientChatIsOpen = true;
+    } catch {
+      throw requestError;
+    }
+  }
+
+  if (!recipientChatIsOpen) {
+    await navigateToChat(recipient.page, sender.session.publicKey);
+  }
   await sendMessage(recipient.page, replyMessage, {
     chatId: sender.session.publicKey,
   });
