@@ -34,6 +34,28 @@ function createTestServer() {
 }
 
 describe('push gateway HTTP API', () => {
+  it('answers CORS preflight requests for device registration', async () => {
+    const { server, relayWorker } = createTestServer();
+    const response = await server.inject({
+      method: 'OPTIONS',
+      url: '/v1/devices/register',
+      headers: {
+        origin: 'capacitor://localhost',
+        'access-control-request-method': 'POST',
+        'access-control-request-headers': 'authorization,content-type',
+      },
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(response.headers['access-control-allow-origin']).toBe('*');
+    expect(response.headers['access-control-allow-methods']).toContain('POST');
+    expect(response.headers['access-control-allow-methods']).toContain('OPTIONS');
+    expect(response.headers['access-control-allow-headers']).toContain('authorization');
+    expect(response.headers['access-control-allow-headers']).toContain('content-type');
+    expect(response.headers['access-control-max-age']).toBe('600');
+    expect(relayWorker.refresh).not.toHaveBeenCalled();
+  });
+
   it('rejects registration without NIP-98 auth', async () => {
     const { server } = createTestServer();
     const response = await server.inject({
@@ -43,6 +65,7 @@ describe('push gateway HTTP API', () => {
     });
 
     expect(response.statusCode).toBe(401);
+    expect(response.headers['access-control-allow-origin']).toBe('*');
   });
 
   it('registers a device with valid NIP-98 auth', async () => {

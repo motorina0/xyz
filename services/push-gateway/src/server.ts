@@ -19,6 +19,10 @@ interface ServerDeps {
   relayWorker: RelayWorker;
 }
 
+const CORS_ALLOWED_HEADERS = 'authorization,content-type';
+const CORS_ALLOWED_METHODS = 'GET,POST,OPTIONS';
+const CORS_MAX_AGE_SECONDS = '600';
+
 function buildRawBodyJsonParser() {
   return (
     _request: FastifyRequest,
@@ -91,13 +95,26 @@ function ensureOwnerMatchesAuth(request: JsonRequest, ownerPubkey: string): void
   }
 }
 
+function addCorsHeaders(reply: FastifyReply): void {
+  reply
+    .header('access-control-allow-origin', '*')
+    .header('access-control-allow-methods', CORS_ALLOWED_METHODS)
+    .header('access-control-allow-headers', CORS_ALLOWED_HEADERS)
+    .header('access-control-max-age', CORS_MAX_AGE_SECONDS);
+}
+
+function handleCorsPreflight(_request: FastifyRequest, reply: FastifyReply): FastifyReply {
+  return reply.code(204).send();
+}
+
 export function createServer({ config, repository, relayWorker }: ServerDeps): FastifyInstance {
   const server = Fastify({
     logger: false,
     bodyLimit: 64 * 1024,
   });
 
-  server.addHook('onRequest', (request, _reply, done) => {
+  server.addHook('onRequest', (request, reply, done) => {
+    addCorsHeaders(reply);
     logDebug('Gateway API request received.', {
       requestId: request.id,
       method: request.method,
@@ -134,6 +151,10 @@ export function createServer({ config, repository, relayWorker }: ServerDeps): F
   server.get('/healthz', async () => ({
     ok: true,
   }));
+
+  server.options('/v1/devices/register', handleCorsPreflight);
+  server.options('/v1/devices/refresh', handleCorsPreflight);
+  server.options('/v1/devices/unregister', handleCorsPreflight);
 
   server.post('/v1/devices/register', async (request, reply) => {
     await authenticateRequest(request, reply, config);
