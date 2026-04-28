@@ -103,10 +103,6 @@ function addCorsHeaders(reply: FastifyReply): void {
     .header('access-control-max-age', CORS_MAX_AGE_SECONDS);
 }
 
-function handleCorsPreflight(_request: FastifyRequest, reply: FastifyReply): FastifyReply {
-  return reply.code(204).send();
-}
-
 export function createServer({ config, repository, relayWorker }: ServerDeps): FastifyInstance {
   const server = Fastify({
     logger: false,
@@ -123,6 +119,19 @@ export function createServer({ config, repository, relayWorker }: ServerDeps): F
       userAgent: request.headers['user-agent'],
       contentLength: request.headers['content-length'],
     });
+
+    if (request.method === 'OPTIONS') {
+      logDebug('Gateway API CORS preflight handled before routing.', {
+        requestId: request.id,
+        url: request.url,
+        origin: request.headers.origin,
+        requestedMethod: request.headers['access-control-request-method'],
+        requestedHeaders: request.headers['access-control-request-headers'],
+      });
+      void reply.code(204).send();
+      return;
+    }
+
     done();
   });
 
@@ -151,10 +160,6 @@ export function createServer({ config, repository, relayWorker }: ServerDeps): F
   server.get('/healthz', async () => ({
     ok: true,
   }));
-
-  server.options('/v1/devices/register', handleCorsPreflight);
-  server.options('/v1/devices/refresh', handleCorsPreflight);
-  server.options('/v1/devices/unregister', handleCorsPreflight);
 
   server.post('/v1/devices/register', async (request, reply) => {
     await authenticateRequest(request, reply, config);
@@ -256,6 +261,18 @@ export function createServer({ config, repository, relayWorker }: ServerDeps): F
         .code(400)
         .send({ error: error instanceof Error ? error.message : 'Invalid request.' });
     }
+  });
+
+  server.setNotFoundHandler((request, reply) => {
+    logDebug('Gateway API route not found.', {
+      requestId: request.id,
+      method: request.method,
+      url: request.url,
+      origin: request.headers.origin,
+      requestedMethod: request.headers['access-control-request-method'],
+      requestedHeaders: request.headers['access-control-request-headers'],
+    });
+    return reply.code(404).send({ error: 'Not found.' });
   });
 
   return server;
