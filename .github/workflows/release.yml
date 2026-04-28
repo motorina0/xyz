@@ -31,7 +31,7 @@ jobs:
         run: bash .github/scripts/validate-release-tag.sh
 
   build-android:
-    name: Build Android APK
+    name: Build Android Debug APK
     needs: validate-tag
     runs-on: ubuntu-latest
 
@@ -42,12 +42,12 @@ jobs:
         with:
           node-version: 24.x
 
-      - name: Build Android APK
-        run: npm run build:android:apk:release
+      - name: Build Android Debug APK
+        run: npm run build:android:apk:debug
 
       - name: Stage Android release asset
         shell: bash
-        run: bash .github/scripts/stage-release-asset.sh dist/capacitor/android '*.apk' release-assets/nostr-chat-android.apk
+        run: bash .github/scripts/stage-release-asset.sh dist/capacitor/android/apk/debug '*.apk' release-assets/nostr-chat-android.apk
 
       - uses: actions/upload-artifact@v6
         with:
