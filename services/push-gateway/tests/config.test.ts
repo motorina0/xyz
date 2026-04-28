@@ -11,6 +11,7 @@ const ENV_KEYS = [
   'FIREBASE_PROJECT_ID',
   'FIREBASE_CLIENT_EMAIL',
   'FIREBASE_PRIVATE_KEY',
+  'DEBUG',
   'NIP98_MAX_CLOCK_SKEW_SECONDS',
   'RELAY_CONNECT_TIMEOUT_MS',
   'RELAY_IDLE_RESTART_MS',
@@ -66,6 +67,7 @@ PUBLIC_GATEWAY_BASE_URL=https://push.example
 FIREBASE_PROJECT_ID=firebase-project
 FIREBASE_CLIENT_EMAIL=firebase@example.com
 FIREBASE_PRIVATE_KEY=line-one\\nline-two
+DEBUG=true
 NIP98_MAX_CLOCK_SKEW_SECONDS=90
 RELAY_CONNECT_TIMEOUT_MS=15000
 RELAY_IDLE_RESTART_MS=600000
@@ -84,6 +86,7 @@ RELAY_IDLE_RESTART_MS=600000
       relayConnectTimeoutMs: 15_000,
       relayIdleRestartMs: 600_000,
     });
+    expect(process.env.DEBUG).toBe('true');
   });
 
   it('keeps existing environment variables ahead of .env values', () => {

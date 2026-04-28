@@ -212,9 +212,12 @@ Required environment variables:
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
 - `PUBLIC_GATEWAY_BASE_URL`
+- `DEBUG`
 - `NIP98_MAX_CLOCK_SKEW_SECONDS`
 - `RELAY_CONNECT_TIMEOUT_MS`
 - `RELAY_IDLE_RESTART_MS`
+
+Set `DEBUG=true` to enable detailed gateway logs for HTTP client requests, device registration actions, relay subscription changes, relay messages, and FCM delivery attempts. Keep `DEBUG=false` for normal production logging.
 
 Do not log Firebase private keys, FCM tokens, NIP-98 authorization headers, or full request bodies containing tokens.
 

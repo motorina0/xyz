@@ -29,6 +29,19 @@ export function logInfo(message: string, details: Record<string, unknown> = {}):
   console.info(message, redactSensitive(details));
 }
 
+export function isDebugLoggingEnabled(): boolean {
+  const value = process.env.DEBUG?.trim().toLowerCase() ?? '';
+  return ['1', 'true', 'yes', 'on'].includes(value);
+}
+
+export function logDebug(message: string, details: Record<string, unknown> = {}): void {
+  if (!isDebugLoggingEnabled()) {
+    return;
+  }
+
+  console.info(`[debug] ${message}`, redactSensitive(details));
+}
+
 export function logWarn(message: string, details: Record<string, unknown> = {}): void {
   console.warn(message, redactSensitive(details));
 }

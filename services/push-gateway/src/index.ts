@@ -1,7 +1,7 @@
 import { loadConfig } from './config.js';
 import { openDatabase } from './database.js';
 import { FcmPushProvider } from './fcmProvider.js';
-import { logError, logInfo } from './logger.js';
+import { isDebugLoggingEnabled, logError, logInfo } from './logger.js';
 import { RelayWorker } from './relayWorker.js';
 import { PushGatewayRepository } from './repository.js';
 import { createServer } from './server.js';
@@ -26,6 +26,8 @@ try {
   logInfo('Push gateway started.', {
     port: config.port,
     databasePath: config.databasePath,
+    publicGatewayBaseUrl: config.publicGatewayBaseUrl,
+    debug: isDebugLoggingEnabled(),
   });
 } catch (error) {
   logError('Failed to start push gateway.', { error });
