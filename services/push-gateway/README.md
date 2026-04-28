@@ -17,4 +17,4 @@ npm run dev
 
 ## Configuration
 
-Copy `.env.example` into the runtime environment and set Firebase credentials through environment variables. Use escaped newlines in `FIREBASE_PRIVATE_KEY` or provide a value with literal line breaks.
+Copy `.env.example` to `.env` in this directory and set Firebase credentials there or through environment variables. Existing environment variables take precedence over `.env` values. Use escaped newlines in `FIREBASE_PRIVATE_KEY` or provide a value with literal line breaks.
