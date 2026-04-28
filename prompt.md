@@ -6,6 +6,8 @@ App init:
 
 - login and secrets on mobile
 
+- macos sign app
+
 My Relays (NIP-65)
 some contacts have weird relays, we should not listen there
 
