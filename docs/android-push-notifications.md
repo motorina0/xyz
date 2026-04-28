@@ -80,6 +80,12 @@ Add the Firebase Android config outside source control:
 
 Do not commit real Firebase credentials. Add ignore rules and an example note if needed.
 
+Build Android app bundles with the gateway URL available to Vite. The app defaults to `https://push.lnbits.link` when no value is configured.
+
+- `VITE_PUSH_GATEWAY_URL=https://push.lnbits.link`
+
+For GitHub Actions, no variable is required for the default `https://push.lnbits.link` gateway. To override it, set `VITE_PUSH_GATEWAY_URL` as a repository or environment variable and pass it to Android build jobs. The Docker Android build compose file forwards this value into the build container and also defaults it to `https://push.lnbits.link`.
+
 Configure:
 
 - Android 13+ notification permission flow through Capacitor Push Notifications.

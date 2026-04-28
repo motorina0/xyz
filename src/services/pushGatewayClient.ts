@@ -25,15 +25,18 @@ export interface PushGatewaySigner {
   signHttpAuthHeader(input: { url: string; method: string; body?: string }): Promise<string>;
 }
 
+const DEFAULT_PUSH_GATEWAY_BASE_URL = 'https://push.lnbits.link';
+
 export function readPushGatewayBaseUrl(): string {
   const processEnv = process.env as Record<string, string | undefined>;
   const viteEnv = import.meta.env as Record<string, string | undefined>;
-  const configured =
-    processEnv.PUSH_GATEWAY_URL ??
-    processEnv.VITE_PUSH_GATEWAY_URL ??
-    viteEnv.PUSH_GATEWAY_URL ??
-    viteEnv.VITE_PUSH_GATEWAY_URL ??
-    '';
+  const configured = [
+    processEnv.PUSH_GATEWAY_URL,
+    processEnv.VITE_PUSH_GATEWAY_URL,
+    viteEnv.PUSH_GATEWAY_URL,
+    viteEnv.VITE_PUSH_GATEWAY_URL,
+    DEFAULT_PUSH_GATEWAY_BASE_URL,
+  ].find((value) => typeof value === 'string' && value.trim().length > 0);
   return configured.trim().replace(/\/+$/, '');
 }
 
