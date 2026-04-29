@@ -3,7 +3,7 @@
     <div class="emoji-picker__search">
       <q-input
         v-model="emojiSearch"
-        class="tg-input"
+        class="nc-input"
         dense
         outlined
         rounded
@@ -264,7 +264,7 @@ defineExpose({
   gap: 4px;
   margin-top: 10px;
   padding-top: 8px;
-  border-top: 1px solid color-mix(in srgb, var(--tg-border) 88%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--nc-border) 88%, transparent);
 }
 
 .emoji-picker__tab {

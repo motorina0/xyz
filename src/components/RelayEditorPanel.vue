@@ -3,7 +3,7 @@
     <div v-if="showToolbar" class="relays-toolbar">
       <q-input
         :model-value="newRelay"
-        class="tg-input relays-toolbar__input"
+        class="nc-input relays-toolbar__input"
         outlined
         dense
         rounded
@@ -286,7 +286,7 @@ function emitRelayWriteUpdate(index: number, value: boolean): void {
 
 .relays-content__list {
   border-radius: 12px;
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 90%, transparent);
 }
 
 .relay-expansion-item__body {
@@ -336,7 +336,7 @@ function emitRelayWriteUpdate(index: number, value: boolean): void {
   width: 1px;
   height: 22px;
   transform: translateY(-50%);
-  background: var(--tg-border);
+  background: var(--nc-border);
 }
 
 .relay-io-toggles {
@@ -345,9 +345,9 @@ function emitRelayWriteUpdate(index: number, value: boolean): void {
   gap: 6px;
   width: fit-content;
   padding: 1px 6px;
-  border: 1px solid var(--tg-border);
+  border: 1px solid var(--nc-border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tg-sidebar) 84%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 84%, transparent);
   margin-top: 4px;
 }
 
@@ -371,8 +371,8 @@ function emitRelayWriteUpdate(index: number, value: boolean): void {
 }
 
 .relay-icon {
-  border: 1px solid var(--tg-border);
-  background: color-mix(in srgb, var(--tg-sidebar) 84%, transparent);
+  border: 1px solid var(--nc-border);
+  background: color-mix(in srgb, var(--nc-sidebar) 84%, transparent);
 }
 
 .relay-icon img {

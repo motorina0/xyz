@@ -235,11 +235,11 @@ async function handleLoginNow(): Promise<void> {
 
 .register-card {
   border-radius: 20px;
-  border: 1px solid var(--tg-border);
+  border: 1px solid var(--nc-border);
   overflow: hidden;
-  background: var(--tg-panel-sidebar-bg);
-  box-shadow: var(--tg-shadow-sm);
-  backdrop-filter: blur(var(--tg-glass-blur));
+  background: var(--nc-panel-sidebar-bg);
+  box-shadow: var(--nc-shadow-sm);
+  backdrop-filter: blur(var(--nc-glass-blur));
 }
 
 .register-card--light {
@@ -252,8 +252,8 @@ async function handleLoginNow(): Promise<void> {
 
 .register-card__header {
   padding: 22px 22px 10px;
-  background: var(--tg-panel-header-bg);
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  background: var(--nc-panel-header-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--nc-border) 90%, #8fa5c1 10%);
 }
 
 .register-card--light .register-card__header {

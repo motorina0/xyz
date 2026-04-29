@@ -124,7 +124,7 @@ const isNativeKeyboardVisible = computed(() => {
 type NavigationSection = 'chats' | 'contacts' | 'settings';
 type RouteLoader = () => Promise<unknown>;
 
-const NATIVE_KEYBOARD_VISIBLE_CLASS = 'tg-native-keyboard-visible';
+const NATIVE_KEYBOARD_VISIBLE_CLASS = 'nc-native-keyboard-visible';
 const pendingDialogFocusTimeoutIds = new Set<number>();
 
 const activeSection = computed<NavigationSection>(() => {
@@ -333,8 +333,8 @@ function syncNativeViewportCssVariables(): void {
     : 0;
   const effectiveKeyboardInset = isNativeKeyboardVisible.value ? keyboardInset : 0;
 
-  document.documentElement.style.setProperty('--tg-visual-viewport-height', `${viewportHeight}px`);
-  document.documentElement.style.setProperty('--tg-mobile-keyboard-inset', `${effectiveKeyboardInset}px`);
+  document.documentElement.style.setProperty('--nc-visual-viewport-height', `${viewportHeight}px`);
+  document.documentElement.style.setProperty('--nc-mobile-keyboard-inset', `${effectiveKeyboardInset}px`);
   document.documentElement.classList.toggle(NATIVE_KEYBOARD_VISIBLE_CLASS, isNativeKeyboardVisible.value);
   document.body.classList.toggle(NATIVE_KEYBOARD_VISIBLE_CLASS, isNativeKeyboardVisible.value);
 }
@@ -344,8 +344,8 @@ function resetNativeViewportCssVariables(): void {
     return;
   }
 
-  document.documentElement.style.removeProperty('--tg-visual-viewport-height');
-  document.documentElement.style.removeProperty('--tg-mobile-keyboard-inset');
+  document.documentElement.style.removeProperty('--nc-visual-viewport-height');
+  document.documentElement.style.removeProperty('--nc-mobile-keyboard-inset');
   document.documentElement.classList.remove(NATIVE_KEYBOARD_VISIBLE_CLASS);
   document.body.classList.remove(NATIVE_KEYBOARD_VISIBLE_CLASS);
 }
@@ -557,7 +557,7 @@ function goToSection(section: NavigationSection): void {
   position: absolute;
   inset: 0;
   z-index: 5;
-  background: var(--tg-overlay);
+  background: var(--nc-overlay);
   pointer-events: auto;
 }
 
@@ -590,9 +590,9 @@ function goToSection(section: NavigationSection): void {
   width: min(326px, 100%);
   margin: 0 auto;
   padding: 4px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #bdcad7 12%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 88%, #bdcad7 12%);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tg-panel-header-bg) 96%, rgba(255, 255, 255, 0.9) 4%);
+  background: color-mix(in srgb, var(--nc-panel-header-bg) 96%, rgba(255, 255, 255, 0.9) 4%);
   box-shadow:
     0 8px 22px rgba(27, 45, 66, 0.12),
     0 1px 0 rgba(255, 255, 255, 0.72) inset;
@@ -601,7 +601,7 @@ function goToSection(section: NavigationSection): void {
 }
 
 .mobile-nav__btn {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   border-radius: 999px;
   min-height: 44px;
   padding: 4px 2px;
@@ -680,7 +680,7 @@ function goToSection(section: NavigationSection): void {
 }
 
 body.body--dark .mobile-nav__btn {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   background: transparent !important;
 }
 
@@ -689,8 +689,8 @@ body.body--dark .mobile-nav {
 }
 
 body.body--dark .mobile-nav__inner {
-  border-color: color-mix(in srgb, var(--tg-border) 88%, #62798f 12%);
-  background: color-mix(in srgb, var(--tg-panel-header-bg) 95%, rgba(13, 20, 27, 0.78) 5%);
+  border-color: color-mix(in srgb, var(--nc-border) 88%, #62798f 12%);
+  background: color-mix(in srgb, var(--nc-panel-header-bg) 95%, rgba(13, 20, 27, 0.78) 5%);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
 }
 

@@ -23,7 +23,7 @@
             <q-input
               v-if="isMobile"
               v-model="searchQuery"
-              class="tg-input sidebar-top__search sidebar-top__search--mobile"
+              class="nc-input sidebar-top__search sidebar-top__search--mobile"
               dense
               outlined
               rounded
@@ -64,8 +64,8 @@
                 aria-label="Start New Chat"
                 :loading="isCreatingGroup"
               >
-                <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
-                  <q-list dense class="tg-pop-menu__list">
+                <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
+                  <q-list dense class="nc-pop-menu__list">
                     <q-item
                       clickable
                       v-close-popup
@@ -91,7 +91,7 @@
           <q-input
             v-if="!isMobile"
             v-model="searchQuery"
-            class="tg-input"
+            class="nc-input"
             dense
             outlined
             rounded
@@ -181,7 +181,7 @@
           <q-card-section>
             <q-input
               v-model="newGroupName"
-              class="tg-input"
+              class="nc-input"
               data-testid="create-group-name-input"
               dense
               outlined
@@ -193,7 +193,7 @@
 
             <q-input
               v-model="newGroupAbout"
-              class="q-mt-sm tg-input"
+              class="q-mt-sm nc-input"
               data-testid="create-group-about-input"
               dense
               outlined
@@ -370,7 +370,7 @@ const mobileViewportShellStyle = computed<Record<string, string>>(() => {
   const viewportHeight = Math.max(0, visibleViewportHeight.value ?? $q.screen.height);
 
   return {
-    '--tg-mobile-keyboard-inset': `${Math.max(0, visibleViewportKeyboardInset.value)}px`,
+    '--nc-mobile-keyboard-inset': `${Math.max(0, visibleViewportKeyboardInset.value)}px`,
     height: `${viewportHeight}px`,
     minHeight: `${viewportHeight}px`,
     maxHeight: `${viewportHeight}px`
@@ -1031,7 +1031,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   overflow: hidden;
   width: 100%;
   max-width: 100%;
-  background: var(--tg-app-background);
+  background: var(--nc-app-background);
 }
 
 .home-shell {
@@ -1043,7 +1043,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   min-height: 0;
   width: 100%;
   max-width: 100%;
-  background: var(--tg-panel-thread-bg);
+  background: var(--nc-panel-thread-bg);
 }
 
 .home-shell--mobile {
@@ -1063,10 +1063,10 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--q-primary) 25%, var(--tg-border));
+  border: 1px solid color-mix(in srgb, var(--q-primary) 25%, var(--nc-border));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tg-panel-header-bg) 88%, white 12%);
-  color: var(--tg-text-primary);
+  background: color-mix(in srgb, var(--nc-panel-header-bg) 88%, white 12%);
+  color: var(--nc-text-primary);
   box-shadow: 0 10px 24px rgba(17, 24, 39, 0.12);
   font-size: 12px;
   font-weight: 600;
@@ -1090,7 +1090,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  background: var(--tg-panel-sidebar-bg);
+  background: var(--nc-panel-sidebar-bg);
   border-right: 0;
 }
 
@@ -1101,8 +1101,8 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 
 .sidebar-top {
   padding: 12px;
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-bottom: 1px solid var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 .sidebar-top__row {
@@ -1145,7 +1145,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 }
 
 body.body--dark .q-btn.sidebar-top__action {
-  color: var(--tg-text-secondary) !important;
+  color: var(--nc-text-secondary) !important;
 }
 
 .create-group-dialog {
@@ -1171,16 +1171,16 @@ body.body--dark .q-btn.sidebar-top__action {
   min-height: 0;
   min-width: 0;
   width: 100%;
-  background: var(--tg-panel-thread-bg);
+  background: var(--nc-panel-thread-bg);
 }
 
 .sidebar-nav {
-  border-top: 1px solid var(--tg-border);
+  border-top: 1px solid var(--nc-border);
 }
 
 @media (max-width: 1023px) {
   .sidebar-top {
-    font-family: var(--tg-mobile-font);
+    font-family: var(--nc-mobile-font);
   }
 
   .sidebar {

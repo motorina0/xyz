@@ -44,7 +44,7 @@ const darkMode = computed({
 .theme-card {
   width: 100%;
   max-width: none;
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
 }
 
 .theme-card__section {

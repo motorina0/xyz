@@ -183,7 +183,7 @@ function toDisplayWord(part: string): string {
 
 <style scoped>
 .relay-info-group {
-  border-left: 1px solid var(--tg-border);
+  border-left: 1px solid var(--nc-border);
   padding-left: 8px;
 }
 

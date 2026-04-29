@@ -242,7 +242,7 @@ async function handleConfirmLogout(): Promise<void> {
   overflow: hidden;
   width: 100%;
   max-width: 100%;
-  background: var(--tg-app-background);
+  background: var(--nc-app-background);
 }
 
 .settings-shell {
@@ -253,7 +253,7 @@ async function handleConfirmLogout(): Promise<void> {
   min-height: 0;
   width: 100%;
   max-width: 100%;
-  background: var(--tg-panel-thread-bg);
+  background: var(--nc-panel-thread-bg);
 }
 
 .settings-shell--mobile {
@@ -273,14 +273,14 @@ async function handleConfirmLogout(): Promise<void> {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  background: var(--tg-panel-sidebar-bg);
+  background: var(--nc-panel-sidebar-bg);
   border-right: 0;
 }
 
 .settings-sidebar__top {
   padding: 12px;
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-bottom: 1px solid var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 .settings-sidebar__header {
@@ -308,8 +308,8 @@ async function handleConfirmLogout(): Promise<void> {
 }
 
 .settings-sidebar__status-button--active {
-  background: var(--tg-active);
-  color: var(--tg-active-text) !important;
+  background: var(--nc-active);
+  color: var(--nc-active-text) !important;
 }
 
 .settings-menu {
@@ -323,7 +323,7 @@ async function handleConfirmLogout(): Promise<void> {
   min-height: 56px;
   margin-bottom: 0;
   border: 0;
-  border-bottom: 1px solid var(--tg-border);
+  border-bottom: 1px solid var(--nc-border);
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease;
@@ -331,12 +331,12 @@ async function handleConfirmLogout(): Promise<void> {
 
 .settings-menu__item:hover {
   transform: none;
-  background: var(--tg-hover);
+  background: var(--nc-hover);
 }
 
 .settings-menu__item--active {
-  background: var(--tg-active);
-  color: var(--tg-active-text);
+  background: var(--nc-active);
+  color: var(--nc-active-text);
 }
 
 .settings-menu__item--danger {
@@ -364,7 +364,7 @@ body.body--dark .settings-menu__item--danger {
 }
 
 .settings-sidebar__nav {
-  border-top: 1px solid var(--tg-border);
+  border-top: 1px solid var(--nc-border);
 }
 
 @media (max-width: 1023px) {

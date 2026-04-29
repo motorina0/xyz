@@ -72,7 +72,7 @@ function handleSkip(): void {
 
 <style scoped>
 .browser-notifications-login-dialog__body {
-  color: var(--tg-text);
+  color: var(--nc-text);
   line-height: 1.5;
 }
 </style>

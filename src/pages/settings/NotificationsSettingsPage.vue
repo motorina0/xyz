@@ -280,7 +280,7 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
 <style scoped>
 .notifications-card {
   max-width: 520px;
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
 }
 
 .notifications-card__section {

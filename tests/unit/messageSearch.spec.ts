@@ -53,9 +53,9 @@ describe('messageSearch utilities', () => {
       messageRecordMatchesSearchQuery(
         buildRecord({
           id: 1,
-          message: '  Hello   Telegram Search  ',
+          message: '  Hello   Nostr Search  ',
         }),
-        'telegram search'
+        'nostr search'
       )
     ).toBe(true);
 

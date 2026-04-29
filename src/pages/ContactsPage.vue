@@ -13,7 +13,7 @@
             <q-input
               v-if="isMobile"
               v-model="contactQueryModel"
-              class="tg-input contacts-sidebar__search contacts-sidebar__search--mobile"
+              class="nc-input contacts-sidebar__search contacts-sidebar__search--mobile"
               dense
               outlined
               rounded
@@ -49,7 +49,7 @@
           <q-input
             v-if="!isMobile"
             v-model="contactQueryModel"
-            class="tg-input"
+            class="nc-input"
             dense
             outlined
             rounded
@@ -101,8 +101,8 @@
                   aria-label="Contact actions"
                   @click.stop
                 >
-                  <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
-                    <q-list dense class="tg-pop-menu__list">
+                  <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
+                    <q-list dense class="nc-pop-menu__list">
                       <q-item clickable v-close-popup @click="handleContactMenuChat(contact)">
                         <q-item-section>Chat</q-item-section>
                       </q-item>
@@ -905,7 +905,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   overflow: hidden;
   width: 100%;
   max-width: 100%;
-  background: var(--tg-app-background);
+  background: var(--nc-app-background);
 }
 
 .contacts-shell {
@@ -916,7 +916,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   min-height: 0;
   width: 100%;
   max-width: 100%;
-  background: var(--tg-panel-thread-bg);
+  background: var(--nc-panel-thread-bg);
 }
 
 .contacts-shell--mobile {
@@ -936,12 +936,12 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  background: var(--tg-panel-sidebar-bg);
+  background: var(--nc-panel-sidebar-bg);
   border-right: 0;
 }
 
 .contacts-detail-panel {
-  background: var(--tg-panel-thread-bg);
+  background: var(--nc-panel-thread-bg);
   min-height: 0;
 }
 
@@ -968,8 +968,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-bottom: 1px solid var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 .contacts-detail-mobile-header__title {
@@ -991,8 +991,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 
 .contacts-sidebar__top {
   padding: 12px;
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-bottom: 1px solid var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 .contacts-sidebar__row {
@@ -1018,7 +1018,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   font-size: 20px;
   font-weight: 600;
   line-height: 1.2;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .contacts-sidebar__search--mobile {
@@ -1046,14 +1046,14 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   border-radius: 0;
   min-height: 72px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--tg-border);
+  border-bottom: 1px solid var(--nc-border);
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease;
 }
 
 .q-btn.contact-item__more {
-  color: color-mix(in srgb, var(--tg-border) 20%, #5f718a 80%);
+  color: color-mix(in srgb, var(--nc-border) 20%, #5f718a 80%);
   background: transparent !important;
   box-shadow: none !important;
   opacity: 0;
@@ -1065,7 +1065,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .q-btn.contact-item__more:hover {
-  color: color-mix(in srgb, var(--tg-border) 10%, #4f637e 90%);
+  color: color-mix(in srgb, var(--nc-border) 10%, #4f637e 90%);
   background: transparent !important;
   box-shadow: none !important;
   transform: none !important;
@@ -1104,15 +1104,15 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .contact-item:hover {
-  background: var(--tg-hover);
+  background: var(--nc-hover);
 }
 
 .contact-item__caption {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   opacity: 1;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1120,13 +1120,13 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contact-item--active {
-  background: var(--tg-active);
-  color: var(--tg-active-text);
+  background: var(--nc-active);
+  color: var(--nc-active-text);
 }
 
 .contact-item--active .contact-item__caption,
 .contact-item--active .q-btn.contact-item__more {
-  color: var(--tg-active-subtext);
+  color: var(--nc-active-subtext);
 }
 
 .contact-item--active .contact-item__caption {
@@ -1136,7 +1136,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contacts-empty {
   padding: 14px;
   text-align: center;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   opacity: 1;
 }
 
@@ -1146,12 +1146,12 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
   place-items: center;
   text-align: center;
   padding: 20px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   opacity: 1;
 }
 
 .contacts-sidebar__nav {
-  border-top: 1px solid var(--tg-border);
+  border-top: 1px solid var(--nc-border);
 }
 
 @media (max-width: 1023px) {

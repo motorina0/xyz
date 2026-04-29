@@ -38,7 +38,7 @@ confety emoji
   Based on the extracted file make translation files for the top 20 languages.
   In Settings > Languages add a language selector.
 
-- Add `Edit` option for a message. The UX is the same as for telegram.
+- Add `Edit` option for a message. The UX should match familiar chat editing patterns.
 
 - The app should work offline, load all UI components at start-up.
 
@@ -79,7 +79,7 @@ What Reliability Work Comes Next
 
 Build a durable outbox with automatic replay. Right now outbound relay state is tracked well in relayPublishRuntime.ts (line 145), but recovery still leans too much on manual retry. We should retry failed recipient publishes automatically with exponential backoff, jitter, retry budgets, and idempotent replay after app restart.
 
-Make reconnect more aggressive than “re-subscribe and hope.” The watchdog is good, but after wake, focus regain, relay-set changes, or long offline windows, the app should run a targeted gap-repair pass per active or recently active chat, not just a generic live resubscribe. This is where Telegram feels “instant and correct” after bad connectivity.
+Make reconnect more aggressive than “re-subscribe and hope.” The watchdog is good, but after wake, focus regain, relay-set changes, or long offline windows, the app should run a targeted gap-repair pass per active or recently active chat, not just a generic live resubscribe. This is where the app should feel instant and correct after bad connectivity.
 
 Define message success in product terms, not raw relay terms. Users care about sending, sent, needs attention, and eventually seen. Today the app records per-relay truth, which is excellent for diagnostics, but we still need a higher-level delivery state derived from those statuses so users aren’t forced to interpret relay internals.
 
@@ -89,14 +89,14 @@ Add second-layer dedupe for resend and multi-device races. Current dedupe is eve
 
 - Repair dependency holes automatically. Reactions, deletions, and replies already queue pending work when targets are missing, which is good, but the app should actively fetch missing targets around those references instead of waiting for them to arrive incidentally. That would reduce “reply to unknown” and delayed reaction/deletion consistency issues.
 
-- Make background behavior first-class. Web currently has browser notifications, and Electron currently exposes unread badge wiring in electron-preload.ts (line 1), but Telegram-level reliability needs service-worker/push or equivalent background catch-up semantics, plus desktop notifications/tray behavior that survives app backgrounding.
+- Make background behavior first-class. Web currently has browser notifications, and Electron currently exposes unread badge wiring in electron-preload.ts (line 1), but production-grade reliability needs service-worker/push or equivalent background catch-up semantics, plus desktop notifications/tray behavior that survives app backgrounding.
 
 Add “honest sync” UI. A tiny offline/reconnecting/catching-up indicator would prevent the app from looking broken during recovery windows. Reliability is partly actual correctness and partly whether the user understands what the app is doing.
 
 Expand chaos testing. The next missing tests are long offline periods, relay flapping during send, two devices sending in the same chat simultaneously, wake-from-sleep recovery, and notification/background resume. The existing e2e base is strong enough that this should be very achievable.
 
 If We Prioritize Ruthlessly
-Start with durable outbox + auto replay, then targeted gap repair on resume/reconnect, then logical-message dedupe + multi-device convergence. Those three would move nostr-chat the most toward Telegram’s “it just catches up and does the right thing” feel.
+Start with durable outbox + auto replay, then targeted gap repair on resume/reconnect, then logical-message dedupe + multi-device convergence. Those three would move nostr-chat the most toward an “it just catches up and does the right thing” feel.
 
 Do you want to rerun the local groups Playwright check with Docker and Node explicitly on PATH?
 export PATH=/Applications/Docker.app/Contents/Resources/bin:/Users/moto/.nvm/versions/node/v24.15.0/bin:$PATH; /Users/moto/.nvm/versions/node/v24.15.0/bin/node ./scripts/run-e2e-local.cjs e2e/groups.spec.ts

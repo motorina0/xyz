@@ -186,10 +186,10 @@ function handleBlock(): void {
 <style scoped>
 .request-item {
   border-radius: 18px;
-  border-color: color-mix(in srgb, var(--tg-border) 88%, #a9b7c9 12%);
+  border-color: color-mix(in srgb, var(--nc-border) 88%, #a9b7c9 12%);
   background:
     linear-gradient(180deg, rgba(148, 163, 184, 0.06), rgba(148, 163, 184, 0.02)),
-    var(--tg-panel-thread-bg);
+    var(--nc-panel-thread-bg);
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
 }
 
@@ -245,10 +245,10 @@ function handleBlock(): void {
 }
 
 body.body--dark .request-item {
-  border-color: color-mix(in srgb, var(--tg-border) 84%, #6c819a 16%);
+  border-color: color-mix(in srgb, var(--nc-border) 84%, #6c819a 16%);
   background:
     linear-gradient(180deg, rgba(71, 85, 105, 0.18), rgba(71, 85, 105, 0.08)),
-    var(--tg-panel-thread-bg);
+    var(--nc-panel-thread-bg);
   box-shadow: 0 10px 22px rgba(2, 6, 23, 0.3);
 }
 </style>

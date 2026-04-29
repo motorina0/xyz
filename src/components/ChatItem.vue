@@ -54,8 +54,8 @@
         data-testid="chat-item-actions-button"
         @click.stop
       >
-        <q-menu anchor="bottom right" self="top right" class="tg-pop-menu">
-          <q-list dense class="tg-pop-menu__list">
+        <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
+          <q-list dense class="nc-pop-menu__list">
             <q-item clickable v-close-popup @click="emitViewProfile">
               <q-item-section>View Profile</q-item-section>
             </q-item>
@@ -246,7 +246,7 @@ function emitDeleteChat(): void {
   margin: 0;
   padding: 0 12px;
   border-radius: 0;
-  border-bottom: 1px solid var(--tg-border);
+  border-bottom: 1px solid var(--nc-border);
   transition:
     background-color 0.2s ease,
     border-color 0.2s ease,
@@ -254,12 +254,12 @@ function emitDeleteChat(): void {
 }
 
 .chat-item:hover {
-  background: var(--tg-hover);
+  background: var(--nc-hover);
 }
 
 .chat-item--active {
-  background: var(--tg-active);
-  color: var(--tg-active-text);
+  background: var(--nc-active);
+  color: var(--nc-active-text);
 }
 
 .chat-item__name {
@@ -293,7 +293,7 @@ function emitDeleteChat(): void {
 .chat-item__meta {
   flex: 0 0 auto;
   justify-content: center;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .chat-item__actions {
@@ -323,9 +323,9 @@ function emitDeleteChat(): void {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  background: var(--tg-reaction-accent-bg);
-  border: 1px solid var(--tg-reaction-accent-border);
-  color: var(--tg-reaction-accent-text);
+  background: var(--nc-reaction-accent-bg);
+  border: 1px solid var(--nc-reaction-accent-border);
+  color: var(--nc-reaction-accent-text);
 }
 
 .chat-item__reaction-icon-shell {
@@ -335,7 +335,7 @@ function emitDeleteChat(): void {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: var(--tg-reaction-accent-icon-bg);
+  background: var(--nc-reaction-accent-icon-bg);
 }
 
 .chat-item__reaction-icon {
@@ -353,7 +353,7 @@ function emitDeleteChat(): void {
 }
 
 .q-btn.chat-item__more {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   background: transparent !important;
   box-shadow: none !important;
   opacity: 0;
@@ -365,7 +365,7 @@ function emitDeleteChat(): void {
 }
 
 .q-btn.chat-item__more:hover {
-  color: var(--tg-text);
+  color: var(--nc-text);
   background: transparent !important;
   box-shadow: none !important;
   transform: none !important;
@@ -381,7 +381,7 @@ function emitDeleteChat(): void {
 }
 
 .chat-item :deep(.q-item__label--caption) {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .chat-item :deep(.chat-item__avatar) {
@@ -393,13 +393,13 @@ function emitDeleteChat(): void {
 .chat-item--active .chat-item__meta,
 .chat-item--active :deep(.q-item__label--caption),
 .chat-item--active .q-btn.chat-item__more {
-  color: var(--tg-active-subtext);
+  color: var(--nc-active-subtext);
 }
 
 .chat-item--active .chat-item__reaction-badge {
   background: rgba(255, 255, 255, 0.16);
   border-color: rgba(255, 255, 255, 0.22);
-  color: var(--tg-active-text);
+  color: var(--nc-active-text);
 }
 
 .chat-item--active .chat-item__reaction-icon-shell {
@@ -408,27 +408,27 @@ function emitDeleteChat(): void {
 
 @media (max-width: 1023px) {
   .chat-item {
-    font-family: var(--tg-mobile-font);
+    font-family: var(--nc-mobile-font);
   }
 
   .chat-item__name {
-    font-size: var(--tg-mobile-ui-font-size);
+    font-size: var(--nc-mobile-ui-font-size);
     font-weight: 600;
-    line-height: var(--tg-mobile-ui-line-height);
+    line-height: var(--nc-mobile-ui-line-height);
     letter-spacing: 0;
   }
 
   .chat-item__caption {
-    font-size: var(--tg-mobile-caption-font-size);
+    font-size: var(--nc-mobile-caption-font-size);
     font-weight: 400;
-    line-height: var(--tg-mobile-caption-line-height);
+    line-height: var(--nc-mobile-caption-line-height);
     letter-spacing: 0;
   }
 
   .chat-item__time {
-    font-size: var(--tg-mobile-small-font-size);
+    font-size: var(--nc-mobile-small-font-size);
     font-weight: 400;
-    line-height: var(--tg-mobile-small-line-height);
+    line-height: var(--nc-mobile-small-line-height);
     letter-spacing: 0;
   }
 
@@ -438,7 +438,7 @@ function emitDeleteChat(): void {
 
   .chat-item__reaction-count,
   .chat-item :deep(.q-badge) {
-    font-size: var(--tg-mobile-small-font-size);
+    font-size: var(--nc-mobile-small-font-size);
     line-height: 1;
     letter-spacing: 0;
   }

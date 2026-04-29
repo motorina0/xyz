@@ -181,10 +181,10 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 88%, #8ea4c0 12%);
   border-radius: 14px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
 }
 
 .app-status__card-header {
@@ -193,8 +193,8 @@ function startupStepDuration(step: StartupStepSnapshot): string {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, transparent);
-  background: color-mix(in srgb, var(--tg-panel-header-bg) 92%, rgba(255, 255, 255, 0.08));
+  border-bottom: 1px solid color-mix(in srgb, var(--nc-border) 90%, transparent);
+  background: color-mix(in srgb, var(--nc-panel-header-bg) 92%, rgba(255, 255, 255, 0.08));
 }
 
 .app-status__card-copy {
@@ -205,14 +205,14 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__card-title {
   font-size: 15px;
   font-weight: 700;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .app-status__card-subtitle {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.4;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .app-status__badge {
@@ -245,7 +245,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__details-copy {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .app-status__history-item {
@@ -264,7 +264,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__progress-bar {
   height: 4px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--tg-border) 70%, transparent);
+  background: color-mix(in srgb, var(--nc-border) 70%, transparent);
 }
 
 .app-status__history-copy {
@@ -281,7 +281,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 .app-status__history-duration {
   font-size: 12px;
   line-height: 1.45;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .app-status__history-list {
@@ -298,7 +298,7 @@ function startupStepDuration(step: StartupStepSnapshot): string {
 
 .app-status__history-item + .app-status__history-item {
   padding-top: 10px;
-  border-top: 1px solid var(--tg-border);
+  border-top: 1px solid var(--nc-border);
 }
 
 .app-status__history-duration {
@@ -337,7 +337,7 @@ body.body--dark .app-status__status-icon--error {
 
 body.body--dark .app-status__status-icon--progress,
 body.body--dark .app-status__status-icon--pending {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 @media (max-width: 420px) {

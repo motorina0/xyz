@@ -112,7 +112,7 @@ function closeDialog(): void {
 
 .app-dialog-root :deep(.q-dialog__backdrop) {
   background: rgba(9, 17, 31, 0.48);
-  backdrop-filter: blur(var(--tg-glass-blur-overlay));
+  backdrop-filter: blur(var(--nc-glass-blur-overlay));
 }
 
 .app-dialog {
@@ -120,9 +120,9 @@ function closeDialog(): void {
   max-width: 100%;
   border-radius: 24px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 82%, #8ea4c0 18%);
-  background: var(--tg-panel-sidebar-bg);
-  box-shadow: var(--tg-shadow-md);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 82%, #8ea4c0 18%);
+  background: var(--nc-panel-sidebar-bg);
+  box-shadow: var(--nc-shadow-md);
 }
 
 .app-dialog--sheet {
@@ -132,13 +132,13 @@ function closeDialog(): void {
 }
 
 .app-dialog--plain {
-  border-color: var(--tg-border);
-  background: var(--tg-panel-sidebar-bg);
+  border-color: var(--nc-border);
+  background: var(--nc-panel-sidebar-bg);
 }
 
 .app-dialog--plain .app-dialog__header {
-  border-bottom-color: var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-bottom-color: var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 .app-dialog__grabber {
@@ -154,8 +154,8 @@ function closeDialog(): void {
   align-items: flex-start;
   gap: 12px;
   padding: 14px 16px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
-  background: var(--tg-panel-header-bg);
+  border-bottom: 1px solid color-mix(in srgb, var(--nc-border) 90%, #8fa5c1 10%);
+  background: var(--nc-panel-header-bg);
 }
 
 .app-dialog__header-copy {
@@ -164,25 +164,25 @@ function closeDialog(): void {
 }
 
 .app-dialog__title {
-  font-family: var(--tg-title-font);
+  font-family: var(--nc-title-font);
   font-size: 17px;
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: 0.02em;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .app-dialog__subtitle {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.4;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .app-dialog__close {
   flex: 0 0 auto;
-  color: var(--tg-text-secondary);
-  background: var(--tg-surface-soft-strong);
+  color: var(--nc-text-secondary);
+  background: var(--nc-surface-soft-strong);
 }
 
 .app-dialog__body {
@@ -195,28 +195,28 @@ function closeDialog(): void {
 }
 
 body.body--dark .app-dialog {
-  border-color: color-mix(in srgb, var(--tg-border) 86%, #6b86a8 14%);
-  background: var(--tg-panel-sidebar-bg);
+  border-color: color-mix(in srgb, var(--nc-border) 86%, #6b86a8 14%);
+  background: var(--nc-panel-sidebar-bg);
 }
 
 body.body--dark .app-dialog__header {
-  border-bottom-color: color-mix(in srgb, var(--tg-border) 88%, #617c9d 12%);
-  background: var(--tg-panel-header-bg);
+  border-bottom-color: color-mix(in srgb, var(--nc-border) 88%, #617c9d 12%);
+  background: var(--nc-panel-header-bg);
 }
 
 body.body--dark .app-dialog__close {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   background: rgba(28, 42, 61, 0.7);
 }
 
 body.body--dark .app-dialog--plain {
-  border-color: var(--tg-border);
-  background: var(--tg-panel-sidebar-bg);
+  border-color: var(--nc-border);
+  background: var(--nc-panel-sidebar-bg);
 }
 
 body.body--dark .app-dialog--plain .app-dialog__header {
-  border-bottom-color: var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-bottom-color: var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 body.body--dark .app-dialog__grabber {

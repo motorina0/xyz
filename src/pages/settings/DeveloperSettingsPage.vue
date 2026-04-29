@@ -1325,8 +1325,8 @@ function syncTraceFiltersWithAvailableOptions(): void {
 }
 
 .developer-card {
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
-  border-color: color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
+  border-color: color-mix(in srgb, var(--nc-border) 88%, #8ea4c0 12%);
 }
 
 .developer-card--recent-trace :deep(.q-btn) {
@@ -1362,7 +1362,7 @@ function syncTraceFiltersWithAvailableOptions(): void {
 
 .developer-card--recent-trace :deep(.q-btn.q-btn--flat:not(.q-btn--disabled):hover),
 .developer-card--recent-trace :deep(.q-btn.q-btn--outline:not(.q-btn--disabled):hover) {
-  background: color-mix(in srgb, var(--tg-panel-thread-bg) 72%, transparent);
+  background: color-mix(in srgb, var(--nc-panel-thread-bg) 72%, transparent);
 }
 
 .developer-card__header {
@@ -1370,7 +1370,7 @@ function syncTraceFiltersWithAvailableOptions(): void {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  border-bottom: 1px solid color-mix(in srgb, var(--nc-border) 90%, #8fa5c1 10%);
 }
 
 .developer-card__header--clickable {
@@ -1449,7 +1449,7 @@ function syncTraceFiltersWithAvailableOptions(): void {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--tg-text-secondary) 88%, #59708f 12%);
+  color: color-mix(in srgb, var(--nc-text-secondary) 88%, #59708f 12%);
 }
 
 .developer-facts__value {
@@ -1475,7 +1475,7 @@ function syncTraceFiltersWithAvailableOptions(): void {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--tg-text-secondary) 88%, #59708f 12%);
+  color: color-mix(in srgb, var(--nc-text-secondary) 88%, #59708f 12%);
 }
 
 .developer-chip-group__items {
@@ -1486,7 +1486,7 @@ function syncTraceFiltersWithAvailableOptions(): void {
 
 .developer-chip {
   max-width: 100%;
-  background: color-mix(in srgb, var(--tg-panel-thread-bg) 88%, transparent);
+  background: color-mix(in srgb, var(--nc-panel-thread-bg) 88%, transparent);
 }
 
 .developer-chip--mono {
@@ -1526,9 +1526,9 @@ function syncTraceFiltersWithAvailableOptions(): void {
 }
 
 .developer-expansion {
-  border: 1px solid color-mix(in srgb, var(--tg-border) 90%, #8fa5c1 10%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 90%, #8fa5c1 10%);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--tg-panel-thread-bg) 86%, transparent);
+  background: color-mix(in srgb, var(--nc-panel-thread-bg) 86%, transparent);
 }
 
 .developer-json {
@@ -1595,7 +1595,7 @@ function syncTraceFiltersWithAvailableOptions(): void {
 
 .developer-empty-state,
 .developer-empty-inline {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 @media (max-width: 900px) {
