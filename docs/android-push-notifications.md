@@ -280,6 +280,7 @@ Behavior:
 - normalize and validate pubkeys,
 - normalize and validate relay URLs,
 - replace all relays, watched pubkeys, watched recipient labels, and grouping counters for that owner/device atomically,
+- stamp the device subscription with the gateway's current Unix timestamp,
 - store the FCM token for delivery,
 - restart affected relay subscriptions,
 - return registered watched pubkey and relay counts.
@@ -324,6 +325,7 @@ Minimum tables:
   - `platform`
   - `fcm_token`
   - `app_version`
+  - `subscription_since`
   - `notifications_enabled`
   - `created_at`
   - `updated_at`
@@ -363,7 +365,7 @@ Filter:
 {
   "kinds": [1059],
   "#p": ["<recipient pubkey 1>", "<recipient pubkey 2>"],
-  "since": "<subscription-open unix timestamp>"
+  "since": "<earliest active gateway-stamped device subscription timestamp>"
 }
 ```
 
@@ -371,7 +373,8 @@ Implementation rules:
 
 - group watched pubkeys by relay URL,
 - subscribe only to read relays registered by users,
-- include `since` with the current Unix timestamp when opening a new relay subscription so old gift-wrap history does not trigger notifications,
+- include `since` using the earliest active gateway-stamped device subscription timestamp for that relay,
+- skip delivery to any device when the relay event `created_at` is older than that device's subscription timestamp,
 - reuse the same `since` value for reconnects of the same subscription,
 - reconnect with backoff,
 - deduplicate events by `(event id, recipient pubkey)`,

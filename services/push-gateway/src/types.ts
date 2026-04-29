@@ -41,12 +41,14 @@ export interface ActiveDeliveryDevice {
   ownerPubkey: string;
   deviceId: string;
   fcmToken: string;
+  since: number;
   notificationLabel: string | null;
 }
 
 export interface RelayEvent {
   id?: string;
   kind?: number;
+  created_at?: number;
   tags?: unknown;
 }
 

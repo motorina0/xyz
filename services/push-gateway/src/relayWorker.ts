@@ -13,10 +13,6 @@ interface RelayConnection {
   idleTimer: ReturnType<typeof setTimeout> | null;
 }
 
-function nowUnixSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
 export class RelayWorker {
   private readonly connections = new Map<string, RelayConnection>();
   private isStarted = false;
@@ -73,12 +69,13 @@ export class RelayWorker {
     for (const plan of plans) {
       const existing = this.connections.get(plan.relayUrl);
       if (existing) {
-        const currentSignature = existing.recipientPubkeys.join('|');
-        const nextSignature = plan.recipientPubkeys.join('|');
+        const currentSignature = `${existing.since}:${existing.recipientPubkeys.join('|')}`;
+        const nextSignature = `${plan.since}:${plan.recipientPubkeys.join('|')}`;
         if (currentSignature === nextSignature) {
           logDebug('Relay subscription already matches watch plan.', {
             relayUrl: plan.relayUrl,
             recipientPubkeyCount: plan.recipientPubkeys.length,
+            since: plan.since,
           });
           continue;
         }
@@ -87,6 +84,8 @@ export class RelayWorker {
           relayUrl: plan.relayUrl,
           previousRecipientPubkeyCount: existing.recipientPubkeys.length,
           nextRecipientPubkeyCount: plan.recipientPubkeys.length,
+          previousSince: existing.since,
+          nextSince: plan.since,
         });
         this.closeConnection(existing);
       }
@@ -94,7 +93,7 @@ export class RelayWorker {
       const connection: RelayConnection = {
         relayUrl: plan.relayUrl,
         recipientPubkeys: plan.recipientPubkeys,
-        since: nowUnixSeconds(),
+        since: plan.since,
         socket: null,
         reconnectAttempts: 0,
         reconnectTimer: null,

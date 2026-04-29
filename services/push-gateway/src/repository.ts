@@ -8,10 +8,15 @@ import type {
 export interface RelayWatchPlan {
   relayUrl: string;
   recipientPubkeys: string[];
+  since: number;
 }
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function nowUnixSeconds(): number {
+  return Math.floor(Date.now() / 1000);
 }
 
 export class PushGatewayRepository {
@@ -23,6 +28,7 @@ export class PushGatewayRepository {
     watchedRecipientLabelCount: number;
   } {
     const timestamp = nowIso();
+    const subscriptionSince = nowUnixSeconds();
     const labelByRecipientPubkey = new Map(
       input.watchedRecipientLabels.map((entry) => [entry.recipientPubkey, entry.label])
     );
@@ -37,15 +43,17 @@ export class PushGatewayRepository {
             platform,
             fcm_token,
             app_version,
+            subscription_since,
             notifications_enabled,
             created_at,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(owner_pubkey, device_id) DO UPDATE SET
             platform = excluded.platform,
             fcm_token = excluded.fcm_token,
             app_version = excluded.app_version,
+            subscription_since = excluded.subscription_since,
             notifications_enabled = excluded.notifications_enabled,
             updated_at = excluded.updated_at
         `)
@@ -55,6 +63,7 @@ export class PushGatewayRepository {
           input.platform,
           input.fcmToken,
           input.appVersion,
+          subscriptionSince,
           input.notificationsEnabled ? 1 : 0,
           timestamp,
           timestamp
@@ -138,7 +147,10 @@ export class PushGatewayRepository {
   listRelayWatchPlans(): RelayWatchPlan[] {
     const rows = this.database
       .prepare(`
-        SELECT DISTINCT dr.relay_url AS relayUrl, wp.recipient_pubkey AS recipientPubkey
+        SELECT DISTINCT
+          dr.relay_url AS relayUrl,
+          wp.recipient_pubkey AS recipientPubkey,
+          d.subscription_since AS since
         FROM devices d
         JOIN device_relays dr
           ON dr.owner_pubkey = d.owner_pubkey AND dr.device_id = d.device_id
@@ -147,18 +159,25 @@ export class PushGatewayRepository {
         WHERE d.notifications_enabled = 1 AND dr.read = 1
         ORDER BY dr.relay_url, wp.recipient_pubkey
       `)
-      .all() as Array<{ relayUrl: string; recipientPubkey: string }>;
+      .all() as Array<{ relayUrl: string; recipientPubkey: string; since: number }>;
 
-    const plans = new Map<string, Set<string>>();
+    const plans = new Map<string, { recipientPubkeys: Set<string>; since: number }>();
     for (const row of rows) {
-      const pubkeys = plans.get(row.relayUrl) ?? new Set<string>();
-      pubkeys.add(row.recipientPubkey);
-      plans.set(row.relayUrl, pubkeys);
+      const plan = plans.get(row.relayUrl) ?? {
+        recipientPubkeys: new Set<string>(),
+        since: row.since,
+      };
+      plan.recipientPubkeys.add(row.recipientPubkey);
+      plan.since = Math.min(plan.since, row.since);
+      plans.set(row.relayUrl, plan);
     }
 
-    return Array.from(plans.entries()).map(([relayUrl, pubkeys]) => ({
+    return Array.from(plans.entries()).map(([relayUrl, plan]) => ({
       relayUrl,
-      recipientPubkeys: Array.from(pubkeys).sort((first, second) => first.localeCompare(second)),
+      recipientPubkeys: Array.from(plan.recipientPubkeys).sort((first, second) =>
+        first.localeCompare(second)
+      ),
+      since: plan.since,
     }));
   }
 
@@ -186,6 +205,7 @@ export class PushGatewayRepository {
           d.owner_pubkey AS ownerPubkey,
           d.device_id AS deviceId,
           d.fcm_token AS fcmToken,
+          d.subscription_since AS since,
           wp.notification_label AS notificationLabel
         FROM devices d
         JOIN watched_pubkeys wp

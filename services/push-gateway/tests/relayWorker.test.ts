@@ -63,12 +63,14 @@ describe('RelayWorker', () => {
     vi.useRealTimers();
   });
 
-  it('subscribes from the current unix timestamp and reuses it on reconnect', () => {
+  it('subscribes from the gateway-stamped plan timestamp and reuses it on reconnect', () => {
+    const planSince = 1_777_456_800;
     const repository = {
       listRelayWatchPlans: vi.fn(() => [
         {
           relayUrl: 'wss://relay.example/',
           recipientPubkeys: [VALID_PUBKEY_A],
+          since: planSince,
         },
       ]),
     } as unknown as PushGatewayRepository;
@@ -76,7 +78,6 @@ describe('RelayWorker', () => {
       sendNewMessageNotification: vi.fn(),
     } as unknown as PushProvider;
     const worker = new RelayWorker(config, repository, pushProvider);
-    const expectedSince = Math.floor(Date.parse('2026-04-29T10:00:00.000Z') / 1000);
 
     worker.start();
     const firstSocket = FakeWebSocket.instances[0];
@@ -89,7 +90,7 @@ describe('RelayWorker', () => {
         {
           kinds: [1059],
           '#p': [VALID_PUBKEY_A],
-          since: expectedSince,
+          since: planSince,
         },
       ])
     );
@@ -107,7 +108,7 @@ describe('RelayWorker', () => {
         {
           kinds: [1059],
           '#p': [VALID_PUBKEY_A],
-          since: expectedSince,
+          since: planSince,
         },
       ])
     );
