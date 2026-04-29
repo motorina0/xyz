@@ -1,4 +1,5 @@
 prompt
+old: dec05190554d4ef0b7f74bfbbd1c0fda96aca815470ff26e74ed35b1320dbc96
 
 App init:
  - if no relays ask the user if it wants the app relays on its profile
