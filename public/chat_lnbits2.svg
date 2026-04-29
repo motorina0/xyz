@@ -1,0 +1,37 @@
+<svg width="1254" height="1254" viewBox="0 0 1254 1254" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1254" height="1254" fill="#000000"/>
+  <rect width="1254" height="1254" rx="252" fill="url(#background)"/>
+  <g filter="url(#markShadow)">
+    <path
+      d="M976 398C918 309 801 262 653 262C464 262 313 413 313 601C313 690 347 771 404 831L351 976L533 917C571 930 612 937 654 937C676 937 696 935 716 931"
+      stroke="url(#whiteMark)"
+      stroke-width="92"
+      stroke-linecap="butt"
+      stroke-linejoin="round"
+    />
+    <circle cx="516" cy="601" r="36" fill="url(#whiteMark)"/>
+    <circle cx="649" cy="601" r="36" fill="url(#whiteMark)"/>
+    <path
+      d="M826 461C828 454 834 450 841 450H998C1011 450 1019 464 1012 475L897 641H1023C1036 641 1043 657 1035 667L755 989C745 1001 726 991 731 976L824 746H742C731 746 723 735 727 724L826 461Z"
+      fill="url(#bolt)"
+    />
+  </g>
+  <defs>
+    <radialGradient id="background" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(626 546) rotate(90) scale(768 825)">
+      <stop stop-color="#1F1728"/>
+      <stop offset="0.58" stop-color="#181120"/>
+      <stop offset="1" stop-color="#0D0B13"/>
+    </radialGradient>
+    <linearGradient id="whiteMark" x1="317" y1="269" x2="782" y2="1003" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F9F9FC"/>
+      <stop offset="1" stop-color="#EBEBF1"/>
+    </linearGradient>
+    <linearGradient id="bolt" x1="874" y1="438" x2="876" y2="994" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF27E4"/>
+      <stop offset="1" stop-color="#F11BD7"/>
+    </linearGradient>
+    <filter id="markShadow" x="236" y="181" width="860" height="871" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="8" flood-color="#000000" flood-opacity="0.22"/>
+    </filter>
+  </defs>
+</svg>
