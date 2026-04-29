@@ -309,8 +309,8 @@ describe('storageSession runtime', () => {
     expect(encryptedPrivateString).toBe(`enc:${groupPrivateKey}`);
     expect(await runtime.decryptPrivateStringContent(encryptedPrivateString)).toBe(groupPrivateKey);
     expect(await runtime.decryptPrivateStringContent('')).toBeNull();
-    expect(await runtime.sha256Hex('xyz')).toBe(
-      '3608bca1e44ea6c4d268eb6db02260269892c0b42b86bbf1e77a6fa16c3c9282'
+    expect(await runtime.sha256Hex('sample')).toBe(
+      'af2bdbe1aa9b6ec1e2ade1d694f41fc71a831d0268e9891562113d8a62add1bf'
     );
 
     runtime.clearPrivatePreferencesStorage();

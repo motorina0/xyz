@@ -12,7 +12,7 @@ describe('shared helper utils', () => {
 
   it('formats long public keys without changing shorter values', () => {
     expect(formatCompactPublicKey('abcdefghijklmnop')).toBe('abcdefghijklmnop');
-    expect(formatCompactPublicKey('abcdefghijklmnopqrstuvwxyz')).toBe('abcdefgh...stuvwxyz');
+    expect(formatCompactPublicKey('abcdefghijklmnopqrstuvwx')).toBe('abcdefgh...qrstuvwx');
   });
 
   it('normalizes relay lookup keys and preserves first unique relay entries', () => {

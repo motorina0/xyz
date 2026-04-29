@@ -46,7 +46,7 @@
       <q-input
         ref="inputRef"
         v-model="draft"
-        class="composer__input tg-input"
+        class="composer__input nc-input"
         data-testid="message-composer-input"
         dense
         outlined
@@ -77,7 +77,7 @@
               v-model="isEmojiMenuOpen"
               anchor="top right"
               self="bottom right"
-              class="tg-pop-menu"
+              class="nc-pop-menu"
               @show="handleEmojiMenuShow"
               @hide="handleEmojiMenuHide"
             >
@@ -495,8 +495,8 @@ defineExpose({
   gap: 8px;
   padding: 10px 16px;
   padding-bottom: calc(10px + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-top: 1px solid var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 .composer__emoji-autocomplete {
@@ -506,10 +506,10 @@ defineExpose({
   flex-direction: column;
   gap: 4px;
   padding: 8px;
-  border: 1px solid var(--tg-border);
+  border: 1px solid var(--nc-border);
   border-radius: 12px;
-  background: var(--tg-panel-sidebar-bg);
-  box-shadow: var(--tg-shadow-md);
+  background: var(--nc-panel-sidebar-bg);
+  box-shadow: var(--nc-shadow-md);
 }
 
 .composer__emoji-option {
@@ -534,7 +534,7 @@ defineExpose({
 .composer__emoji-option--active {
   transform: none;
   border-color: transparent;
-  background: var(--tg-hover);
+  background: var(--nc-hover);
 }
 
 .composer__emoji-option-char {
@@ -555,7 +555,7 @@ defineExpose({
 .composer__emoji-empty {
   padding: 8px 10px;
   font-size: 13px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .composer__reply {
@@ -565,7 +565,7 @@ defineExpose({
   gap: 10px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: var(--tg-surface-soft-strong);
+  background: var(--nc-surface-soft-strong);
 }
 
 .composer__reply-accent {
@@ -597,7 +597,7 @@ defineExpose({
 
 .composer__reply-close {
   flex: 0 0 auto;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .composer__row {
@@ -613,7 +613,7 @@ defineExpose({
 }
 
 .composer__emoji-trigger {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .composer__send {
@@ -628,7 +628,7 @@ defineExpose({
 @media (max-width: 1023px) {
   .composer {
     gap: 5px;
-    font-family: var(--tg-mobile-font);
+    font-family: var(--nc-mobile-font);
     padding: 3px 10px calc(6px + env(safe-area-inset-bottom));
     border-top: 0;
     background: transparent;
@@ -638,7 +638,7 @@ defineExpose({
   .composer__reply {
     border-radius: 16px;
     padding: 10px 12px;
-    background: color-mix(in srgb, var(--tg-panel-header-bg) 94%, transparent);
+    background: color-mix(in srgb, var(--nc-panel-header-bg) 94%, transparent);
     box-shadow: 0 8px 24px rgba(23, 35, 52, 0.08);
   }
 
@@ -646,8 +646,8 @@ defineExpose({
   .composer__reply-text,
   .composer__emoji-option-label,
   .composer__emoji-empty {
-    font-size: var(--tg-mobile-caption-font-size);
-    line-height: var(--tg-mobile-caption-line-height);
+    font-size: var(--nc-mobile-caption-font-size);
+    line-height: var(--nc-mobile-caption-line-height);
     letter-spacing: 0;
   }
 
@@ -659,9 +659,9 @@ defineExpose({
     align-items: flex-end;
     gap: 5px;
     padding: 4px;
-    border: 1px solid color-mix(in srgb, var(--tg-border) 92%, #c5d1dc 8%);
+    border: 1px solid color-mix(in srgb, var(--nc-border) 92%, #c5d1dc 8%);
     border-radius: 22px;
-    background: color-mix(in srgb, var(--tg-panel-header-bg) 99%, rgba(255, 255, 255, 0.96) 1%);
+    background: color-mix(in srgb, var(--nc-panel-header-bg) 99%, rgba(255, 255, 255, 0.96) 1%);
     box-shadow: 0 8px 20px rgba(23, 35, 52, 0.1);
   }
 
@@ -695,20 +695,20 @@ defineExpose({
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__native),
   .composer__input.q-textarea.q-field--dense :deep(.q-field__input) {
-    min-height: var(--tg-mobile-ui-line-height) !important;
+    min-height: var(--nc-mobile-ui-line-height) !important;
     padding-top: 0 !important;
     padding-bottom: 0 !important;
-    font-family: var(--tg-mobile-font);
-    font-size: var(--tg-mobile-ui-font-size);
+    font-family: var(--nc-mobile-font);
+    font-size: var(--nc-mobile-ui-font-size);
     font-weight: 400;
-    line-height: var(--tg-mobile-ui-line-height) !important;
+    line-height: var(--nc-mobile-ui-line-height) !important;
     letter-spacing: 0;
     display: block;
   }
 
   .composer__input.q-textarea.q-field--dense :deep(.q-field__native::placeholder),
   .composer__input.q-textarea.q-field--dense :deep(.q-field__input::placeholder) {
-    font-size: var(--tg-mobile-ui-font-size);
+    font-size: var(--nc-mobile-ui-font-size);
     font-weight: 400;
     color: #98a4af;
     opacity: 1;
@@ -778,18 +778,18 @@ body.body--dark .composer__reply {
   }
 
   body.body--dark .composer__row {
-    border-color: color-mix(in srgb, var(--tg-border) 90%, #5b738b 10%);
-    background: color-mix(in srgb, var(--tg-panel-header-bg) 96%, rgba(13, 20, 27, 0.78) 4%);
+    border-color: color-mix(in srgb, var(--nc-border) 90%, #5b738b 10%);
+    background: color-mix(in srgb, var(--nc-panel-header-bg) 96%, rgba(13, 20, 27, 0.78) 4%);
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.28);
   }
 
   body.body--dark .composer__reply {
-    background: color-mix(in srgb, var(--tg-panel-header-bg) 94%, transparent);
+    background: color-mix(in srgb, var(--nc-panel-header-bg) 94%, transparent);
   }
 
   body.body--dark .composer__emoji-trigger {
     border-color: #516173;
-    background: color-mix(in srgb, var(--tg-panel-header-bg) 94%, #263341 6%) !important;
+    background: color-mix(in srgb, var(--nc-panel-header-bg) 94%, #263341 6%) !important;
     color: #a9b8c8 !important;
   }
 }

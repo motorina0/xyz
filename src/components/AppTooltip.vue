@@ -48,7 +48,7 @@ withDefaults(defineProps<Props>(), {
 
 <style>
 .app-tooltip {
-  font-family: var(--tg-title-font);
+  font-family: var(--nc-title-font);
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -65,7 +65,7 @@ withDefaults(defineProps<Props>(), {
   box-shadow:
     0 10px 26px rgba(7, 23, 48, 0.36),
     inset 0 1px 0 rgba(255, 255, 255, 0.16);
-  backdrop-filter: blur(var(--tg-glass-blur-soft));
+  backdrop-filter: blur(var(--nc-glass-blur-soft));
 }
 
 body.body--dark .app-tooltip {

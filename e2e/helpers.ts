@@ -333,7 +333,7 @@ export const TEST_ACCOUNTS = {
 const dockerComposeArgs = ['compose', '-f', 'docker-compose.e2e.yml'];
 const dockerCommand = process.platform === 'win32' ? 'docker.exe' : 'docker';
 const commandEnv = buildCommandEnv();
-const pendingLogoutCleanupSessionKey = 'xyz-pending-logout-cleanup';
+const pendingLogoutCleanupSessionKey = 'nostr-chat-pending-logout-cleanup';
 const relayPortsByService = {
   relay: 7000,
   'relay-two': 7001,

@@ -34,12 +34,12 @@
         v-model="isActionMenuOpen"
         no-parent-event
         touch-position
-        class="tg-pop-menu"
+        class="nc-pop-menu"
         :transition-duration="0"
         @hide="handleActionMenuHide"
       >
         <div class="bubble__menu-stack">
-          <q-list dense class="tg-pop-menu__list bubble__actions-list">
+          <q-list dense class="nc-pop-menu__list bubble__actions-list">
             <q-item clickable v-close-popup @click="handleReply">
               <q-item-section avatar>
                 <q-icon name="reply" />
@@ -113,7 +113,7 @@
         v-model="isEmojiPickerMenuOpen"
         no-parent-event
         touch-position
-        class="tg-pop-menu"
+        class="nc-pop-menu"
         :transition-duration="0"
         @show="handleEmojiPickerMenuShow"
       >
@@ -994,7 +994,7 @@ onBeforeUnmount(() => {
   content: '';
   position: absolute;
   inset: 0 0 0 calc(var(--bubble-author-indent) - 3px);
-  background: var(--tg-hover);
+  background: var(--nc-hover);
   border-radius: inherit;
   opacity: 0;
   pointer-events: none;
@@ -1021,7 +1021,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble__author--mine {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .bubble__author--their {
@@ -1061,7 +1061,7 @@ onBeforeUnmount(() => {
   white-space: pre-wrap;
   word-break: break-word;
   cursor: pointer;
-  color: var(--tg-text);
+  color: var(--nc-text);
   line-height: 1.5;
 }
 
@@ -1139,8 +1139,8 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 6px;
   border-radius: 12px;
-  background: var(--tg-surface-soft-strong);
-  border: 1px solid var(--tg-border);
+  background: var(--nc-surface-soft-strong);
+  border: 1px solid var(--nc-border);
 }
 
 .bubble__quick-reaction {
@@ -1176,7 +1176,7 @@ onBeforeUnmount(() => {
 }
 
 .bubble__quick-reaction--more {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   font-size: 0;
 }
 
@@ -1199,9 +1199,9 @@ onBeforeUnmount(() => {
   min-width: 32px;
   min-height: 28px;
   padding: 0 10px;
-  border: 1px solid var(--tg-btn-round-border);
+  border: 1px solid var(--nc-btn-round-border);
   border-radius: 999px;
-  background: var(--tg-btn-round-bg);
+  background: var(--nc-btn-round-bg);
   transition:
     transform 0.18s ease,
     background-color 0.18s ease,
@@ -1210,9 +1210,9 @@ onBeforeUnmount(() => {
 }
 
 .bubble__reaction-chip--fresh {
-  background: var(--tg-reaction-accent-bg);
-  border-color: var(--tg-reaction-accent-border);
-  color: var(--tg-reaction-accent-text);
+  background: var(--nc-reaction-accent-bg);
+  border-color: var(--nc-reaction-accent-border);
+  color: var(--nc-reaction-accent-text);
   transform-origin: center;
   animation: bubble-reaction-fresh-shake 720ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
@@ -1223,7 +1223,7 @@ onBeforeUnmount(() => {
 
 .bubble__reaction-chip--removable:hover {
   transform: none;
-  background: var(--tg-chip-hover-bg);
+  background: var(--nc-chip-hover-bg);
 }
 
 .bubble__reaction-emoji {
@@ -1289,7 +1289,7 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .bubble__meta {
@@ -1341,7 +1341,7 @@ onBeforeUnmount(() => {
     display: block;
     width: auto;
     max-width: 100%;
-    font-family: var(--tg-mobile-font);
+    font-family: var(--nc-mobile-font);
     border-radius: 16px;
     padding: 8px 42px 7px 11px;
     box-shadow: none;
@@ -1352,12 +1352,12 @@ onBeforeUnmount(() => {
   }
 
   .bubble--mine {
-    background: var(--tg-sent);
+    background: var(--nc-sent);
     border-bottom-right-radius: 6px;
   }
 
   .bubble--their {
-    background: var(--tg-received);
+    background: var(--nc-received);
     border-bottom-left-radius: 6px;
   }
 
@@ -1380,9 +1380,9 @@ onBeforeUnmount(() => {
   }
 
   .bubble-row--show-author-mobile .bubble__author-name {
-    font-size: var(--tg-mobile-caption-font-size);
+    font-size: var(--nc-mobile-caption-font-size);
     font-weight: 600;
-    line-height: var(--tg-mobile-caption-line-height);
+    line-height: var(--nc-mobile-caption-line-height);
     letter-spacing: 0;
   }
 
@@ -1396,13 +1396,13 @@ onBeforeUnmount(() => {
   .bubble__reply-preview {
     padding: 6px 8px;
     border-radius: 12px;
-    background: var(--tg-surface-soft-strong);
+    background: var(--nc-surface-soft-strong);
   }
 
   .bubble__reply-preview-title,
   .bubble__reply-preview-text {
-    font-size: var(--tg-mobile-caption-font-size);
-    line-height: var(--tg-mobile-caption-line-height);
+    font-size: var(--nc-mobile-caption-font-size);
+    line-height: var(--nc-mobile-caption-line-height);
     letter-spacing: 0;
   }
 
@@ -1411,9 +1411,9 @@ onBeforeUnmount(() => {
   }
 
   .bubble__text {
-    font-size: var(--tg-mobile-message-font-size);
+    font-size: var(--nc-mobile-message-font-size);
     font-weight: 400;
-    line-height: var(--tg-mobile-message-line-height);
+    line-height: var(--nc-mobile-message-line-height);
     letter-spacing: 0;
   }
 
@@ -1423,8 +1423,8 @@ onBeforeUnmount(() => {
   }
 
   .bubble__more {
-    font-size: var(--tg-mobile-caption-font-size);
-    line-height: var(--tg-mobile-caption-line-height);
+    font-size: var(--nc-mobile-caption-font-size);
+    line-height: var(--nc-mobile-caption-line-height);
   }
 
   .bubble__reactions {
@@ -1444,14 +1444,14 @@ onBeforeUnmount(() => {
 
 .bubble__time {
   font-size: 11px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 @media (max-width: 1023px) {
   .bubble__time {
-    font-size: var(--tg-mobile-small-font-size);
+    font-size: var(--nc-mobile-small-font-size);
     font-weight: 400;
-    line-height: var(--tg-mobile-small-line-height);
+    line-height: var(--nc-mobile-small-line-height);
     letter-spacing: 0;
   }
 }
@@ -1562,7 +1562,7 @@ onBeforeUnmount(() => {
 
 .bubble__status-list-item--empty {
   list-style: none;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   opacity: 1;
   padding-left: 0;
 }
@@ -1598,7 +1598,7 @@ onBeforeUnmount(() => {
 
 .bubble__status-list-detail {
   min-width: 0;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   word-break: break-word;
 }
 
@@ -1610,7 +1610,7 @@ onBeforeUnmount(() => {
 .bubble__status-empty {
   font-size: 12px;
   line-height: 1.45;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .bubble__info-dialog-title {
@@ -1622,12 +1622,12 @@ onBeforeUnmount(() => {
 
 .bubble__info-dialog-title-text {
   min-width: 0;
-  font-family: var(--tg-title-font);
+  font-family: var(--nc-title-font);
   font-size: 17px;
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: 0.02em;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .bubble__info-back {
@@ -1649,7 +1649,7 @@ onBeforeUnmount(() => {
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   opacity: 1;
 }
 
@@ -1679,8 +1679,8 @@ onBeforeUnmount(() => {
   border-radius: 16px;
   overflow: auto;
   max-height: min(56vh, 460px);
-  background: var(--tg-surface-soft-strong);
-  border: 1px solid var(--tg-border);
+  background: var(--nc-surface-soft-strong);
+  border: 1px solid var(--nc-border);
   font-family: 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
   font-size: 12px;
   line-height: 1.5;
@@ -1691,7 +1691,7 @@ onBeforeUnmount(() => {
 .bubble__event-json-empty {
   font-size: 14px;
   line-height: 1.5;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 @media (hover: none) {

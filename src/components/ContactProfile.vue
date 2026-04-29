@@ -115,7 +115,7 @@
             <div class="profile-lookup" :class="{ 'profile-lookup--with-header': showHeader }">
               <q-input
                 :model-value="displayedPubkeyValue"
-                class="tg-input profile-lookup__pubkey-input"
+                class="nc-input profile-lookup__pubkey-input"
                 outlined
                 dense
                 rounded
@@ -192,7 +192,7 @@
                 <div class="profile-card__section profile-section__content">
                   <q-input
                     v-model="localProfile.name"
-                    class="tg-input"
+                    class="nc-input"
                     outlined
                     dense
                     rounded
@@ -203,7 +203,7 @@
 
                   <q-input
                     v-model="localProfile.about"
-                    class="tg-input q-mt-sm"
+                    class="nc-input q-mt-sm"
                     outlined
                     dense
                     rounded
@@ -216,7 +216,7 @@
 
                   <q-input
                     v-model="localProfile.picture"
-                    class="tg-input q-mt-sm"
+                    class="nc-input q-mt-sm"
                     outlined
                     dense
                     rounded
@@ -227,7 +227,7 @@
 
                   <q-input
                     v-model="localProfile.nip05"
-                    class="tg-input q-mt-sm"
+                    class="nc-input q-mt-sm"
                     outlined
                     dense
                     rounded
@@ -238,7 +238,7 @@
 
                   <q-input
                     v-model="localProfile.lud16"
-                    class="tg-input q-mt-sm"
+                    class="nc-input q-mt-sm"
                     outlined
                     dense
                     rounded
@@ -249,7 +249,7 @@
 
                   <q-input
                     v-model="localProfile.lud06"
-                    class="tg-input q-mt-sm"
+                    class="nc-input q-mt-sm"
                     outlined
                     dense
                     rounded
@@ -277,7 +277,7 @@
                 <div class="profile-card__section profile-section__content">
                   <q-input
                     v-model="localProfile.display_name"
-                    class="tg-input"
+                    class="nc-input"
                     outlined
                     dense
                     rounded
@@ -288,7 +288,7 @@
 
                   <q-input
                     v-model="localProfile.website"
-                    class="tg-input q-mt-sm"
+                    class="nc-input q-mt-sm"
                     outlined
                     dense
                     rounded
@@ -299,7 +299,7 @@
 
                   <q-input
                     v-model="localProfile.banner"
-                    class="tg-input q-mt-sm"
+                    class="nc-input q-mt-sm"
                     outlined
                     dense
                     rounded
@@ -346,7 +346,7 @@
                   <div class="profile-card__birthday-grid q-mt-sm">
                     <q-input
                       v-model.number="localProfile.birthday.year"
-                      class="tg-input"
+                      class="nc-input"
                       outlined
                       dense
                       rounded
@@ -358,7 +358,7 @@
 
                     <q-input
                       v-model.number="localProfile.birthday.month"
-                      class="tg-input"
+                      class="nc-input"
                       outlined
                       dense
                       rounded
@@ -372,7 +372,7 @@
 
                     <q-input
                       v-model.number="localProfile.birthday.day"
-                      class="tg-input"
+                      class="nc-input"
                       outlined
                       dense
                       rounded
@@ -494,7 +494,7 @@
               <div v-if="canEditGroupMembers" class="profile-members-toolbar">
                 <q-input
                   v-model="newMemberIdentifier"
-                  class="tg-input profile-members-toolbar__input"
+                  class="nc-input profile-members-toolbar__input"
                   data-testid="group-member-identifier-input"
                   outlined
                   dense
@@ -697,7 +697,7 @@
                 <div class="profile-card__title">Current Epoch Public Key</div>
                 <q-input
                   :model-value="currentEpochPublicKey"
-                  class="tg-input q-mt-sm"
+                  class="nc-input q-mt-sm"
                   outlined
                   dense
                   rounded
@@ -890,7 +890,7 @@
 
         <q-input
           :model-value="shareNostrAddress"
-          class="tg-input profile-share__address"
+          class="nc-input profile-share__address"
           outlined
           dense
           rounded
@@ -2872,9 +2872,9 @@ async function refreshCurrentGroupChat(input: string): Promise<void> {
 }
 
 .profile-warning-banner {
-  border: 1px solid color-mix(in srgb, var(--q-warning) 28%, var(--tg-border) 72%);
-  background: color-mix(in srgb, var(--q-warning) 10%, var(--tg-panel-thread-bg) 90%);
-  color: var(--tg-text);
+  border: 1px solid color-mix(in srgb, var(--q-warning) 28%, var(--nc-border) 72%);
+  background: color-mix(in srgb, var(--q-warning) 10%, var(--nc-panel-thread-bg) 90%);
+  color: var(--nc-text);
 }
 
 .profile-tabs-shell {
@@ -2894,8 +2894,8 @@ async function refreshCurrentGroupChat(input: string): Promise<void> {
   align-items: center;
   gap: 10px;
   padding: 10px 14px;
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-panel-header-bg);
+  border-bottom: 1px solid var(--nc-border);
+  background: var(--nc-panel-header-bg);
 }
 
 .profile-header__identity {
@@ -2919,12 +2919,12 @@ async function refreshCurrentGroupChat(input: string): Promise<void> {
 
 .profile-header__name {
   font-weight: 600;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .profile-header__subtitle {
   font-size: 12px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   opacity: 1;
 }
 
@@ -2932,13 +2932,13 @@ async function refreshCurrentGroupChat(input: string): Promise<void> {
 }
 
 body.body--dark .profile-header__action {
-  color: var(--tg-text-secondary) !important;
+  color: var(--nc-text-secondary) !important;
 }
 
 .profile-tabs {
   border-radius: 14px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
-  background: color-mix(in srgb, var(--tg-panel-header-bg) 92%, rgba(255, 255, 255, 0.08));
+  border: 1px solid color-mix(in srgb, var(--nc-border) 88%, #8ea4c0 12%);
+  background: color-mix(in srgb, var(--nc-panel-header-bg) 92%, rgba(255, 255, 255, 0.08));
 }
 
 .profile-tab-panels {
@@ -3004,22 +3004,22 @@ body.body--dark .profile-header__action {
 
 .profile-sections {
   border-radius: 12px;
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
 }
 
 .profile-sections :deep(.q-expansion-item + .q-expansion-item) {
-  border-top: 1px solid var(--tg-border);
+  border-top: 1px solid var(--nc-border);
 }
 
 .profile-section__content {
   margin: 6px 12px 12px;
   padding: 12px 14px 14px;
   border-radius: 12px;
-  background: color-mix(in srgb, var(--tg-sidebar) 88%, var(--tg-border) 12%);
+  background: color-mix(in srgb, var(--nc-sidebar) 88%, var(--nc-border) 12%);
 }
 
 .profile-card {
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
 }
 
 .profile-card__section {
@@ -3031,7 +3031,7 @@ body.body--dark .profile-header__action {
   font-size: 15px;
   font-weight: 600;
   margin-bottom: 4px;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .profile-card__title-row {
@@ -3047,7 +3047,7 @@ body.body--dark .profile-header__action {
 .profile-card__subtitle {
   font-size: 14px;
   font-weight: 600;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .profile-card__bot-row {
@@ -3065,9 +3065,9 @@ body.body--dark .profile-header__action {
 
 .profile-members-state {
   padding: 18px 16px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 88%, #8ea4c0 12%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 88%, #8ea4c0 12%);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--tg-panel-sidebar-bg) 94%, rgba(255, 255, 255, 0.04));
+  background: color-mix(in srgb, var(--nc-panel-sidebar-bg) 94%, rgba(255, 255, 255, 0.04));
   display: grid;
   gap: 8px;
 }
@@ -3075,13 +3075,13 @@ body.body--dark .profile-header__action {
 .profile-members-state__title {
   font-size: 16px;
   font-weight: 700;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .profile-members-section-title {
   font-size: 16px;
   font-weight: 700;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .profile-members {
@@ -3122,7 +3122,7 @@ body.body--dark .profile-header__action {
 
 .profile-members-list {
   border-radius: 14px;
-  background: color-mix(in srgb, var(--tg-sidebar) 92%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
 }
 
 .profile-members-list__item {
@@ -3139,7 +3139,7 @@ body.body--dark .profile-header__action {
 
 .profile-members-list__name {
   font-weight: 600;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .profile-members-list__badge {
@@ -3148,7 +3148,7 @@ body.body--dark .profile-header__action {
 
 .profile-members-list__caption {
   word-break: break-word;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .profile-member-delivery {
@@ -3185,7 +3185,7 @@ body.body--dark .profile-header__action {
   height: 6px;
   border-radius: 999px;
   overflow: hidden;
-  background: color-mix(in srgb, var(--tg-text-secondary) 16%, transparent);
+  background: color-mix(in srgb, var(--nc-text-secondary) 16%, transparent);
   box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
 }
 
@@ -3202,11 +3202,11 @@ body.body--dark .profile-header__action {
 }
 
 .profile-member-delivery__status-segment--gray {
-  background: color-mix(in srgb, var(--tg-text-secondary) 45%, transparent);
+  background: color-mix(in srgb, var(--nc-text-secondary) 45%, transparent);
 }
 
 .profile-member-delivery__dialog-empty {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .profile-member-delivery__dialog-list {
@@ -3250,7 +3250,7 @@ body.body--dark .profile-header__action {
 }
 
 .profile-member-delivery__status-dot--gray {
-  background: color-mix(in srgb, var(--tg-text-secondary) 50%, transparent);
+  background: color-mix(in srgb, var(--nc-text-secondary) 50%, transparent);
 }
 
 .profile-member-delivery__dialog-copy {
@@ -3262,12 +3262,12 @@ body.body--dark .profile-header__action {
 
 .profile-member-delivery__dialog-relay {
   word-break: break-word;
-  color: var(--tg-text);
+  color: var(--nc-text);
 }
 
 .profile-member-delivery__dialog-detail {
   word-break: break-word;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   font-size: 0.84rem;
 }
 
@@ -3303,7 +3303,7 @@ body.body--dark .profile-header__action {
   width: min(100%, 336px);
   height: auto;
   border-radius: 22px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 86%, #d8e2f0 14%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 86%, #d8e2f0 14%);
   background: #fff;
   padding: 12px;
   box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
@@ -3318,10 +3318,10 @@ body.body--dark .profile-header__action {
   bottom: 0;
   z-index: 3;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--tg-sidebar) 78%, transparent), var(--tg-sidebar));
-  border-top: 1px solid color-mix(in srgb, var(--tg-border) 84%, #6b7d96 16%);
+    linear-gradient(180deg, color-mix(in srgb, var(--nc-sidebar) 78%, transparent), var(--nc-sidebar));
+  border-top: 1px solid color-mix(in srgb, var(--nc-border) 84%, #6b7d96 16%);
   padding-bottom: env(safe-area-inset-bottom);
-  backdrop-filter: blur(var(--tg-glass-blur-strong));
+  backdrop-filter: blur(var(--nc-glass-blur-strong));
 }
 
 .mobile-nav__inner {
@@ -3336,8 +3336,8 @@ body.body--dark .profile-header__action {
   border-radius: 12px;
   min-height: 42px;
   padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 74%, transparent);
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, #eef5ff 10%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 74%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 90%, #eef5ff 10%);
   transition:
     transform 0.2s ease,
     background-color 0.2s ease,
@@ -3360,8 +3360,8 @@ body.body--dark .profile-header__action {
 
 .mobile-nav__btn:hover {
   transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--tg-border) 72%, #6d8db8 28%);
-  background: color-mix(in srgb, var(--tg-sidebar) 82%, #dce9ff 18%);
+  border-color: color-mix(in srgb, var(--nc-border) 72%, #6d8db8 28%);
+  background: color-mix(in srgb, var(--nc-sidebar) 82%, #dce9ff 18%);
 }
 
 .mobile-nav__btn--active {
@@ -3370,9 +3370,9 @@ body.body--dark .profile-header__action {
 }
 
 body.body--dark .mobile-nav__btn {
-  color: var(--tg-text-secondary);
-  border-color: color-mix(in srgb, var(--tg-border) 72%, transparent);
-  background: color-mix(in srgb, var(--tg-sidebar) 90%, #102035 10%);
+  color: var(--nc-text-secondary);
+  border-color: color-mix(in srgb, var(--nc-border) 72%, transparent);
+  background: color-mix(in srgb, var(--nc-sidebar) 90%, #102035 10%);
 }
 
 body.body--dark .mobile-nav__btn--active {

@@ -8,7 +8,7 @@
   >
     <q-input
       v-model="identifierInput"
-      class="tg-input"
+      class="nc-input"
       data-testid="contact-lookup-identifier"
       dense
       outlined
@@ -66,7 +66,7 @@
     <q-input
       v-show="!selectedExistingContact"
       v-model="givenName"
-      class="q-mt-sm tg-input"
+      class="q-mt-sm nc-input"
       data-testid="contact-lookup-given-name"
       dense
       outlined
@@ -518,9 +518,9 @@ async function handleSubmit(): Promise<void> {
 <style scoped>
 .contact-lookup-dialog__suggestions {
   margin-top: 10px;
-  border: 1px solid var(--tg-border);
+  border: 1px solid var(--nc-border);
   border-radius: 16px;
-  background: var(--tg-panel-sidebar-bg);
+  background: var(--nc-panel-sidebar-bg);
   overflow: hidden;
 }
 
@@ -530,12 +530,12 @@ async function handleSubmit(): Promise<void> {
 }
 
 .contact-lookup-dialog__suggestion--active {
-  background: color-mix(in srgb, var(--tg-accent) 10%, transparent);
+  background: color-mix(in srgb, var(--nc-accent) 10%, transparent);
 }
 
 .contact-lookup-dialog__empty-state {
   padding: 14px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   text-align: center;
 }
 </style>

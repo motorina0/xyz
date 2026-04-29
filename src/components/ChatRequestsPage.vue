@@ -88,7 +88,7 @@ const requestCountLabel = computed(() => {
   height: 100%;
   background:
     radial-gradient(circle at top right, rgba(79, 169, 230, 0.12), transparent 34%),
-    var(--tg-panel-thread-bg);
+    var(--nc-panel-thread-bg);
 }
 
 .requests-page__header {
@@ -97,8 +97,8 @@ const requestCountLabel = computed(() => {
   justify-content: space-between;
   gap: 20px;
   padding: 24px 24px 20px;
-  border-bottom: 1px solid var(--tg-border);
-  background: color-mix(in srgb, var(--tg-panel-header-bg) 92%, white 8%);
+  border-bottom: 1px solid var(--nc-border);
+  background: color-mix(in srgb, var(--nc-panel-header-bg) 92%, white 8%);
 }
 
 .requests-page__heading {
@@ -110,7 +110,7 @@ const requestCountLabel = computed(() => {
 
 .requests-page__back {
   margin-top: 2px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .requests-page__copy {
@@ -119,7 +119,7 @@ const requestCountLabel = computed(() => {
 
 .requests-page__eyebrow {
   margin-bottom: 6px;
-  color: color-mix(in srgb, var(--tg-text-secondary) 88%, #6b7f95 12%);
+  color: color-mix(in srgb, var(--nc-text-secondary) 88%, #6b7f95 12%);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.1em;
@@ -128,7 +128,7 @@ const requestCountLabel = computed(() => {
 
 .requests-page__title {
   margin: 0;
-  font-family: var(--tg-title-font);
+  font-family: var(--nc-title-font);
   font-size: clamp(28px, 3vw, 36px);
   line-height: 1.05;
 }
@@ -136,7 +136,7 @@ const requestCountLabel = computed(() => {
 .requests-page__subtitle {
   max-width: 620px;
   margin: 8px 0 0;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   font-size: 15px;
   line-height: 1.45;
 }
@@ -145,14 +145,14 @@ const requestCountLabel = computed(() => {
   flex: 0 0 auto;
   min-width: 112px;
   padding: 14px 16px;
-  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #b8c9da 16%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 84%, #b8c9da 16%);
   border-radius: 20px;
-  background: color-mix(in srgb, var(--tg-surface-soft-strong) 72%, white 28%);
+  background: color-mix(in srgb, var(--nc-surface-soft-strong) 72%, white 28%);
   text-align: right;
 }
 
 .requests-page__summary-count {
-  font-family: var(--tg-title-font);
+  font-family: var(--nc-title-font);
   font-size: 28px;
   font-weight: 700;
   line-height: 1;
@@ -160,7 +160,7 @@ const requestCountLabel = computed(() => {
 
 .requests-page__summary-label {
   margin-top: 6px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -196,19 +196,19 @@ const requestCountLabel = computed(() => {
   display: grid;
   place-items: center;
   color: var(--q-primary);
-  background: color-mix(in srgb, var(--tg-surface-soft-strong) 78%, white 22%);
-  border: 1px solid color-mix(in srgb, var(--tg-border) 84%, #c4d4e4 16%);
+  background: color-mix(in srgb, var(--nc-surface-soft-strong) 78%, white 22%);
+  border: 1px solid color-mix(in srgb, var(--nc-border) 84%, #c4d4e4 16%);
 }
 
 .requests-page__empty-title {
-  font-family: var(--tg-title-font);
+  font-family: var(--nc-title-font);
   font-size: 20px;
   font-weight: 700;
 }
 
 .requests-page__empty-copy {
   max-width: 360px;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   line-height: 1.5;
 }
 

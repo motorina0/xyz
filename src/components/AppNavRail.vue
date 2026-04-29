@@ -60,7 +60,7 @@ const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadCha
   align-items: center;
   gap: 2px;
   padding: 6px 8px calc(8px + env(safe-area-inset-bottom));
-  background: var(--tg-panel-sidebar-bg);
+  background: var(--nc-panel-sidebar-bg);
 }
 
 .nav-rail__btn {
@@ -70,7 +70,7 @@ const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadCha
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   background: transparent;
   border: 1px solid transparent;
   box-shadow: none;
@@ -103,22 +103,22 @@ const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadCha
 }
 
 .nav-rail__btn:hover {
-  background: var(--tg-hover);
-  color: var(--tg-text);
+  background: var(--nc-hover);
+  color: var(--nc-text);
 }
 
 .nav-rail__btn--active {
-  background: var(--tg-active);
-  color: var(--tg-active-text);
+  background: var(--nc-active);
+  color: var(--nc-active-text);
 }
 
 body.body--dark .nav-rail__btn {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
   background: transparent;
 }
 
 body.body--dark .nav-rail__btn--active {
-  color: var(--tg-active-text);
-  background: var(--tg-active);
+  color: var(--nc-active-text);
+  background: var(--nc-active);
 }
 </style>

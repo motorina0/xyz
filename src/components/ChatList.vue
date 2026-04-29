@@ -95,21 +95,21 @@ function formatRequestCount(value: number): string {
   min-height: 56px;
   padding: 0 12px;
   border-radius: 0;
-  border-bottom: 1px solid var(--tg-border);
-  background: var(--tg-surface-soft);
+  border-bottom: 1px solid var(--nc-border);
+  background: var(--nc-surface-soft);
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
 }
 
 .requests-row:hover {
-  background: var(--tg-hover);
+  background: var(--nc-hover);
 }
 
 .requests-row--active {
-  border-color: var(--tg-border);
-  background: var(--tg-active);
-  color: var(--tg-active-text);
+  border-color: var(--nc-border);
+  background: var(--nc-active);
+  color: var(--nc-active-text);
 }
 
 .requests-row__icon-shell {
@@ -118,8 +118,8 @@ function formatRequestCount(value: number): string {
   border-radius: 999px;
   display: grid;
   place-items: center;
-  color: var(--tg-text);
-  background: var(--tg-surface-soft-strong);
+  color: var(--nc-text);
+  background: var(--nc-surface-soft-strong);
   border: 0;
 }
 
@@ -132,39 +132,39 @@ function formatRequestCount(value: number): string {
 }
 
 .requests-row__count {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .requests-row__caption {
-  color: var(--tg-text-secondary);
+  color: var(--nc-text-secondary);
 }
 
 .requests-row--active .requests-row__count,
 .requests-row--active .requests-row__caption {
-  color: var(--tg-active-subtext);
+  color: var(--nc-active-subtext);
 }
 
 .requests-row--active .requests-row__icon-shell {
-  color: var(--tg-active-text);
+  color: var(--nc-active-text);
   background: rgba(255, 255, 255, 0.18);
 }
 
 @media (max-width: 1023px) {
   .requests-row {
-    font-family: var(--tg-mobile-font);
+    font-family: var(--nc-mobile-font);
   }
 
   .requests-row__title {
-    font-size: var(--tg-mobile-ui-font-size);
+    font-size: var(--nc-mobile-ui-font-size);
     font-weight: 600;
-    line-height: var(--tg-mobile-ui-line-height);
+    line-height: var(--nc-mobile-ui-line-height);
     letter-spacing: 0;
   }
 
   .requests-row__caption {
-    font-size: var(--tg-mobile-caption-font-size);
+    font-size: var(--nc-mobile-caption-font-size);
     font-weight: 400;
-    line-height: var(--tg-mobile-caption-line-height);
+    line-height: var(--nc-mobile-caption-line-height);
     letter-spacing: 0;
   }
 }

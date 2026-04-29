@@ -476,7 +476,7 @@ function queueMyRelaysSync(): void {
 
 .relays-tabs {
   width: 100%;
-  border-bottom: 1px solid var(--tg-border);
+  border-bottom: 1px solid var(--nc-border);
 }
 
 .relays-tabs :deep(.q-tabs__content) {

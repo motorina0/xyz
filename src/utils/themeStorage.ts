@@ -107,7 +107,7 @@ export function applyPanelOpacityPreference(opacity: number): void {
   }
 
   document.documentElement.style.setProperty(
-    '--tg-panel-opacity',
+    '--nc-panel-opacity',
     String(normalizePanelOpacityPreference(opacity))
   );
 }

@@ -24,11 +24,11 @@ describe('chatDataService search helpers', () => {
           id: 1,
           chat_public_key: 'chat',
           author_public_key: 'alice',
-          message: '  Hello   Telegram Search  ',
+          message: '  Hello   Nostr Search  ',
           created_at: '2026-01-01T00:00:00.000Z',
           meta: {},
         } as never,
-        'telegram search'
+        'nostr search'
       )
     ).toBe(true);
 
@@ -60,7 +60,7 @@ describe('chatDataService search helpers', () => {
           created_at: '2026-01-01T00:00:00.000Z',
           meta: {},
         } as never,
-        'telegram'
+        'nostr'
       )
     ).toBe(false);
   });
