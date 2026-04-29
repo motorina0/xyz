@@ -7,6 +7,12 @@ App init:
 - login and secrets on mobile
 
 - macos sign app
+- group new epoch changes -> how do you get notifications
+
+share QR code
+ - public
+ - private
+
 
 My Relays (NIP-65)
 some contacts have weird relays, we should not listen there
