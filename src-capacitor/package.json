@@ -4,6 +4,9 @@
   "androidVersionCode": 2,
   "description": "Desktop and web Nostr chat client.",
   "private": true,
+  "scripts": {
+    "quality": "cap ls"
+  },
   "dependencies": {
     "@capacitor/android": "^6.2.1",
     "@capacitor/app": "^6.0.0",
