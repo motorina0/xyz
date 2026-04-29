@@ -78,6 +78,11 @@ import {
   loadSettingsPage
 } from 'src/router/pageLoaders';
 import { useVisibleViewportHeight } from 'src/composables/useVisibleViewportHeight';
+import {
+  refreshAndroidPushRegistration,
+  resolveAndroidPushNotificationRoute,
+  startAndroidPushNotificationListeners
+} from 'src/services/androidPushNotificationService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
@@ -217,6 +222,9 @@ let removeDesktopNotificationOpenListener: (() => void) | null = null;
 
 onMounted(() => {
   nostrStore.startAppLifecycleRuntime();
+  startAndroidPushNotificationListeners((recipientPubkey) => {
+    void openAndroidPushNotification(recipientPubkey);
+  });
   syncNativeViewportCssVariables();
   document.addEventListener('focusin', handleNativeDialogFocusIn);
   document.addEventListener('focusout', handleNativeFocusOut);
@@ -291,6 +299,18 @@ watch(isNativeKeyboardVisible, (isVisible) => {
     scheduleFocusedDialogControlIntoView(document.activeElement);
   }
 });
+
+watch(
+  [
+    () => nostrStore.contactListVersion,
+    () => relayStore.relayEntries.map((entry) => `${entry.url}:${entry.read ? 'r' : '-'}:${entry.write ? 'w' : '-'}`).join('|')
+  ],
+  () => {
+    void refreshAndroidPushRegistration().catch((error) => {
+      console.warn('Failed to refresh Android push registration.', error);
+    });
+  }
+);
 
 function readGlobalViewportHeight(): number {
   if (typeof window === 'undefined') {
@@ -476,6 +496,14 @@ async function openChatFromDesktopNotification(chatPubkey: string): Promise<void
     });
   } catch (error) {
     reportUiError('Failed to open chat from desktop notification', error);
+  }
+}
+
+async function openAndroidPushNotification(recipientPubkey: string | null): Promise<void> {
+  try {
+    await router.push(await resolveAndroidPushNotificationRoute(recipientPubkey));
+  } catch (error) {
+    reportUiError('Failed to open chat from Android notification', error);
   }
 }
 

@@ -1,4 +1,11 @@
 import {
+  isAndroidPushNotificationConfigured,
+  isAndroidPushNotificationSupported,
+  readAndroidPushNotificationsPreference,
+  requestAndroidPushNotificationsAfterLogin,
+  saveAndroidPushNotificationsPreference,
+} from 'src/services/androidPushNotificationService';
+import {
   getBrowserNotificationPermission,
   isBrowserNotificationSupported,
   readBrowserNotificationsPreference,
@@ -30,6 +37,29 @@ export function useBrowserNotificationsLoginPrompt() {
   }
 
   async function handleBrowserNotificationsAfterLogin(): Promise<void> {
+    if (isAndroidPushNotificationSupported()) {
+      if (!isAndroidPushNotificationConfigured()) {
+        saveAndroidPushNotificationsPreference(false);
+        return;
+      }
+
+      if (readAndroidPushNotificationsPreference()) {
+        return;
+      }
+
+      const shouldEnableNotifications = await openDialog();
+      if (!shouldEnableNotifications) {
+        saveAndroidPushNotificationsPreference(false);
+        return;
+      }
+
+      await requestAndroidPushNotificationsAfterLogin().catch((error) => {
+        console.warn('Failed to enable Android push notifications after login.', error);
+        saveAndroidPushNotificationsPreference(false);
+      });
+      return;
+    }
+
     if (!isBrowserNotificationSupported()) {
       saveBrowserNotificationsPreference(false);
       return;

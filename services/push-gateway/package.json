@@ -1,0 +1,35 @@
+{
+  "name": "@nostr-chat/push-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "format": "biome format --write .",
+    "format:check": "biome check --formatter-enabled=true --linter-enabled=false --assist-enabled=false .",
+    "lint": "biome lint .",
+    "lint:dead-code": "biome lint --only=lint/correctness/noUnusedImports --only=lint/correctness/noUnusedVariables .",
+    "lint:fix": "biome check --write --unsafe --max-diagnostics=100 .",
+    "quality": "npm run format && npm run lint:fix && npm run format:check && npm run lint:dead-code && npm run lint && npm run typecheck",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "fastify": "^5.2.1",
+    "firebase-admin": "^13.0.2",
+    "nostr-tools": "^2.10.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.10",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

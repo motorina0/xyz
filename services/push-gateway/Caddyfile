@@ -1,0 +1,3 @@
+https://push.lnbits.link {
+	reverse_proxy http://localhost:8787
+}

@@ -6,17 +6,17 @@
           <div>
             <div class="text-body1">{{ notificationsTitle }}</div>
             <div class="text-caption text-grey-6">
-              {{ browserNotificationCaption }}
+              {{ notificationCaption }}
             </div>
           </div>
 
           <q-toggle
-            :model-value="browserNotificationsEnabled"
-            :disable="isPermissionRequestInFlight || !browserNotificationsSupported"
+            :model-value="notificationsEnabled"
+            :disable="isPermissionRequestInFlight || !notificationsSupported"
             color="primary"
             checked-icon="notifications_active"
             unchecked-icon="notifications_off"
-            @update:model-value="handleBrowserNotificationsToggle"
+            @update:model-value="handleNotificationsToggle"
           />
         </div>
       </q-card-section>
@@ -25,9 +25,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useQuasar } from 'quasar';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+import {
+  clearAndroidPushNotificationsPreference,
+  getAndroidPushPermission,
+  isAndroidPushNotificationConfigured,
+  isAndroidPushNotificationSupported,
+  readAndroidPushNotificationsPreference,
+  requestAndroidPushNotificationsAfterLogin,
+  saveAndroidPushNotificationsPreference,
+  unregisterAndroidPushNotifications,
+  type AndroidPushPermissionState
+} from 'src/services/androidPushNotificationService';
 import {
   getBrowserNotificationPermission,
   isBrowserNotificationSupported,
@@ -39,12 +50,26 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
 
+type NotificationPermissionState =
+  | BrowserNotificationPermissionState
+  | AndroidPushPermissionState;
+
+type BrowserNotificationPermissionState = ReturnType<typeof getBrowserNotificationPermission>;
+
+const isAndroidRuntime = isAndroidPushNotificationSupported();
 const storedBrowserNotificationsPreference = readBrowserNotificationsPreference();
-const browserNotificationsSupported = isBrowserNotificationSupported();
-const notificationPermission = ref(getBrowserNotificationPermission());
-const browserNotificationsEnabled = ref(
-  storedBrowserNotificationsPreference &&
-    (notificationPermission.value === 'granted' || notificationPermission.value === 'native')
+const storedAndroidPushPreference = readAndroidPushNotificationsPreference();
+const notificationsSupported = isAndroidRuntime
+  ? isAndroidPushNotificationConfigured()
+  : isBrowserNotificationSupported();
+const notificationPermission = ref<NotificationPermissionState>(
+  isAndroidRuntime ? 'prompt' : getBrowserNotificationPermission()
+);
+const notificationsEnabled = ref(
+  isAndroidRuntime
+    ? storedAndroidPushPreference && notificationPermission.value === 'granted'
+    : storedBrowserNotificationsPreference &&
+        (notificationPermission.value === 'granted' || notificationPermission.value === 'native')
 );
 const isPermissionRequestInFlight = ref(false);
 const isDesktopRuntime =
@@ -58,44 +83,83 @@ if (
   saveBrowserNotificationsPreference(false);
 }
 
-const notificationsTitle = computed(() =>
-  isDesktopRuntime ? 'Show desktop notifications' : 'Show browser notifications'
-);
+onMounted(() => {
+  if (!isAndroidRuntime) {
+    return;
+  }
 
-const browserNotificationCaption = computed(() => {
-  if (!browserNotificationsSupported) {
+  void refreshAndroidPermissionState();
+});
+
+const notificationsTitle = computed(() => {
+  if (isAndroidRuntime) {
+    return 'Show Android push notifications';
+  }
+
+  return isDesktopRuntime ? 'Show desktop notifications' : 'Show browser notifications';
+});
+
+const notificationCaption = computed(() => {
+  if (!notificationsSupported) {
+    if (isAndroidRuntime) {
+      return 'Android push notifications need a configured push gateway.';
+    }
+
     return isDesktopRuntime
       ? 'Desktop notifications are not supported in this app environment.'
       : 'This browser does not support notifications for this app.';
   }
 
-  if (browserNotificationsEnabled.value) {
+  if (notificationsEnabled.value) {
+    if (isAndroidRuntime) {
+      return 'Show a notification when new messages arrive while this device is in the background.';
+    }
+
     return isDesktopRuntime
       ? 'Show a desktop notification when a new message arrives.'
       : 'Show a browser notification when a new message arrives.';
   }
 
   if (notificationPermission.value === 'denied') {
-    return 'Browser notifications are blocked. Allow them in browser settings, then toggle this back on.';
+    return isAndroidRuntime
+      ? 'Android notifications are blocked. Allow them in Android settings, then toggle this back on.'
+      : 'Browser notifications are blocked. Allow them in browser settings, then toggle this back on.';
   }
 
   if (notificationPermission.value === 'native') {
     return 'Off by default. Turning this on will enable desktop notifications for this app.';
   }
 
-  return 'Off by default. Turning this on will ask the browser for notification permission.';
+  return isAndroidRuntime
+    ? 'Off by default. Turning this on will ask Android for notification permission.'
+    : 'Off by default. Turning this on will ask the browser for notification permission.';
 });
 
-async function handleBrowserNotificationsToggle(nextValue: boolean): Promise<void> {
+async function refreshAndroidPermissionState(): Promise<void> {
+  notificationPermission.value = await getAndroidPushPermission();
+  notificationsEnabled.value =
+    readAndroidPushNotificationsPreference() && notificationPermission.value === 'granted';
+  if (readAndroidPushNotificationsPreference() && notificationPermission.value !== 'granted') {
+    saveAndroidPushNotificationsPreference(false);
+    notificationsEnabled.value = false;
+  }
+}
+
+async function handleNotificationsToggle(nextValue: boolean): Promise<void> {
+  if (isAndroidRuntime) {
+    await handleAndroidPushNotificationsToggle(nextValue);
+    return;
+  }
+
   if (!nextValue) {
-    browserNotificationsEnabled.value = false;
+    notificationsEnabled.value = false;
     saveBrowserNotificationsPreference(false);
     notificationPermission.value = getBrowserNotificationPermission();
     return;
   }
 
-  if (!browserNotificationsSupported) {
-    browserNotificationsEnabled.value = false;
+  if (!notificationsSupported) {
+    notificationsEnabled.value = false;
     saveBrowserNotificationsPreference(false);
     $q.notify({
       type: 'warning',
@@ -107,7 +171,7 @@ async function handleBrowserNotificationsToggle(nextValue: boolean): Promise<voi
   }
 
   if (notificationPermission.value === 'native') {
-    browserNotificationsEnabled.value = true;
+    notificationsEnabled.value = true;
     saveBrowserNotificationsPreference(true);
     return;
   }
@@ -119,12 +183,12 @@ async function handleBrowserNotificationsToggle(nextValue: boolean): Promise<voi
     notificationPermission.value = permission;
 
     if (permission === 'granted') {
-      browserNotificationsEnabled.value = true;
+      notificationsEnabled.value = true;
       saveBrowserNotificationsPreference(true);
       return;
     }
 
-    browserNotificationsEnabled.value = false;
+    notificationsEnabled.value = false;
     saveBrowserNotificationsPreference(false);
 
     $q.notify({
@@ -137,12 +201,75 @@ async function handleBrowserNotificationsToggle(nextValue: boolean): Promise<voi
       timeout: 3200
     });
   } catch (error) {
-    browserNotificationsEnabled.value = false;
+    notificationsEnabled.value = false;
     saveBrowserNotificationsPreference(false);
     reportUiError(
       'Failed to update browser notification preference',
       error,
       'Failed to update browser notifications.'
+    );
+  } finally {
+    isPermissionRequestInFlight.value = false;
+  }
+}
+
+async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise<void> {
+  if (!nextValue) {
+    isPermissionRequestInFlight.value = true;
+    try {
+      await unregisterAndroidPushNotifications();
+      notificationsEnabled.value = false;
+      notificationPermission.value = await getAndroidPushPermission();
+    } catch (error) {
+      notificationsEnabled.value = readAndroidPushNotificationsPreference();
+      reportUiError(
+        'Failed to disable Android push notifications',
+        error,
+        'Failed to disable push notifications.'
+      );
+    } finally {
+      isPermissionRequestInFlight.value = false;
+    }
+    return;
+  }
+
+  if (!notificationsSupported) {
+    notificationsEnabled.value = false;
+    clearAndroidPushNotificationsPreference();
+    $q.notify({
+      type: 'warning',
+      message: 'Android push notifications need a configured push gateway.',
+      position: 'top',
+      timeout: 3200
+    });
+    return;
+  }
+
+  isPermissionRequestInFlight.value = true;
+  try {
+    const permission = await requestAndroidPushNotificationsAfterLogin();
+    notificationPermission.value = permission;
+    notificationsEnabled.value = permission === 'granted';
+
+    if (permission !== 'granted') {
+      clearAndroidPushNotificationsPreference();
+      $q.notify({
+        type: permission === 'denied' ? 'warning' : 'info',
+        message:
+          permission === 'denied'
+            ? 'Android notifications were blocked. Allow them in Android settings to enable this.'
+            : 'Android notification permission was not granted.',
+        position: 'top',
+        timeout: 3200
+      });
+    }
+  } catch (error) {
+    notificationsEnabled.value = false;
+    clearAndroidPushNotificationsPreference();
+    reportUiError(
+      'Failed to update Android push notification preference',
+      error,
+      'Failed to update push notifications.'
     );
   } finally {
     isPermissionRequestInFlight.value = false;
