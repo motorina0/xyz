@@ -15,6 +15,11 @@ export interface RelayRegistration {
   read: boolean;
 }
 
+export interface WatchedRecipientLabel {
+  recipientPubkey: string;
+  label: string;
+}
+
 export interface DeviceRegistrationInput {
   ownerPubkey: string;
   deviceId: string;
@@ -23,6 +28,7 @@ export interface DeviceRegistrationInput {
   fcmToken: string;
   relays: RelayRegistration[];
   watchedPubkeys: string[];
+  watchedRecipientLabels: WatchedRecipientLabel[];
   notificationsEnabled: boolean;
 }
 
@@ -35,11 +41,13 @@ export interface ActiveDeliveryDevice {
   ownerPubkey: string;
   deviceId: string;
   fcmToken: string;
+  notificationLabel: string | null;
 }
 
 export interface RelayEvent {
   id?: string;
   kind?: number;
+  created_at?: number;
   tags?: unknown;
 }
 
@@ -47,6 +55,10 @@ export interface PushSendInput {
   token: string;
   recipientPubkey: string;
   eventId: string;
+  notificationTitle: string;
+  notificationBody: string;
+  notificationTag: string;
+  notificationCount: number;
 }
 
 export type PushSendResult = { ok: true } | { ok: false; invalidToken: boolean; error: unknown };

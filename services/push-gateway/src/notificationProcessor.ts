@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
 import { logDebug, logError, logInfo, logWarn } from './logger.js';
 import type { PushGatewayRepository } from './repository.js';
-import type { PushProvider, PushSendResult, RelayEvent } from './types.js';
+import type { ActiveDeliveryDevice, PushProvider, PushSendResult, RelayEvent } from './types.js';
 import { normalizePubkey } from './validation.js';
+
+const DEFAULT_NOTIFICATION_TITLE = 'Nostr Chat';
 
 function isPushSendFailure(
   result: PushSendResult
@@ -36,6 +39,48 @@ function readRecipientPubkeys(event: RelayEvent): string[] {
   }
 
   return Array.from(pubkeys);
+}
+
+function resolveNotificationGrouping(
+  device: ActiveDeliveryDevice,
+  recipientPubkey: string
+): {
+  title: string;
+  tagKey: string;
+} {
+  const label = device.notificationLabel?.trim();
+  if (label) {
+    return {
+      title: label,
+      tagKey: `label:${label}`,
+    };
+  }
+
+  if (recipientPubkey !== device.ownerPubkey) {
+    return {
+      title: DEFAULT_NOTIFICATION_TITLE,
+      tagKey: `recipient:${recipientPubkey}`,
+    };
+  }
+
+  return {
+    title: DEFAULT_NOTIFICATION_TITLE,
+    tagKey: 'direct-messages',
+  };
+}
+
+function buildNotificationTag(ownerPubkey: string, tagKey: string): string {
+  const hash = createHash('sha256')
+    .update(ownerPubkey)
+    .update('\0')
+    .update(tagKey)
+    .digest('hex')
+    .slice(0, 32);
+  return `nostr-chat:${hash}`;
+}
+
+function buildNotificationBody(notificationCount: number): string {
+  return notificationCount > 1 ? `${notificationCount} new messages` : 'New message';
 }
 
 export async function processRelayEvent(options: {
@@ -98,17 +143,31 @@ export async function processRelayEvent(options: {
     });
 
     for (const device of devices) {
+      const notificationGrouping = resolveNotificationGrouping(device, recipientPubkey);
+      const notificationTag = buildNotificationTag(device.ownerPubkey, notificationGrouping.tagKey);
+      const notificationCount = options.repository.incrementNotificationCount(
+        device.ownerPubkey,
+        device.deviceId,
+        notificationTag
+      );
       logDebug('Sending FCM notification to registered device.', {
         relayUrl: options.relayUrl,
         eventId,
         recipientPubkey,
         ownerPubkey: device.ownerPubkey,
         deviceId: device.deviceId,
+        notificationTitle: notificationGrouping.title,
+        notificationTag,
+        notificationCount,
       });
       const result = await options.pushProvider.sendNewMessageNotification({
         token: device.fcmToken,
         recipientPubkey,
         eventId,
+        notificationTitle: notificationGrouping.title,
+        notificationBody: buildNotificationBody(notificationCount),
+        notificationTag,
+        notificationCount,
       });
 
       if (isPushSendFailure(result)) {
@@ -127,6 +186,8 @@ export async function processRelayEvent(options: {
           recipientPubkey,
           ownerPubkey: device.ownerPubkey,
           deviceId: device.deviceId,
+          notificationTag,
+          notificationCount,
           invalidToken: result.invalidToken,
         });
         logError('Failed to send FCM notification.', {
@@ -143,6 +204,8 @@ export async function processRelayEvent(options: {
         recipientPubkey,
         ownerPubkey: device.ownerPubkey,
         deviceId: device.deviceId,
+        notificationTag,
+        notificationCount,
       });
     }
 

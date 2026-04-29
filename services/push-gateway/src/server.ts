@@ -52,6 +52,7 @@ function summarizeRegistrationInput(input: DeviceRegistrationInput): Record<stri
     relayUrls: input.relays.map((relay) => relay.url),
     watchedPubkeyCount: input.watchedPubkeys.length,
     watchedPubkeys: input.watchedPubkeys,
+    watchedRecipientLabelCount: input.watchedRecipientLabels.length,
   };
 }
 

@@ -137,6 +137,7 @@ export class RelayWorker {
           {
             kinds: [1059],
             '#p': connection.recipientPubkeys,
+            limit: 0,
           },
         ])
       );

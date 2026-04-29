@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
-import { migrateDatabase } from '../src/database.js';
+import { initializeDatabaseSchema } from '../src/database.js';
 import { PushGatewayRepository } from '../src/repository.js';
 import { createServer } from '../src/server.js';
 import type { GatewayConfig } from '../src/types.js';
@@ -20,7 +20,7 @@ const config: GatewayConfig = {
 
 function createTestServer() {
   const database = new DatabaseSync(':memory:');
-  migrateDatabase(database);
+  initializeDatabaseSchema(database);
   const repository = new PushGatewayRepository(database);
   const relayWorker = {
     refresh: vi.fn(),
@@ -132,7 +132,11 @@ describe('push gateway HTTP API', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ relayCount: 1, watchedPubkeyCount: 2 });
+    expect(response.json()).toEqual({
+      relayCount: 1,
+      watchedPubkeyCount: 2,
+      watchedRecipientLabelCount: 0,
+    });
     expect(repository.listDeliveryDevices(VALID_PUBKEY_B)).toHaveLength(1);
     expect(relayWorker.refresh).toHaveBeenCalledTimes(1);
   });

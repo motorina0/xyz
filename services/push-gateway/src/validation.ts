@@ -1,10 +1,16 @@
-import type { DeviceRegistrationInput, DeviceUnregisterInput, RelayRegistration } from './types.js';
+import type {
+  DeviceRegistrationInput,
+  DeviceUnregisterInput,
+  RelayRegistration,
+  WatchedRecipientLabel,
+} from './types.js';
 
 const HEX_PUBKEY_PATTERN = /^[0-9a-f]{64}$/;
 const MAX_DEVICE_ID_LENGTH = 160;
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_RELAY_COUNT = 64;
 const MAX_WATCHED_PUBKEY_COUNT = 256;
+const MAX_NOTIFICATION_LABEL_LENGTH = 120;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -109,6 +115,48 @@ function normalizeWatchedPubkeys(value: unknown): string[] {
   return Array.from(pubkeys).sort((first, second) => first.localeCompare(second));
 }
 
+function normalizeNotificationLabel(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.slice(0, MAX_NOTIFICATION_LABEL_LENGTH).trim();
+}
+
+function normalizeWatchedRecipientLabels(
+  value: unknown,
+  watchedPubkeys: string[]
+): WatchedRecipientLabel[] {
+  if (!Array.isArray(value) || value.length > MAX_WATCHED_PUBKEY_COUNT) {
+    return [];
+  }
+
+  const watchedPubkeySet = new Set(watchedPubkeys);
+  const labels = new Map<string, string>();
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+
+    const recipientPubkey = normalizePubkey(entry.recipientPubkey);
+    const label = normalizeNotificationLabel(entry.label);
+    if (!recipientPubkey || !label || !watchedPubkeySet.has(recipientPubkey)) {
+      continue;
+    }
+
+    labels.set(recipientPubkey, label);
+  }
+
+  return Array.from(labels.entries())
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([recipientPubkey, label]) => ({ recipientPubkey, label }));
+}
+
 export function parseDeviceRegistrationInput(value: unknown): DeviceRegistrationInput {
   if (!isRecord(value)) {
     throw new Error('Registration body must be an object.');
@@ -119,6 +167,10 @@ export function parseDeviceRegistrationInput(value: unknown): DeviceRegistration
   const fcmToken = normalizeFcmToken(value.fcmToken);
   const relays = normalizeRelays(value.relays);
   const watchedPubkeys = normalizeWatchedPubkeys(value.watchedPubkeys);
+  const watchedRecipientLabels = normalizeWatchedRecipientLabels(
+    value.watchedRecipientLabels,
+    watchedPubkeys
+  );
   const appVersion = typeof value.appVersion === 'string' ? value.appVersion.trim() : '';
 
   if (!ownerPubkey) {
@@ -153,6 +205,7 @@ export function parseDeviceRegistrationInput(value: unknown): DeviceRegistration
     fcmToken,
     relays,
     watchedPubkeys,
+    watchedRecipientLabels,
     notificationsEnabled: value.notificationsEnabled === true,
   };
 }

@@ -12,11 +12,31 @@
 
           <q-toggle
             :model-value="notificationsEnabled"
-            :disable="isPermissionRequestInFlight || !notificationsSupported"
+            :disable="isNotificationToggleDisabled"
             color="primary"
             checked-icon="notifications_active"
             unchecked-icon="notifications_off"
             @update:model-value="handleNotificationsToggle"
+          />
+        </div>
+
+        <q-separator v-if="isAndroidRuntime" />
+
+        <div v-if="isAndroidRuntime" class="notifications-card__row">
+          <div>
+            <div class="text-body1">Show group name in notification</div>
+            <div class="text-caption text-grey-6">
+              {{ groupNameNotificationCaption }}
+            </div>
+          </div>
+
+          <q-toggle
+            :model-value="showGroupNameInNotification"
+            :disable="isGroupNameNotificationToggleDisabled"
+            color="primary"
+            checked-icon="groups"
+            unchecked-icon="group_off"
+            @update:model-value="handleGroupNameNotificationToggle"
           />
         </div>
       </q-card-section>
@@ -33,8 +53,11 @@ import {
   getAndroidPushPermission,
   isAndroidPushNotificationConfigured,
   isAndroidPushNotificationSupported,
+  readAndroidPushNotificationGroupNamesPreference,
   readAndroidPushNotificationsPreference,
+  refreshAndroidPushRegistration,
   requestAndroidPushNotificationsAfterLogin,
+  saveAndroidPushNotificationGroupNamesPreference,
   saveAndroidPushNotificationsPreference,
   unregisterAndroidPushNotifications,
   type AndroidPushPermissionState
@@ -59,6 +82,7 @@ type BrowserNotificationPermissionState = ReturnType<typeof getBrowserNotificati
 const isAndroidRuntime = isAndroidPushNotificationSupported();
 const storedBrowserNotificationsPreference = readBrowserNotificationsPreference();
 const storedAndroidPushPreference = readAndroidPushNotificationsPreference();
+const storedAndroidPushGroupNamePreference = readAndroidPushNotificationGroupNamesPreference();
 const notificationsSupported = isAndroidRuntime
   ? isAndroidPushNotificationConfigured()
   : isBrowserNotificationSupported();
@@ -71,7 +95,14 @@ const notificationsEnabled = ref(
     : storedBrowserNotificationsPreference &&
         (notificationPermission.value === 'granted' || notificationPermission.value === 'native')
 );
+const showGroupNameInNotification = ref(
+  isAndroidRuntime &&
+    storedAndroidPushPreference &&
+    storedAndroidPushGroupNamePreference &&
+    notificationPermission.value === 'granted'
+);
 const isPermissionRequestInFlight = ref(false);
+const isGroupNameNotificationRequestInFlight = ref(false);
 const isDesktopRuntime =
   typeof window !== 'undefined' && Boolean(window.desktopRuntime?.isElectron);
 
@@ -97,6 +128,32 @@ const notificationsTitle = computed(() => {
   }
 
   return isDesktopRuntime ? 'Show desktop notifications' : 'Show browser notifications';
+});
+
+const isNotificationToggleDisabled = computed(
+  () =>
+    isPermissionRequestInFlight.value ||
+    isGroupNameNotificationRequestInFlight.value ||
+    !notificationsSupported
+);
+
+const isGroupNameNotificationToggleDisabled = computed(
+  () =>
+    !isAndroidRuntime ||
+    !notificationsSupported ||
+    !notificationsEnabled.value ||
+    isPermissionRequestInFlight.value ||
+    isGroupNameNotificationRequestInFlight.value
+);
+
+const groupNameNotificationCaption = computed(() => {
+  if (!notificationsEnabled.value) {
+    return 'Enable Android push notifications to use group names.';
+  }
+
+  return showGroupNameInNotification.value
+    ? 'Group push notifications use the local group chat name.'
+    : 'Group push notifications use a generic title.';
 });
 
 const notificationCaption = computed(() => {
@@ -143,6 +200,14 @@ async function refreshAndroidPermissionState(): Promise<void> {
     saveAndroidPushNotificationsPreference(false);
     notificationsEnabled.value = false;
   }
+
+  if (!notificationsEnabled.value) {
+    saveAndroidPushNotificationGroupNamesPreference(false);
+    showGroupNameInNotification.value = false;
+    return;
+  }
+
+  showGroupNameInNotification.value = readAndroidPushNotificationGroupNamesPreference();
 }
 
 async function handleNotificationsToggle(nextValue: boolean): Promise<void> {
@@ -219,9 +284,13 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
     try {
       await unregisterAndroidPushNotifications();
       notificationsEnabled.value = false;
+      showGroupNameInNotification.value = false;
       notificationPermission.value = await getAndroidPushPermission();
     } catch (error) {
-      notificationsEnabled.value = readAndroidPushNotificationsPreference();
+      notificationsEnabled.value =
+        readAndroidPushNotificationsPreference() && notificationPermission.value === 'granted';
+      showGroupNameInNotification.value =
+        notificationsEnabled.value && readAndroidPushNotificationGroupNamesPreference();
       reportUiError(
         'Failed to disable Android push notifications',
         error,
@@ -235,6 +304,7 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
 
   if (!notificationsSupported) {
     notificationsEnabled.value = false;
+    showGroupNameInNotification.value = false;
     clearAndroidPushNotificationsPreference();
     $q.notify({
       type: 'warning',
@@ -250,9 +320,12 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
     const permission = await requestAndroidPushNotificationsAfterLogin();
     notificationPermission.value = permission;
     notificationsEnabled.value = permission === 'granted';
+    showGroupNameInNotification.value =
+      notificationsEnabled.value && readAndroidPushNotificationGroupNamesPreference();
 
     if (permission !== 'granted') {
       clearAndroidPushNotificationsPreference();
+      showGroupNameInNotification.value = false;
       $q.notify({
         type: permission === 'denied' ? 'warning' : 'info',
         message:
@@ -265,6 +338,7 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
     }
   } catch (error) {
     notificationsEnabled.value = false;
+    showGroupNameInNotification.value = false;
     clearAndroidPushNotificationsPreference();
     reportUiError(
       'Failed to update Android push notification preference',
@@ -273,6 +347,33 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
     );
   } finally {
     isPermissionRequestInFlight.value = false;
+  }
+}
+
+async function handleGroupNameNotificationToggle(nextValue: boolean): Promise<void> {
+  if (!isAndroidRuntime || !notificationsEnabled.value) {
+    saveAndroidPushNotificationGroupNamesPreference(false);
+    showGroupNameInNotification.value = false;
+    return;
+  }
+
+  const previousValue = showGroupNameInNotification.value;
+  showGroupNameInNotification.value = nextValue;
+  saveAndroidPushNotificationGroupNamesPreference(nextValue);
+  isGroupNameNotificationRequestInFlight.value = true;
+
+  try {
+    await refreshAndroidPushRegistration();
+  } catch (error) {
+    showGroupNameInNotification.value = previousValue;
+    saveAndroidPushNotificationGroupNamesPreference(previousValue);
+    reportUiError(
+      'Failed to update Android push notification group name preference',
+      error,
+      'Failed to update group name notifications.'
+    );
+  } finally {
+    isGroupNameNotificationRequestInFlight.value = false;
   }
 }
 </script>

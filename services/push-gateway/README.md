@@ -2,9 +2,9 @@
 
 TypeScript gateway for Android killed-app push notifications.
 
-The service stores Android FCM tokens, user-defined relay URLs, and opaque NIP-17 watched recipient pubkeys in SQLite. It subscribes to `kind:1059` gift-wrap events with matching `#p` tags and sends generic FCM notifications.
+The service stores Android FCM tokens, user-defined relay URLs, opaque NIP-17 watched recipient pubkeys, optional notification labels, and notification grouping counters in SQLite. It subscribes to `kind:1059` gift-wrap events with matching `#p` tags and sends FCM notifications grouped by label.
 
-The gateway must not receive user private keys, group keys, display names, chat routes, or decrypted message content.
+The gateway must not receive user private keys, group keys, chat routes, sender names, or decrypted message content. Notification labels are treated as opaque presentation labels for watched pubkeys.
 
 ## Development
 

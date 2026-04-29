@@ -37,10 +37,11 @@ The gateway must never receive or store user private keys, group private keys, e
 
 V1 behavior:
 
-- All relay-detected notifications use a generic title/body such as `Nostr Chat` and `New message`.
-- The gateway stores only device data, relay URLs, and watched recipient pubkeys.
+- Direct-message relay-detected notifications use a generic title/body such as `Nostr Chat` and `New message`.
+- Group relay-detected notifications may use a local app-provided notification label when the user enables `Show group name in notification`. If the group has no local name, the app sends `Nostr Group`.
+- The gateway stores only device data, relay URLs, watched recipient pubkeys, optional bounded notification labels, and notification grouping counters.
 - The app owns the meaning of every watched pubkey. For this app, the list contains the logged-in user pubkey and the latest epoch public keys for groups.
-- Rich notifications with sender/chat names require a future sender-side push-hint flow or a protocol-level notification hint. That is not part of the relay-observed v1 path.
+- Direct-message sender names and message text require a future sender-side push-hint flow or a protocol-level notification hint. That is not part of the relay-observed v1 path.
 
 ## Architecture
 
@@ -264,6 +265,12 @@ Request:
     "<owner pubkey>",
     "<current group epoch pubkey>"
   ],
+  "watchedRecipientLabels": [
+    {
+      "recipientPubkey": "<current group epoch pubkey>",
+      "label": "Local group name"
+    }
+  ],
   "notificationsEnabled": true
 }
 ```
@@ -272,7 +279,8 @@ Behavior:
 
 - normalize and validate pubkeys,
 - normalize and validate relay URLs,
-- replace all relays and watched pubkeys for that owner/device atomically,
+- replace all relays, watched pubkeys, watched recipient labels, and grouping counters for that owner/device atomically,
+- stamp the device subscription with the gateway's current Unix timestamp,
 - store the FCM token for delivery,
 - restart affected relay subscriptions,
 - return registered watched pubkey and relay counts.
@@ -306,7 +314,7 @@ V1 may implement this by calling the same service function as register.
 
 ### SQLite Schema
 
-Use migrations. Do not rely on implicit `CREATE TABLE` drift.
+The v1 gateway may initialize a fresh SQLite database from the current schema. Existing gateway databases do not need data migrations.
 
 Minimum tables:
 
@@ -355,7 +363,8 @@ Filter:
 ```json
 {
   "kinds": [1059],
-  "#p": ["<recipient pubkey 1>", "<recipient pubkey 2>"]
+  "#p": ["<recipient pubkey 1>", "<recipient pubkey 2>"],
+  "limit": 0
 }
 ```
 
@@ -363,6 +372,8 @@ Implementation rules:
 
 - group watched pubkeys by relay URL,
 - subscribe only to read relays registered by users,
+- use live-only subscriptions with `limit: 0` instead of `since`,
+- do not filter delivery by relay event `created_at`, because NIP-17 gift-wrap timestamps may be randomized or backdated,
 - reconnect with backoff,
 - deduplicate events by `(event id, recipient pubkey)`,
 - never unwrap or decrypt events,
@@ -389,7 +400,7 @@ Relay-detected notification:
 }
 ```
 
-The gateway must not include route, target kind, chat pubkey, title overrides, display names, sender names, or decrypted message content in v1. The app may use `recipientPubkey` locally after launch to decide whether it maps to the user inbox, a current group epoch, or an unknown/stale recipient.
+The gateway must not include route, target kind, chat pubkey, sender names, or decrypted message content in v1. It may use the app-provided watched recipient label as the notification title when present. The app may use `recipientPubkey` locally after launch to decide whether it maps to the user inbox, a current group epoch, or an unknown/stale recipient.
 
 ### iOS Extension Points
 
@@ -407,7 +418,8 @@ Do not implement APNs in v1.
 - Never send private keys to the gateway.
 - Never send decrypted message content to the gateway.
 - Never log FCM tokens, auth headers, Firebase credentials, or full registration payloads.
-- Do not send display names, group names, sender names, chat routes, or chat metadata to the gateway.
+- Do not send sender names, chat routes, or chat metadata to the gateway.
+- Only send group notification labels when the user enables `Show group name in notification`; the gateway must treat them as opaque labels for watched recipient pubkeys and must not branch on groups.
 - Validate all pubkeys and relay URLs before storing.
 - Use constant, bounded request body sizes for registration endpoints.
 - Use rate limits per pubkey and per IP.
@@ -420,7 +432,7 @@ Do not implement APNs in v1.
 
 - Create `services/push-gateway`.
 - Add HTTP server, config loader, logging, health endpoint.
-- Add SQLite migrations and repository layer.
+- Add SQLite schema initialization and repository layer.
 - Add NIP-98 auth validation middleware.
 - Add unit tests for auth, normalization, persistence, and token redaction.
 
@@ -468,6 +480,9 @@ Gateway:
 - Gateway subscribes only to user-registered relays.
 - Gateway watches only registered `kind:1059` `#p` recipient pubkeys.
 - Gateway has no direct-message or group-specific branching.
+- Gateway accepts optional watched recipient labels and treats them only as notification presentation labels.
+- Notifications with the same label update the same Android notification card and increment the visible count.
+- Direct-message notifications remain grouped under the generic `Nostr Chat` title.
 - Duplicate event sightings across relays produce at most one FCM send per recipient pubkey/device.
 - FCM invalid-token responses disable that device.
 - Logs redact tokens and auth headers.
@@ -477,6 +492,8 @@ Android app:
 - Notification settings still work for browser and Electron.
 - Android runtime shows Android push-specific copy.
 - Toggle-on requests Android notification permission and FCM registration.
+- Toggle-on also turns `Show group name in notification` on.
+- Toggle-off disables `Show group name in notification` and sets it off.
 - Toggle-on registers the device with the gateway only after pubkey ownership proof is signed.
 - Toggle-off unregisters the device from the gateway.
 - Logout attempts gateway unregister and still completes local logout if the gateway is unavailable.
@@ -488,7 +505,8 @@ Protocol and privacy:
 
 - User private keys, group private keys, epoch private keys, and decrypted message bodies are never sent to the gateway.
 - Direct-message sender names are not claimed in relay-detected v1 notifications because the gateway cannot know them without decryption.
-- Group display names, chat names, routes, and target kinds are not sent to the gateway.
+- Group names are sent only as user-enabled notification labels for current group epoch pubkeys.
+- Chat routes and target kinds are not sent to the gateway.
 
 ## Validation Commands
 

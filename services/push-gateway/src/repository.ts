@@ -20,8 +20,12 @@ export class PushGatewayRepository {
   registerDevice(input: DeviceRegistrationInput): {
     relayCount: number;
     watchedPubkeyCount: number;
+    watchedRecipientLabelCount: number;
   } {
     const timestamp = nowIso();
+    const labelByRecipientPubkey = new Map(
+      input.watchedRecipientLabels.map((entry) => [entry.recipientPubkey, entry.label])
+    );
     this.database.exec('BEGIN IMMEDIATE;');
 
     try {
@@ -62,6 +66,9 @@ export class PushGatewayRepository {
       this.database
         .prepare('DELETE FROM watched_pubkeys WHERE owner_pubkey = ? AND device_id = ?')
         .run(input.ownerPubkey, input.deviceId);
+      this.database
+        .prepare('DELETE FROM notification_counts WHERE owner_pubkey = ? AND device_id = ?')
+        .run(input.ownerPubkey, input.deviceId);
 
       const insertRelay = this.database.prepare(`
         INSERT INTO device_relays (owner_pubkey, device_id, relay_url, read, created_at)
@@ -82,19 +89,28 @@ export class PushGatewayRepository {
           owner_pubkey,
           device_id,
           recipient_pubkey,
+          notification_label,
           created_at,
           updated_at
         )
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
       `);
       for (const pubkey of input.watchedPubkeys) {
-        insertPubkey.run(input.ownerPubkey, input.deviceId, pubkey, timestamp, timestamp);
+        insertPubkey.run(
+          input.ownerPubkey,
+          input.deviceId,
+          pubkey,
+          labelByRecipientPubkey.get(pubkey) ?? null,
+          timestamp,
+          timestamp
+        );
       }
 
       this.database.exec('COMMIT;');
       return {
         relayCount: input.relays.length,
         watchedPubkeyCount: input.watchedPubkeys.length,
+        watchedRecipientLabelCount: input.watchedRecipientLabels.length,
       };
     } catch (error) {
       this.database.exec('ROLLBACK;');
@@ -103,15 +119,28 @@ export class PushGatewayRepository {
   }
 
   unregisterDevice(input: DeviceUnregisterInput): void {
-    this.database
-      .prepare('DELETE FROM devices WHERE owner_pubkey = ? AND device_id = ?')
-      .run(input.ownerPubkey, input.deviceId);
+    this.database.exec('BEGIN IMMEDIATE;');
+
+    try {
+      this.database
+        .prepare('DELETE FROM notification_counts WHERE owner_pubkey = ? AND device_id = ?')
+        .run(input.ownerPubkey, input.deviceId);
+      this.database
+        .prepare('DELETE FROM devices WHERE owner_pubkey = ? AND device_id = ?')
+        .run(input.ownerPubkey, input.deviceId);
+      this.database.exec('COMMIT;');
+    } catch (error) {
+      this.database.exec('ROLLBACK;');
+      throw error;
+    }
   }
 
   listRelayWatchPlans(): RelayWatchPlan[] {
     const rows = this.database
       .prepare(`
-        SELECT DISTINCT dr.relay_url AS relayUrl, wp.recipient_pubkey AS recipientPubkey
+        SELECT DISTINCT
+          dr.relay_url AS relayUrl,
+          wp.recipient_pubkey AS recipientPubkey
         FROM devices d
         JOIN device_relays dr
           ON dr.owner_pubkey = d.owner_pubkey AND dr.device_id = d.device_id
@@ -124,14 +153,16 @@ export class PushGatewayRepository {
 
     const plans = new Map<string, Set<string>>();
     for (const row of rows) {
-      const pubkeys = plans.get(row.relayUrl) ?? new Set<string>();
-      pubkeys.add(row.recipientPubkey);
-      plans.set(row.relayUrl, pubkeys);
+      const plan = plans.get(row.relayUrl) ?? new Set<string>();
+      plan.add(row.recipientPubkey);
+      plans.set(row.relayUrl, plan);
     }
 
-    return Array.from(plans.entries()).map(([relayUrl, pubkeys]) => ({
+    return Array.from(plans.entries()).map(([relayUrl, recipientPubkeys]) => ({
       relayUrl,
-      recipientPubkeys: Array.from(pubkeys).sort((first, second) => first.localeCompare(second)),
+      recipientPubkeys: Array.from(recipientPubkeys).sort((first, second) =>
+        first.localeCompare(second)
+      ),
     }));
   }
 
@@ -158,7 +189,8 @@ export class PushGatewayRepository {
         SELECT DISTINCT
           d.owner_pubkey AS ownerPubkey,
           d.device_id AS deviceId,
-          d.fcm_token AS fcmToken
+          d.fcm_token AS fcmToken,
+          wp.notification_label AS notificationLabel
         FROM devices d
         JOIN watched_pubkeys wp
           ON wp.owner_pubkey = d.owner_pubkey AND wp.device_id = d.device_id
@@ -168,13 +200,75 @@ export class PushGatewayRepository {
       .all(recipientPubkey) as unknown as ActiveDeliveryDevice[];
   }
 
+  incrementNotificationCount(
+    ownerPubkey: string,
+    deviceId: string,
+    notificationTag: string
+  ): number {
+    const timestamp = nowIso();
+    this.database.exec('BEGIN IMMEDIATE;');
+
+    try {
+      const row = this.database
+        .prepare(`
+          SELECT notification_count AS notificationCount
+          FROM notification_counts
+          WHERE owner_pubkey = ? AND device_id = ? AND notification_tag = ?
+        `)
+        .get(ownerPubkey, deviceId, notificationTag) as { notificationCount: number } | undefined;
+      const nextCount = Math.max(0, Number(row?.notificationCount ?? 0)) + 1;
+
+      if (row) {
+        this.database
+          .prepare(`
+            UPDATE notification_counts
+            SET notification_count = ?, updated_at = ?
+            WHERE owner_pubkey = ? AND device_id = ? AND notification_tag = ?
+          `)
+          .run(nextCount, timestamp, ownerPubkey, deviceId, notificationTag);
+      } else {
+        this.database
+          .prepare(`
+            INSERT INTO notification_counts (
+              owner_pubkey,
+              device_id,
+              notification_tag,
+              notification_count,
+              created_at,
+              updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+          `)
+          .run(ownerPubkey, deviceId, notificationTag, nextCount, timestamp, timestamp);
+      }
+
+      this.database.exec('COMMIT;');
+      return nextCount;
+    } catch (error) {
+      this.database.exec('ROLLBACK;');
+      throw error;
+    }
+  }
+
   disableDevice(ownerPubkey: string, deviceId: string): void {
-    this.database
-      .prepare(`
-        UPDATE devices
-        SET notifications_enabled = 0, updated_at = ?
-        WHERE owner_pubkey = ? AND device_id = ?
-      `)
-      .run(nowIso(), ownerPubkey, deviceId);
+    const timestamp = nowIso();
+    this.database.exec('BEGIN IMMEDIATE;');
+
+    try {
+      this.database
+        .prepare(`
+          UPDATE devices
+          SET notifications_enabled = 0, updated_at = ?
+          WHERE owner_pubkey = ? AND device_id = ?
+        `)
+        .run(timestamp, ownerPubkey, deviceId);
+      this.database
+        .prepare('DELETE FROM notification_counts WHERE owner_pubkey = ? AND device_id = ?')
+        .run(ownerPubkey, deviceId);
+      this.database.exec('COMMIT;');
+    } catch (error) {
+      this.database.exec('ROLLBACK;');
+      throw error;
+    }
   }
 }

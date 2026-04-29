@@ -11,11 +11,11 @@ export function openDatabase(databasePath: string): DatabaseSync {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
   database.exec('PRAGMA busy_timeout = 5000;');
-  migrateDatabase(database);
+  initializeDatabaseSchema(database);
   return database;
 }
 
-export function migrateDatabase(database: DatabaseSync): void {
+export function initializeDatabaseSchema(database: DatabaseSync): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS devices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +47,7 @@ export function migrateDatabase(database: DatabaseSync): void {
       owner_pubkey TEXT NOT NULL,
       device_id TEXT NOT NULL,
       recipient_pubkey TEXT NOT NULL,
+      notification_label TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       UNIQUE(owner_pubkey, device_id, recipient_pubkey),
@@ -62,6 +63,19 @@ export function migrateDatabase(database: DatabaseSync): void {
       first_seen_at TEXT NOT NULL,
       notified_at TEXT,
       UNIQUE(event_id, recipient_pubkey)
+    );
+
+    CREATE TABLE IF NOT EXISTS notification_counts (
+      owner_pubkey TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      notification_tag TEXT NOT NULL,
+      notification_count INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      UNIQUE(owner_pubkey, device_id, notification_tag),
+      FOREIGN KEY(owner_pubkey, device_id)
+        REFERENCES devices(owner_pubkey, device_id)
+        ON DELETE CASCADE
     );
 
     CREATE INDEX IF NOT EXISTS idx_device_relays_relay_url
