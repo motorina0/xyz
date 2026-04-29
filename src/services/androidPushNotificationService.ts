@@ -151,15 +151,19 @@ async function ensureAndroidPushChannel(): Promise<void> {
     return;
   }
 
-  await PushNotifications.createChannel({
-    id: ANDROID_PUSH_CHANNEL_ID,
-    name: ANDROID_PUSH_CHANNEL_NAME,
-    description: ANDROID_PUSH_CHANNEL_DESCRIPTION,
-    importance: 4,
-    visibility: 1,
-    sound: 'default',
-    vibration: true,
-  });
+  try {
+    await PushNotifications.createChannel({
+      id: ANDROID_PUSH_CHANNEL_ID,
+      name: ANDROID_PUSH_CHANNEL_NAME,
+      description: ANDROID_PUSH_CHANNEL_DESCRIPTION,
+      importance: 4,
+      visibility: 1,
+      sound: 'default',
+      vibration: true,
+    });
+  } catch (error) {
+    console.warn('Failed to create Android push notification channel; continuing.', error);
+  }
 }
 
 async function requestFcmToken(): Promise<string> {
@@ -356,9 +360,7 @@ export function startAndroidPushNotificationListeners(
   }
 
   didInstallPushListeners = true;
-  void ensureAndroidPushChannel().catch((error) => {
-    console.warn('Failed to create Android push notification channel.', error);
-  });
+  void ensureAndroidPushChannel();
 
   void PushNotifications.addListener('pushNotificationActionPerformed', (event) => {
     const recipientPubkey = inputSanitizerService.normalizeHexKey(
