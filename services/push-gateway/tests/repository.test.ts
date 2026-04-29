@@ -21,8 +21,20 @@ describe('PushGatewayRepository', () => {
       fcmToken: 'token-1',
       relays: [{ url: 'wss://relay.one/', read: true }],
       watchedPubkeys: [VALID_PUBKEY_A, VALID_PUBKEY_B],
+      watchedRecipientLabels: [{ recipientPubkey: VALID_PUBKEY_B, label: 'Friends' }],
       notificationsEnabled: true,
     });
+
+    expect(repository.listDeliveryDevices(VALID_PUBKEY_B)).toEqual([
+      {
+        ownerPubkey: VALID_PUBKEY_A,
+        deviceId: 'device-1',
+        fcmToken: 'token-1',
+        notificationLabel: 'Friends',
+      },
+    ]);
+    expect(repository.incrementNotificationCount(VALID_PUBKEY_A, 'device-1', 'tag-1')).toBe(1);
+    expect(repository.incrementNotificationCount(VALID_PUBKEY_A, 'device-1', 'tag-1')).toBe(2);
 
     repository.registerDevice({
       ownerPubkey: VALID_PUBKEY_A,
@@ -32,6 +44,7 @@ describe('PushGatewayRepository', () => {
       fcmToken: 'token-2',
       relays: [{ url: 'wss://relay.two/', read: true }],
       watchedPubkeys: [VALID_PUBKEY_A],
+      watchedRecipientLabels: [],
       notificationsEnabled: true,
     });
 
@@ -42,6 +55,7 @@ describe('PushGatewayRepository', () => {
       },
     ]);
     expect(repository.listDeliveryDevices(VALID_PUBKEY_B)).toEqual([]);
+    expect(repository.incrementNotificationCount(VALID_PUBKEY_A, 'device-1', 'tag-1')).toBe(1);
   });
 
   it('deduplicates event sightings by event and recipient pubkey', () => {

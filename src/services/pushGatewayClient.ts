@@ -5,6 +5,11 @@ export interface PushGatewayRelayInput {
   read: boolean;
 }
 
+export interface PushGatewayWatchedRecipientLabel {
+  recipientPubkey: string;
+  label: string;
+}
+
 export interface PushGatewayRegistrationPayload {
   ownerPubkey: string;
   deviceId: string;
@@ -13,6 +18,7 @@ export interface PushGatewayRegistrationPayload {
   fcmToken: string;
   relays: PushGatewayRelayInput[];
   watchedPubkeys: string[];
+  watchedRecipientLabels: PushGatewayWatchedRecipientLabel[];
   notificationsEnabled: boolean;
 }
 

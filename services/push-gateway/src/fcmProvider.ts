@@ -25,17 +25,23 @@ export class FcmPushProvider implements PushProvider {
       await getMessaging(this.getApp()).send({
         token: input.token,
         notification: {
-          title: 'Nostr Chat',
-          body: 'New message',
+          title: input.notificationTitle,
+          body: input.notificationBody,
         },
         data: {
           recipientPubkey: input.recipientPubkey,
           eventId: input.eventId,
+          notificationCount: String(input.notificationCount),
+          notificationTitle: input.notificationTitle,
         },
         android: {
           priority: 'high',
           notification: {
             channelId: 'nostr_chat_messages',
+            title: input.notificationTitle,
+            body: input.notificationBody,
+            tag: input.notificationTag,
+            notificationCount: input.notificationCount,
           },
         },
       });

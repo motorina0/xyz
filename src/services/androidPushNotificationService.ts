@@ -6,20 +6,24 @@ import {
   isPushGatewayConfigured,
   mapRelayEntriesForPushGateway,
   type PushGatewayRegistrationPayload,
+  type PushGatewayWatchedRecipientLabel,
   refreshPushGatewayDevice,
   registerPushGatewayDevice,
   unregisterPushGatewayDevice,
 } from 'src/services/pushGatewayClient';
+import { resolveCurrentGroupChatEpochEntryValue } from 'src/stores/nostr/valueUtils';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import type { RouteLocationRaw } from 'vue-router';
 
 const ANDROID_PUSH_NOTIFICATIONS_STORAGE_KEY = 'ui-android-push-notifications';
+const ANDROID_PUSH_GROUP_NAMES_STORAGE_KEY = 'ui-android-push-group-names';
 const ANDROID_PUSH_DEVICE_ID_STORAGE_KEY = 'android-push-device-id';
 const ANDROID_PUSH_TOKEN_STORAGE_KEY = 'android-push-fcm-token';
 const ANDROID_PUSH_CHANNEL_ID = 'nostr_chat_messages';
 const ANDROID_PUSH_CHANNEL_NAME = 'Messages';
 const ANDROID_PUSH_CHANNEL_DESCRIPTION = 'Incoming Nostr Chat messages';
+const FALLBACK_GROUP_NOTIFICATION_LABEL = 'Nostr Group';
 
 export type AndroidPushPermissionState = 'granted' | 'denied' | 'prompt' | 'unsupported';
 
@@ -53,12 +57,29 @@ export function saveAndroidPushNotificationsPreference(enabled: boolean): void {
   window.localStorage.setItem(ANDROID_PUSH_NOTIFICATIONS_STORAGE_KEY, enabled ? '1' : '0');
 }
 
+export function readAndroidPushNotificationGroupNamesPreference(): boolean {
+  if (!canUseStorage()) {
+    return false;
+  }
+
+  return window.localStorage.getItem(ANDROID_PUSH_GROUP_NAMES_STORAGE_KEY) === '1';
+}
+
+export function saveAndroidPushNotificationGroupNamesPreference(enabled: boolean): void {
+  if (!canUseStorage()) {
+    return;
+  }
+
+  window.localStorage.setItem(ANDROID_PUSH_GROUP_NAMES_STORAGE_KEY, enabled ? '1' : '0');
+}
+
 export function clearAndroidPushNotificationsPreference(): void {
   if (!canUseStorage()) {
     return;
   }
 
   window.localStorage.removeItem(ANDROID_PUSH_NOTIFICATIONS_STORAGE_KEY);
+  window.localStorage.removeItem(ANDROID_PUSH_GROUP_NAMES_STORAGE_KEY);
   window.localStorage.removeItem(ANDROID_PUSH_TOKEN_STORAGE_KEY);
 }
 
@@ -202,6 +223,7 @@ async function buildRegistrationPayload(fcmToken: string): Promise<PushGatewayRe
   if (!watchedPubkeys.includes(ownerPubkey)) {
     watchedPubkeys.unshift(ownerPubkey);
   }
+  const watchedRecipientLabels = await buildWatchedRecipientLabels(watchedPubkeys, ownerPubkey);
 
   return {
     ownerPubkey,
@@ -211,32 +233,81 @@ async function buildRegistrationPayload(fcmToken: string): Promise<PushGatewayRe
     fcmToken,
     relays,
     watchedPubkeys,
+    watchedRecipientLabels,
     notificationsEnabled: true,
   };
+}
+
+async function buildWatchedRecipientLabels(
+  watchedPubkeys: string[],
+  ownerPubkey: string
+): Promise<PushGatewayWatchedRecipientLabel[]> {
+  if (!readAndroidPushNotificationGroupNamesPreference()) {
+    return [];
+  }
+
+  await chatDataService.init();
+  const watchedPubkeySet = new Set(watchedPubkeys);
+  const labelsByPubkey = new Map<string, string>();
+  for (const chat of await chatDataService.listChats()) {
+    if (chat.type !== 'group') {
+      continue;
+    }
+
+    const recipientPubkey = inputSanitizerService.normalizeHexKey(
+      resolveCurrentGroupChatEpochEntryValue(chat)?.epoch_public_key ?? ''
+    );
+    if (
+      !recipientPubkey ||
+      recipientPubkey === ownerPubkey ||
+      !watchedPubkeySet.has(recipientPubkey)
+    ) {
+      continue;
+    }
+
+    labelsByPubkey.set(recipientPubkey, chat.name.trim() || FALLBACK_GROUP_NOTIFICATION_LABEL);
+  }
+
+  return Array.from(labelsByPubkey.entries())
+    .sort(([first], [second]) => first.localeCompare(second))
+    .map(([recipientPubkey, label]) => ({
+      recipientPubkey,
+      label,
+    }));
 }
 
 export async function requestAndroidPushNotificationsAfterLogin(): Promise<AndroidPushPermissionState> {
   if (!isAndroidPushNotificationSupported()) {
     saveAndroidPushNotificationsPreference(false);
+    saveAndroidPushNotificationGroupNamesPreference(false);
     return 'unsupported';
   }
 
   if (!isPushGatewayConfigured()) {
     saveAndroidPushNotificationsPreference(false);
+    saveAndroidPushNotificationGroupNamesPreference(false);
     throw new Error('Push gateway URL is not configured.');
   }
 
   const permission = await requestAndroidPushPermission();
   if (permission !== 'granted') {
     saveAndroidPushNotificationsPreference(false);
+    saveAndroidPushNotificationGroupNamesPreference(false);
     return permission;
   }
 
-  await ensureAndroidPushChannel();
-  const token = await requestFcmToken();
-  saveFcmToken(token);
-  await registerPushGatewayDevice(await buildRegistrationPayload(token), useNostrStore());
-  saveAndroidPushNotificationsPreference(true);
+  try {
+    saveAndroidPushNotificationGroupNamesPreference(true);
+    await ensureAndroidPushChannel();
+    const token = await requestFcmToken();
+    saveFcmToken(token);
+    await registerPushGatewayDevice(await buildRegistrationPayload(token), useNostrStore());
+    saveAndroidPushNotificationsPreference(true);
+  } catch (error) {
+    saveAndroidPushNotificationsPreference(false);
+    saveAndroidPushNotificationGroupNamesPreference(false);
+    throw error;
+  }
   return 'granted';
 }
 

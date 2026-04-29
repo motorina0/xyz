@@ -17,6 +17,11 @@ describe('registration validation', () => {
         { url: 'wss://write-only.example', read: false },
       ],
       watchedPubkeys: [VALID_PUBKEY_B, VALID_PUBKEY_A.toUpperCase(), 'bad'],
+      watchedRecipientLabels: [
+        { recipientPubkey: VALID_PUBKEY_B.toUpperCase(), label: ' Friends ' },
+        { recipientPubkey: 'bad', label: 'Ignored' },
+        { recipientPubkey: VALID_PUBKEY_A, label: '' },
+      ],
       notificationsEnabled: true,
     });
 
@@ -25,6 +30,9 @@ describe('registration validation', () => {
     expect(input.fcmToken).toBe('token');
     expect(input.relays).toEqual([{ url: 'wss://relay.example/path', read: true }]);
     expect(input.watchedPubkeys).toEqual([VALID_PUBKEY_A, VALID_PUBKEY_B]);
+    expect(input.watchedRecipientLabels).toEqual([
+      { recipientPubkey: VALID_PUBKEY_B, label: 'Friends' },
+    ]);
   });
 
   it('requires the owner pubkey in watchedPubkeys', () => {

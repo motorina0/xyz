@@ -225,6 +225,9 @@ onMounted(() => {
   startAndroidPushNotificationListeners((recipientPubkey) => {
     void openAndroidPushNotification(recipientPubkey);
   });
+  void refreshAndroidPushRegistration().catch((error) => {
+    console.warn('Failed to refresh Android push registration.', error);
+  });
   syncNativeViewportCssVariables();
   document.addEventListener('focusin', handleNativeDialogFocusIn);
   document.addEventListener('focusout', handleNativeFocusOut);
@@ -504,6 +507,10 @@ async function openAndroidPushNotification(recipientPubkey: string | null): Prom
     await router.push(await resolveAndroidPushNotificationRoute(recipientPubkey));
   } catch (error) {
     reportUiError('Failed to open chat from Android notification', error);
+  } finally {
+    void refreshAndroidPushRegistration().catch((refreshError) => {
+      console.warn('Failed to refresh Android push registration.', refreshError);
+    });
   }
 }
 

@@ -132,7 +132,11 @@ describe('push gateway HTTP API', () => {
     });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ relayCount: 1, watchedPubkeyCount: 2 });
+    expect(response.json()).toEqual({
+      relayCount: 1,
+      watchedPubkeyCount: 2,
+      watchedRecipientLabelCount: 0,
+    });
     expect(repository.listDeliveryDevices(VALID_PUBKEY_B)).toHaveLength(1);
     expect(relayWorker.refresh).toHaveBeenCalledTimes(1);
   });
