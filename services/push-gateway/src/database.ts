@@ -24,7 +24,6 @@ export function initializeDatabaseSchema(database: DatabaseSync): void {
       platform TEXT NOT NULL,
       fcm_token TEXT NOT NULL,
       app_version TEXT NOT NULL,
-      subscription_since INTEGER NOT NULL,
       notifications_enabled INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,

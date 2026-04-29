@@ -325,7 +325,6 @@ Minimum tables:
   - `platform`
   - `fcm_token`
   - `app_version`
-  - `subscription_since`
   - `notifications_enabled`
   - `created_at`
   - `updated_at`
@@ -365,7 +364,7 @@ Filter:
 {
   "kinds": [1059],
   "#p": ["<recipient pubkey 1>", "<recipient pubkey 2>"],
-  "since": "<earliest active gateway-stamped device subscription timestamp>"
+  "limit": 0
 }
 ```
 
@@ -373,9 +372,8 @@ Implementation rules:
 
 - group watched pubkeys by relay URL,
 - subscribe only to read relays registered by users,
-- include `since` using the earliest active gateway-stamped device subscription timestamp for that relay,
-- skip delivery to any device when the relay event `created_at` is older than that device's subscription timestamp,
-- reuse the same `since` value for reconnects of the same subscription,
+- use live-only subscriptions with `limit: 0` instead of `since`,
+- do not filter delivery by relay event `created_at`, because NIP-17 gift-wrap timestamps may be randomized or backdated,
 - reconnect with backoff,
 - deduplicate events by `(event id, recipient pubkey)`,
 - never unwrap or decrypt events,

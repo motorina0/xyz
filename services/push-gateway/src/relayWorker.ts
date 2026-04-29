@@ -6,7 +6,6 @@ import type { GatewayConfig, PushProvider, RelayEvent } from './types.js';
 interface RelayConnection {
   relayUrl: string;
   recipientPubkeys: string[];
-  since: number;
   socket: WebSocket | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
@@ -69,13 +68,12 @@ export class RelayWorker {
     for (const plan of plans) {
       const existing = this.connections.get(plan.relayUrl);
       if (existing) {
-        const currentSignature = `${existing.since}:${existing.recipientPubkeys.join('|')}`;
-        const nextSignature = `${plan.since}:${plan.recipientPubkeys.join('|')}`;
+        const currentSignature = existing.recipientPubkeys.join('|');
+        const nextSignature = plan.recipientPubkeys.join('|');
         if (currentSignature === nextSignature) {
           logDebug('Relay subscription already matches watch plan.', {
             relayUrl: plan.relayUrl,
             recipientPubkeyCount: plan.recipientPubkeys.length,
-            since: plan.since,
           });
           continue;
         }
@@ -84,8 +82,6 @@ export class RelayWorker {
           relayUrl: plan.relayUrl,
           previousRecipientPubkeyCount: existing.recipientPubkeys.length,
           nextRecipientPubkeyCount: plan.recipientPubkeys.length,
-          previousSince: existing.since,
-          nextSince: plan.since,
         });
         this.closeConnection(existing);
       }
@@ -93,7 +89,6 @@ export class RelayWorker {
       const connection: RelayConnection = {
         relayUrl: plan.relayUrl,
         recipientPubkeys: plan.recipientPubkeys,
-        since: plan.since,
         socket: null,
         reconnectAttempts: 0,
         reconnectTimer: null,
@@ -112,13 +107,11 @@ export class RelayWorker {
     logInfo('Opening relay subscription.', {
       relayUrl: connection.relayUrl,
       recipientPubkeyCount: connection.recipientPubkeys.length,
-      since: connection.since,
     });
     logDebug('Opening relay WebSocket.', {
       relayUrl: connection.relayUrl,
       recipientPubkeyCount: connection.recipientPubkeys.length,
       recipientPubkeys: connection.recipientPubkeys,
-      since: connection.since,
     });
 
     const socket = new WebSocket(connection.relayUrl);
@@ -136,7 +129,6 @@ export class RelayWorker {
       logDebug('Relay WebSocket connected; sending NIP-17 subscription.', {
         relayUrl: connection.relayUrl,
         recipientPubkeyCount: connection.recipientPubkeys.length,
-        since: connection.since,
       });
       socket.send(
         JSON.stringify([
@@ -145,7 +137,7 @@ export class RelayWorker {
           {
             kinds: [1059],
             '#p': connection.recipientPubkeys,
-            since: connection.since,
+            limit: 0,
           },
         ])
       );

@@ -105,31 +105,24 @@ describe('processRelayEvent', () => {
     expect(unlabeledWatchedPubkeyNotification?.notificationCount).toBe(1);
   });
 
-  it('skips delivery for relay events older than the device subscription timestamp', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-29T10:00:00.000Z'));
-    try {
-      const repository = createRepository([]);
-      const pushProvider: PushProvider = {
-        sendNewMessageNotification: vi.fn(async () => ({ ok: true as const })),
-      };
-      const subscriptionSince = Math.floor(Date.parse('2026-04-29T10:00:00.000Z') / 1000);
+  it('delivers backdated NIP-17 gift wraps', async () => {
+    const repository = createRepository([]);
+    const pushProvider: PushProvider = {
+      sendNewMessageNotification: vi.fn(async () => ({ ok: true as const })),
+    };
 
-      await processRelayEvent({
-        event: {
-          id: 'f'.repeat(64),
-          kind: 1059,
-          created_at: subscriptionSince - 1,
-          tags: [['p', VALID_PUBKEY_A]],
-        },
-        relayUrl: 'wss://relay.example/',
-        repository,
-        pushProvider,
-      });
+    await processRelayEvent({
+      event: {
+        id: 'f'.repeat(64),
+        kind: 1059,
+        created_at: 1,
+        tags: [['p', VALID_PUBKEY_A]],
+      },
+      relayUrl: 'wss://relay.example/',
+      repository,
+      pushProvider,
+    });
 
-      expect(pushProvider.sendNewMessageNotification).not.toHaveBeenCalled();
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(pushProvider.sendNewMessageNotification).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,10 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { initializeDatabaseSchema } from '../src/database.js';
 import { PushGatewayRepository } from '../src/repository.js';
 import { VALID_PUBKEY_A, VALID_PUBKEY_B } from './helpers.js';
-
-const REGISTRATION_SINCE = Math.floor(Date.parse('2026-04-29T10:00:00.000Z') / 1000);
 
 function createRepository(): PushGatewayRepository {
   const database = new DatabaseSync(':memory:');
@@ -13,15 +11,6 @@ function createRepository(): PushGatewayRepository {
 }
 
 describe('PushGatewayRepository', () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-04-29T10:00:00.000Z'));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it('replaces relays and watched pubkeys atomically on registration refresh', () => {
     const repository = createRepository();
     repository.registerDevice({
@@ -41,7 +30,6 @@ describe('PushGatewayRepository', () => {
         ownerPubkey: VALID_PUBKEY_A,
         deviceId: 'device-1',
         fcmToken: 'token-1',
-        since: REGISTRATION_SINCE,
         notificationLabel: 'Friends',
       },
     ]);
@@ -64,7 +52,6 @@ describe('PushGatewayRepository', () => {
       {
         relayUrl: 'wss://relay.two/',
         recipientPubkeys: [VALID_PUBKEY_A],
-        since: REGISTRATION_SINCE,
       },
     ]);
     expect(repository.listDeliveryDevices(VALID_PUBKEY_B)).toEqual([]);

@@ -63,14 +63,12 @@ describe('RelayWorker', () => {
     vi.useRealTimers();
   });
 
-  it('subscribes from the gateway-stamped plan timestamp and reuses it on reconnect', () => {
-    const planSince = 1_777_456_800;
+  it('subscribes live-only and reuses the filter on reconnect', () => {
     const repository = {
       listRelayWatchPlans: vi.fn(() => [
         {
           relayUrl: 'wss://relay.example/',
           recipientPubkeys: [VALID_PUBKEY_A],
-          since: planSince,
         },
       ]),
     } as unknown as PushGatewayRepository;
@@ -90,7 +88,7 @@ describe('RelayWorker', () => {
         {
           kinds: [1059],
           '#p': [VALID_PUBKEY_A],
-          since: planSince,
+          limit: 0,
         },
       ])
     );
@@ -108,7 +106,7 @@ describe('RelayWorker', () => {
         {
           kinds: [1059],
           '#p': [VALID_PUBKEY_A],
-          since: planSince,
+          limit: 0,
         },
       ])
     );

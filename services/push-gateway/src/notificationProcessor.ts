@@ -21,14 +21,6 @@ function normalizeEventId(value: unknown): string | null {
   return /^[0-9a-f]{64}$/.test(normalized) ? normalized : null;
 }
 
-function normalizeEventCreatedAt(value: unknown): number | null {
-  if (!Number.isInteger(value) || Number(value) < 0) {
-    return null;
-  }
-
-  return Number(value);
-}
-
 function readRecipientPubkeys(event: RelayEvent): string[] {
   if (!Array.isArray(event.tags)) {
     return [];
@@ -115,7 +107,6 @@ export async function processRelayEvent(options: {
     });
     return;
   }
-  const eventCreatedAt = normalizeEventCreatedAt(options.event.created_at);
 
   const recipientPubkeys = readRecipientPubkeys(options.event);
   logDebug('Processing NIP-17 wrapper relay event.', {
@@ -152,19 +143,6 @@ export async function processRelayEvent(options: {
     });
 
     for (const device of devices) {
-      if (eventCreatedAt !== null && eventCreatedAt < device.since) {
-        logDebug('Skipped delivery device for event older than subscription.', {
-          relayUrl: options.relayUrl,
-          eventId,
-          recipientPubkey,
-          ownerPubkey: device.ownerPubkey,
-          deviceId: device.deviceId,
-          eventCreatedAt,
-          subscriptionSince: device.since,
-        });
-        continue;
-      }
-
       const notificationGrouping = resolveNotificationGrouping(device, recipientPubkey);
       const notificationTag = buildNotificationTag(device.ownerPubkey, notificationGrouping.tagKey);
       const notificationCount = options.repository.incrementNotificationCount(
