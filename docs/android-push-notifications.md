@@ -362,7 +362,8 @@ Filter:
 ```json
 {
   "kinds": [1059],
-  "#p": ["<recipient pubkey 1>", "<recipient pubkey 2>"]
+  "#p": ["<recipient pubkey 1>", "<recipient pubkey 2>"],
+  "since": "<subscription-open unix timestamp>"
 }
 ```
 
@@ -370,6 +371,8 @@ Implementation rules:
 
 - group watched pubkeys by relay URL,
 - subscribe only to read relays registered by users,
+- include `since` with the current Unix timestamp when opening a new relay subscription so old gift-wrap history does not trigger notifications,
+- reuse the same `since` value for reconnects of the same subscription,
 - reconnect with backoff,
 - deduplicate events by `(event id, recipient pubkey)`,
 - never unwrap or decrypt events,

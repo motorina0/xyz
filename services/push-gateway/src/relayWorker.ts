@@ -6,10 +6,15 @@ import type { GatewayConfig, PushProvider, RelayEvent } from './types.js';
 interface RelayConnection {
   relayUrl: string;
   recipientPubkeys: string[];
+  since: number;
   socket: WebSocket | null;
   reconnectAttempts: number;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
   idleTimer: ReturnType<typeof setTimeout> | null;
+}
+
+function nowUnixSeconds(): number {
+  return Math.floor(Date.now() / 1000);
 }
 
 export class RelayWorker {
@@ -89,6 +94,7 @@ export class RelayWorker {
       const connection: RelayConnection = {
         relayUrl: plan.relayUrl,
         recipientPubkeys: plan.recipientPubkeys,
+        since: nowUnixSeconds(),
         socket: null,
         reconnectAttempts: 0,
         reconnectTimer: null,
@@ -107,11 +113,13 @@ export class RelayWorker {
     logInfo('Opening relay subscription.', {
       relayUrl: connection.relayUrl,
       recipientPubkeyCount: connection.recipientPubkeys.length,
+      since: connection.since,
     });
     logDebug('Opening relay WebSocket.', {
       relayUrl: connection.relayUrl,
       recipientPubkeyCount: connection.recipientPubkeys.length,
       recipientPubkeys: connection.recipientPubkeys,
+      since: connection.since,
     });
 
     const socket = new WebSocket(connection.relayUrl);
@@ -129,6 +137,7 @@ export class RelayWorker {
       logDebug('Relay WebSocket connected; sending NIP-17 subscription.', {
         relayUrl: connection.relayUrl,
         recipientPubkeyCount: connection.recipientPubkeys.length,
+        since: connection.since,
       });
       socket.send(
         JSON.stringify([
@@ -137,6 +146,7 @@ export class RelayWorker {
           {
             kinds: [1059],
             '#p': connection.recipientPubkeys,
+            since: connection.since,
           },
         ])
       );
