@@ -1,12 +1,12 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it } from 'vitest';
-import { migrateDatabase } from '../src/database.js';
+import { initializeDatabaseSchema } from '../src/database.js';
 import { PushGatewayRepository } from '../src/repository.js';
 import { VALID_PUBKEY_A, VALID_PUBKEY_B } from './helpers.js';
 
 function createRepository(): PushGatewayRepository {
   const database = new DatabaseSync(':memory:');
-  migrateDatabase(database);
+  initializeDatabaseSchema(database);
   return new PushGatewayRepository(database);
 }
 

@@ -11,16 +11,11 @@ export function openDatabase(databasePath: string): DatabaseSync {
   database.exec('PRAGMA foreign_keys = ON;');
   database.exec('PRAGMA journal_mode = WAL;');
   database.exec('PRAGMA busy_timeout = 5000;');
-  migrateDatabase(database);
+  initializeDatabaseSchema(database);
   return database;
 }
 
-function columnExists(database: DatabaseSync, tableName: string, columnName: string): boolean {
-  const rows = database.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
-  return rows.some((row) => row.name === columnName);
-}
-
-export function migrateDatabase(database: DatabaseSync): void {
+export function initializeDatabaseSchema(database: DatabaseSync): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS devices (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,8 +83,4 @@ export function migrateDatabase(database: DatabaseSync): void {
     CREATE INDEX IF NOT EXISTS idx_watched_pubkeys_recipient_pubkey
       ON watched_pubkeys(recipient_pubkey);
   `);
-
-  if (!columnExists(database, 'watched_pubkeys', 'notification_label')) {
-    database.exec('ALTER TABLE watched_pubkeys ADD COLUMN notification_label TEXT;');
-  }
 }

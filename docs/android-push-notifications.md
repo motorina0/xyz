@@ -313,7 +313,7 @@ V1 may implement this by calling the same service function as register.
 
 ### SQLite Schema
 
-Use migrations. Do not rely on implicit `CREATE TABLE` drift.
+The v1 gateway may initialize a fresh SQLite database from the current schema. Existing gateway databases do not need data migrations.
 
 Minimum tables:
 
@@ -428,7 +428,7 @@ Do not implement APNs in v1.
 
 - Create `services/push-gateway`.
 - Add HTTP server, config loader, logging, health endpoint.
-- Add SQLite migrations and repository layer.
+- Add SQLite schema initialization and repository layer.
 - Add NIP-98 auth validation middleware.
 - Add unit tests for auth, normalization, persistence, and token redaction.
 

@@ -1,6 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { describe, expect, it, vi } from 'vitest';
-import { migrateDatabase } from '../src/database.js';
+import { initializeDatabaseSchema } from '../src/database.js';
 import { processRelayEvent } from '../src/notificationProcessor.js';
 import { PushGatewayRepository } from '../src/repository.js';
 import type { PushProvider } from '../src/types.js';
@@ -10,7 +10,7 @@ function createRepository(
   watchedRecipientLabels = [{ recipientPubkey: VALID_PUBKEY_B, label: 'Friends' }]
 ): PushGatewayRepository {
   const database = new DatabaseSync(':memory:');
-  migrateDatabase(database);
+  initializeDatabaseSchema(database);
   const repository = new PushGatewayRepository(database);
   repository.registerDevice({
     ownerPubkey: VALID_PUBKEY_A,
