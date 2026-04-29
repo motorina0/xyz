@@ -70,7 +70,7 @@ When the app runs in the browser show the unread count badge in the tab title wi
 node 24
 
 do not subscribe to all your contacts relays?
-remove xyz and tg references
+remove old project-name references
 
 
 

@@ -614,7 +614,7 @@ describe('nostr runtime core logic', () => {
       focus,
       localStorage: localStorage.api,
       location: {
-        origin: 'https://xyz.example',
+        origin: 'https://chat.example',
         assign,
       },
     };
@@ -717,7 +717,7 @@ describe('nostr runtime core logic', () => {
     notifications[0]?.onclick?.();
     expect(focus).toHaveBeenCalledTimes(1);
     expect(assign).toHaveBeenCalledWith(
-      `https://xyz.example/app/#/chats/${encodeURIComponent(PUBKEY_B)}`
+      `https://chat.example/app/#/chats/${encodeURIComponent(PUBKEY_B)}`
     );
   });
 });

@@ -5,14 +5,14 @@ import { imageCacheService } from 'src/services/imageCacheService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { deleteAllIndexedDbDatabases } from 'src/utils/indexedDbStorage';
 
-const PENDING_LOGOUT_CLEANUP_SESSION_KEY = 'xyz-pending-logout-cleanup';
+const PENDING_LOGOUT_CLEANUP_SESSION_KEY = 'nostr-chat-pending-logout-cleanup';
 
 export const KNOWN_APP_INDEXED_DB_NAMES = [
   'chat-data-indexeddb-v2',
   'contacts-indexeddb-v1',
   'developer-trace-indexeddb-v1',
   'nostr-events-indexeddb-v1',
-  'xyz-image-cache',
+  'nostr-chat-image-cache',
 ] as const;
 
 function hasLocalStorage(): boolean {

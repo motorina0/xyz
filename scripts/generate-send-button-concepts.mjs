@@ -568,7 +568,7 @@ function renderAppPanel(family, variant) {
       <rect x="${panelX}" y="${panelY}" width="${panelW}" height="86" rx="38" fill="${variant.accentA}" opacity="0.08" />
       <circle cx="${panelX + 56}" cy="${panelY + 44}" r="24" fill="${variant.accentA}" opacity="0.22" />
       <circle cx="${panelX + 56}" cy="${panelY + 44}" r="13" fill="${variant.accentC}" opacity="0.88" />
-      <text x="${panelX + 94}" y="${panelY + 38}" font-family="Space Grotesk, Manrope, system-ui, sans-serif" font-size="24" font-weight="700" fill="${basePalette.ink}">XYZ chat</text>
+      <text x="${panelX + 94}" y="${panelY + 38}" font-family="Space Grotesk, Manrope, system-ui, sans-serif" font-size="24" font-weight="700" fill="${basePalette.ink}">Nostr Chat</text>
       <text x="${panelX + 94}" y="${panelY + 62}" font-family="Manrope, system-ui, sans-serif" font-size="16" font-weight="700" fill="${basePalette.textMuted}">${esc(family.title)} concept in context</text>
       ${tinySignal(panelX + panelW - 64, panelY + 44, variant.accentA)}
       ${messageBubble(panelX + 30, panelY + 120, 260, 78, '#f2f7fc', 'Mara', 'Relay 3 is green again.', 'left')}
@@ -614,7 +614,7 @@ function renderShowcasePanel(family, variant) {
       <rect x="${panelX + 52}" y="${panelY + 726}" width="660" height="116" rx="28" fill="#f4f9fd" stroke="#dce8f2" />
       <text x="${panelX + 86}" y="${panelY + 768}" font-family="Space Grotesk, Manrope, system-ui, sans-serif" font-size="20" font-weight="700" fill="${basePalette.ink}">Variation note</text>
       <text x="${panelX + 86}" y="${panelY + 804}" font-family="Manrope, system-ui, sans-serif" font-size="20" font-weight="700" fill="${basePalette.inkSoft}">${noteLines.map((line, index) => `<tspan x="${panelX + 86}" dy="${index === 0 ? 0 : 26}">${esc(line)}</tspan>`).join('')}</text>
-      <text x="${panelX + 52}" y="${panelY + 888}" font-family="Manrope, system-ui, sans-serif" font-size="16" font-weight="800" fill="${variant.accentC}" opacity="0.78">Brand territory for XYZ Send</text>
+      <text x="${panelX + 52}" y="${panelY + 888}" font-family="Manrope, system-ui, sans-serif" font-size="16" font-weight="800" fill="${variant.accentC}" opacity="0.78">Brand territory for Nostr Chat Send</text>
     </g>
   `;
 }

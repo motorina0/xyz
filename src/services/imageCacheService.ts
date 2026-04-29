@@ -1,7 +1,7 @@
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { closeIndexedDbConnection, deleteIndexedDbDatabase } from 'src/utils/indexedDbStorage';
 
-const IMAGE_CACHE_DB_NAME = 'xyz-image-cache';
+const IMAGE_CACHE_DB_NAME = 'nostr-chat-image-cache';
 const IMAGE_CACHE_DB_VERSION = 1;
 const IMAGE_CACHE_STORE_NAME = 'images';
 
