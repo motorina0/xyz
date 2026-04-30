@@ -97,7 +97,7 @@
 
       <q-btn
         color="primary"
-        icon="send"
+        :icon="sendButtonIcon"
         class="composer__send"
         data-testid="message-composer-send"
         aria-label="Send message"
@@ -110,6 +110,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
+import { useQuasar } from 'quasar';
 import EmojiPickerPanel from 'src/components/EmojiPickerPanel.vue';
 import { TOP_500_EMOJIS, filterEmojiEntries, type EmojiOption } from 'src/data/topEmojis';
 import { useChatStore } from 'src/stores/chatStore';
@@ -121,6 +122,7 @@ const props = defineProps<{
   replyTo?: MessageReplyPreview | null;
 }>();
 
+const $q = useQuasar();
 const chatStore = useChatStore();
 const draft = ref('');
 const inputRef = ref<{ $el: HTMLElement } | null>(null);
@@ -149,6 +151,7 @@ function normalizeChatIdentifier(value: string | null | undefined): string | nul
 }
 
 const activeChatId = computed(() => normalizeChatIdentifier(props.chatId));
+const sendButtonIcon = computed(() => ($q.screen.lt.md ? 'north' : 'send'));
 
 function setDraftValue(nextDraft: string, options: { persist?: boolean } = {}): void {
   draft.value = nextDraft;
