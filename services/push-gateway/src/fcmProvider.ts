@@ -36,6 +36,7 @@ export class FcmPushProvider implements PushProvider {
           priority: 'high',
           notification: {
             channelId: 'nostr_chat_messages',
+            sound: 'default',
           },
         },
       });

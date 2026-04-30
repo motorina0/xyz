@@ -137,7 +137,6 @@ async function ensureAndroidPushChannel(): Promise<void> {
       description: ANDROID_PUSH_CHANNEL_DESCRIPTION,
       importance: 4,
       visibility: 1,
-      sound: 'default',
       vibration: true,
     });
   } catch (error) {
