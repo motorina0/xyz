@@ -26,6 +26,8 @@ describe('foregroundMessageActivityService', () => {
 
     emitForegroundMessageActivity({
       chatPubkey: 'A'.repeat(64),
+      iconUrl: '  https://example.test/alice.png  ',
+      messageText: '  Hello   there  ',
       title: '  Alice   Chat  ',
       showBanner: true,
     });
@@ -34,6 +36,8 @@ describe('foregroundMessageActivityService', () => {
     expect(event.type).toBe(FOREGROUND_MESSAGE_ACTIVITY_EVENT);
     expect(readForegroundMessageActivityDetail(event)).toEqual({
       chatPubkey: 'a'.repeat(64),
+      iconUrl: 'https://example.test/alice.png',
+      messageText: 'Hello there',
       title: 'Alice Chat',
       showBanner: true,
     });
@@ -45,6 +49,7 @@ describe('foregroundMessageActivityService', () => {
     const event = new CustomEvent(FOREGROUND_MESSAGE_ACTIVITY_EVENT, {
       detail: {
         chatPubkey: 'not-a-pubkey',
+        messageText: 'Hello',
         title: 'Alice',
         showBanner: true,
       },

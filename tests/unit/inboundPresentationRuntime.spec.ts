@@ -48,14 +48,17 @@ describe('inboundPresentationRuntime', () => {
 
     runtime.showIncomingMessageBrowserNotification({
       chatPubkey: 'a'.repeat(64),
+      iconUrl: 'https://example.test/alice.png',
       title: 'Alice',
-      messageText: 'Hello',
+      messageText: '  Hello   there  ',
     });
 
     const event = dispatchEvent.mock.calls[0]?.[0] as Event;
     expect(event.type).toBe(FOREGROUND_MESSAGE_ACTIVITY_EVENT);
     expect(readForegroundMessageActivityDetail(event)).toEqual({
       chatPubkey: 'a'.repeat(64),
+      iconUrl: 'https://example.test/alice.png',
+      messageText: 'Hello there',
       title: 'Alice',
       showBanner: true,
     });
@@ -79,6 +82,8 @@ describe('inboundPresentationRuntime', () => {
     const event = dispatchEvent.mock.calls[0]?.[0] as Event;
     expect(readForegroundMessageActivityDetail(event)).toEqual({
       chatPubkey: 'a'.repeat(64),
+      iconUrl: '',
+      messageText: 'Hello',
       title: 'Alice',
       showBanner: false,
     });

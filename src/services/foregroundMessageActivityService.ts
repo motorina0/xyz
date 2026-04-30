@@ -4,6 +4,8 @@ export const FOREGROUND_MESSAGE_ACTIVITY_EVENT = 'nostr-chat:foreground-message-
 
 export interface ForegroundMessageActivityDetail {
   chatPubkey: string;
+  iconUrl: string;
+  messageText: string;
   title: string;
   showBanner: boolean;
 }
@@ -12,8 +14,14 @@ function normalizeTitle(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function normalizeOptionalText(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
+}
+
 export function emitForegroundMessageActivity(input: {
   chatPubkey: string;
+  iconUrl?: string;
+  messageText: string;
   title: string;
   showBanner: boolean;
 }): void {
@@ -34,6 +42,8 @@ export function emitForegroundMessageActivity(input: {
     new CustomEvent<ForegroundMessageActivityDetail>(FOREGROUND_MESSAGE_ACTIVITY_EVENT, {
       detail: {
         chatPubkey,
+        iconUrl: normalizeOptionalText(input.iconUrl),
+        messageText: normalizeOptionalText(input.messageText),
         title: normalizeTitle(input.title),
         showBanner: Boolean(input.showBanner),
       },
@@ -66,6 +76,8 @@ export function readForegroundMessageActivityDetail(
 
   return {
     chatPubkey,
+    iconUrl: normalizeOptionalText('iconUrl' in value ? value.iconUrl : ''),
+    messageText: normalizeOptionalText('messageText' in value ? value.messageText : ''),
     title: normalizeTitle('title' in value ? String(value.title) : ''),
     showBanner: 'showBanner' in value ? Boolean(value.showBanner) : false,
   };

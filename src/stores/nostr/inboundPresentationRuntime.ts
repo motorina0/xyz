@@ -158,6 +158,8 @@ export function createInboundPresentationRuntime({
 
   function emitForegroundIncomingMessageActivity(options: {
     chatPubkey: string;
+    iconUrl?: string;
+    messageText: string;
     title: string;
   }): boolean {
     if (isRestoringStartupState.value || !isAppForeground.value) {
@@ -166,6 +168,8 @@ export function createInboundPresentationRuntime({
 
     emitForegroundMessageActivity({
       chatPubkey: options.chatPubkey,
+      iconUrl: options.iconUrl,
+      messageText: buildBrowserNotificationMessagePreview(options.messageText),
       title: options.title,
       showBanner: getVisibleChatId() !== options.chatPubkey,
     });
