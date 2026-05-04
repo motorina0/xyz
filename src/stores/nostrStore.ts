@@ -1902,8 +1902,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
       }),
     restoreGroupEpochHistory: (groupPublicKey, epochPublicKey, options) =>
       restoreGroupEpochHistoryRuntime(groupPublicKey, epochPublicKey, options),
-    restorePrivateMessagesForRecipient: (recipientPubkey, options) =>
-      restorePrivateMessagesForRecipientRuntime(recipientPubkey, options),
     setIsReconnectHealing: (value) => {
       isReconnectHealing.value = value;
     },

@@ -47,10 +47,6 @@ interface ReconnectHealingRuntimeDeps {
     epochPublicKey: string,
     options?: RestoreOptions
   ) => Promise<void>;
-  restorePrivateMessagesForRecipient: (
-    recipientPubkey: string,
-    options?: RestoreOptions
-  ) => Promise<void>;
   setIsReconnectHealing: (value: boolean) => void;
   setReconnectHealingStatusLabel: (value: string | null) => void;
 }
@@ -61,7 +57,6 @@ const RECONNECT_HEALING_STATUS_LABELS = {
   checkingSessionAndNetwork: 'Checking session and network',
   queueingMessageRelayCheck: 'Queing message relay check',
   queueingUnsentMessageRetries: 'Queing unsent message retries',
-  refreshingOpenChat: 'Refreshing open chat',
   refreshingGroupHistory: 'Refreshing group history',
   refreshingDirectMessages: 'Refreshing direct messages',
   applyingPendingMessageUpdates: 'Applying pending message updates',
@@ -137,7 +132,6 @@ export function createReconnectHealingRuntime({
   refreshDeveloperPendingQueues,
   refreshDirectMessages,
   restoreGroupEpochHistory,
-  restorePrivateMessagesForRecipient,
   setIsReconnectHealing,
   setReconnectHealingStatusLabel,
 }: ReconnectHealingRuntimeDeps) {
@@ -360,35 +354,21 @@ export function createReconnectHealingRuntime({
         directMessageRecipientPubkey: loggedInPublicKeyHex,
       });
 
-      let restoredVisibleChat = false;
       let restoredVisibleGroupEpoch = false;
       let refreshedDirectMessages = false;
 
-      if (visibleChatTarget?.type === 'user') {
-        await showReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.refreshingOpenChat);
-        await restorePrivateMessagesForRecipient(visibleChatTarget.publicKey, {
-          force: true,
-        });
-        restoredVisibleChat = true;
-      } else if (visibleChatTarget?.type === 'group') {
-        await showReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.refreshingOpenChat);
-        await restorePrivateMessagesForRecipient(visibleChatTarget.publicKey, {
-          force: true,
-        });
-        restoredVisibleChat = true;
-        if (visibleChatTarget.epochPublicKey) {
-          await showReconnectHealingStatusLabel(
-            RECONNECT_HEALING_STATUS_LABELS.refreshingGroupHistory
-          );
-          await restoreGroupEpochHistory(
-            visibleChatTarget.publicKey,
-            visibleChatTarget.epochPublicKey,
-            {
-              force: true,
-            }
-          );
-          restoredVisibleGroupEpoch = true;
-        }
+      if (visibleChatTarget?.type === 'group' && visibleChatTarget.epochPublicKey) {
+        await showReconnectHealingStatusLabel(
+          RECONNECT_HEALING_STATUS_LABELS.refreshingGroupHistory
+        );
+        await restoreGroupEpochHistory(
+          visibleChatTarget.publicKey,
+          visibleChatTarget.epochPublicKey,
+          {
+            force: true,
+          }
+        );
+        restoredVisibleGroupEpoch = true;
       }
 
       await showReconnectHealingStatusLabel(
@@ -406,7 +386,6 @@ export function createReconnectHealingRuntime({
       await showReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.finishingSync);
       logReconnectHealing('complete', {
         reason,
-        restoredVisibleChat,
         restoredVisibleGroupEpoch,
         refreshedDirectMessages,
         pendingQueueSummary,

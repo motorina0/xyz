@@ -51,7 +51,6 @@ describe('reconnectHealingRuntime', () => {
     }));
     const refreshDirectMessages = vi.fn(async () => {});
     const restoreGroupEpochHistory = vi.fn(async () => {});
-    const restorePrivateMessagesForRecipient = vi.fn(async () => {});
 
     const runtime = createReconnectHealingRuntime({
       getLoggedInPublicKeyHex: () => LOGGED_IN_PUBLIC_KEY,
@@ -63,7 +62,6 @@ describe('reconnectHealingRuntime', () => {
       refreshDeveloperPendingQueues,
       refreshDirectMessages,
       restoreGroupEpochHistory,
-      restorePrivateMessagesForRecipient,
       setIsReconnectHealing: (value) => {
         healingState.value = value;
       },
@@ -85,7 +83,6 @@ describe('reconnectHealingRuntime', () => {
       refreshDeveloperPendingQueues,
       refreshDirectMessages,
       restoreGroupEpochHistory,
-      restorePrivateMessagesForRecipient,
       runtime,
     };
   }
@@ -132,7 +129,6 @@ describe('reconnectHealingRuntime', () => {
       refreshDeveloperPendingQueues,
       refreshDirectMessages,
       restoreGroupEpochHistory,
-      restorePrivateMessagesForRecipient,
       runtime,
       statusLabelUpdates,
     } = createRuntime({
@@ -149,7 +145,6 @@ describe('reconnectHealingRuntime', () => {
       'Checking session and network',
       'Queing message relay check',
       'Queing unsent message retries',
-      'Refreshing open chat',
       'Refreshing group history',
       'Refreshing direct messages',
       'Applying pending message updates',
@@ -159,10 +154,6 @@ describe('reconnectHealingRuntime', () => {
     expectStatusLabelsWereVisibleForMinimumDuration(statusLabelUpdates);
     expect(queuePrivateMessagesWatchdog).toHaveBeenCalledWith(0);
     expect(queueOutboundMessageReplay).toHaveBeenCalledWith('reconnect-healing', 0);
-    expect(restorePrivateMessagesForRecipient).toHaveBeenNthCalledWith(1, GROUP_PUBLIC_KEY, {
-      force: true,
-    });
-    expect(restorePrivateMessagesForRecipient).toHaveBeenCalledTimes(1);
     expect(refreshDirectMessages).toHaveBeenCalledWith({
       forceLiveSubscriptionRecreate: false,
     });
@@ -186,7 +177,6 @@ describe('reconnectHealingRuntime', () => {
       'complete',
       expect.objectContaining({
         reason: 'relay-connected',
-        restoredVisibleChat: true,
         restoredVisibleGroupEpoch: true,
         refreshedDirectMessages: true,
       })
