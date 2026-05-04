@@ -10,7 +10,6 @@ import {
   navigateToChat,
   openGroupContact,
   openGroupEpochsTab,
-  openReplyPreview,
   openRequests,
   readGroupEpochNumbers,
   reloadAndWaitForApp,
@@ -149,9 +148,7 @@ test('member restart restores group history from both the current and prior epoc
   }
 });
 
-test('missing prior-epoch reply targets can still be repaired after restart', async ({
-  browser,
-}) => {
+test('missing prior-epoch reply targets are restored after restart', async ({ browser }) => {
   test.slow();
 
   const owner = await bootstrapUser(browser, TEST_ACCOUNTS.groupReplyRepairOwner);
@@ -213,15 +210,8 @@ test('missing prior-epoch reply targets can still be repaired after restart', as
     await waitForThreadMessage(bob.page, epochOneReplyMessage, {
       chatId: groupPublicKey,
     });
-    await waitForNoThreadMessage(bob.page, epochZeroMessage, {
+    await waitForThreadMessage(bob.page, epochZeroMessage, {
       chatId: groupPublicKey,
-      refresh: false,
-      timeoutMs: 3_000,
-    });
-
-    await openReplyPreview(bob.page, epochOneReplyMessage);
-    await expect(threadMessage(bob.page, epochZeroMessage)).toBeVisible({
-      timeout: 45_000,
     });
     await expect(
       threadMessage(bob.page, epochOneReplyMessage).locator('.bubble__reply-preview-text')

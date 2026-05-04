@@ -1,5 +1,8 @@
 import NDK from '@nostr-dev-kit/ndk';
-import { MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS } from 'src/stores/nostr/constants';
+import {
+  MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS,
+  PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
+} from 'src/stores/nostr/constants';
 import { createPrivateMessagesBackfillRuntime } from 'src/stores/nostr/privateMessagesBackfillRuntime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,6 +11,7 @@ const serviceMocks = vi.hoisted(() => ({
     getChatByPublicKey: vi.fn(),
     getMessageByEventId: vi.fn(),
     init: vi.fn(),
+    listLatestMessages: vi.fn(),
   },
   nostrEventDataService: {
     getEventById: vi.fn(),
@@ -105,6 +109,10 @@ describe('privateMessagesBackfillRuntime', () => {
     serviceMocks.chatDataService.init.mockResolvedValue(undefined);
     serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue(null);
     serviceMocks.chatDataService.getMessageByEventId.mockResolvedValue(null);
+    serviceMocks.chatDataService.listLatestMessages.mockResolvedValue({
+      has_more: false,
+      rows: [],
+    });
     serviceMocks.nostrEventDataService.init.mockResolvedValue(undefined);
     serviceMocks.nostrEventDataService.getEventById.mockResolvedValue(null);
   });
@@ -154,7 +162,7 @@ describe('privateMessagesBackfillRuntime', () => {
       expect(filters).toEqual({
         kinds: [1059],
         '#p': [LOGGED_IN_PUBLIC_KEY],
-        since: 1700000000,
+        since: 1700007200 - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
       });
       Promise.resolve().then(() => {
         options.onEose?.();
@@ -201,6 +209,92 @@ describe('privateMessagesBackfillRuntime', () => {
     });
 
     await runtime.restoreDirectMessages({ force: true });
+
+    expect(getPrivateMessagesStartupFloorSince).toHaveBeenCalledTimes(1);
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('restores group epoch history from the latest stored group message without an until bound', async () => {
+    const latestMessageCreatedAt = '2026-04-22T12:00:00.000Z';
+    const latestMessageUnix = Math.floor(Date.parse(latestMessageCreatedAt) / 1000);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      public_key: GROUP_CHAT_PUBLIC_KEY,
+      type: 'group',
+      last_message_at: '2026-04-20T12:00:00.000Z',
+      meta: {},
+    });
+    serviceMocks.chatDataService.listLatestMessages.mockResolvedValue({
+      has_more: false,
+      rows: [
+        {
+          created_at: latestMessageCreatedAt,
+        },
+      ],
+    });
+
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      expect(requestLabel).toBe('private-messages-epoch-history');
+      expect(filters).toEqual({
+        kinds: [1059],
+        '#p': [GROUP_EPOCH_A],
+        since: latestMessageUnix - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
+      });
+      Promise.resolve().then(() => {
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { runtime } = createRuntime({
+      subscribeWithReqLogging,
+    });
+
+    await runtime.restoreGroupEpochHistory(GROUP_CHAT_PUBLIC_KEY, GROUP_EPOCH_A, { force: true });
+
+    expect(serviceMocks.chatDataService.listLatestMessages).toHaveBeenCalledWith(
+      GROUP_CHAT_PUBLIC_KEY,
+      1
+    );
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('falls back to the startup floor for group epoch history when there is no known message time', async () => {
+    const getPrivateMessagesStartupFloorSince = vi.fn(() => 1600000000);
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      public_key: GROUP_CHAT_PUBLIC_KEY,
+      type: 'group',
+      last_message_at: null,
+      meta: {},
+    });
+
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      expect(requestLabel).toBe('private-messages-epoch-history');
+      expect(filters).toEqual(
+        expect.objectContaining({
+          '#p': [GROUP_EPOCH_A],
+          since: 1600000000,
+        })
+      );
+      expect(filters).not.toHaveProperty('until');
+      Promise.resolve().then(() => {
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { runtime } = createRuntime({
+      getPrivateMessagesStartupFloorSince,
+      subscribeWithReqLogging,
+    });
+
+    await runtime.restoreGroupEpochHistory(GROUP_CHAT_PUBLIC_KEY, GROUP_EPOCH_A, { force: true });
 
     expect(getPrivateMessagesStartupFloorSince).toHaveBeenCalledTimes(1);
 

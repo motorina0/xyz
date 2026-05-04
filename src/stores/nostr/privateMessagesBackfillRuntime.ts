@@ -61,6 +61,20 @@ function getAggressiveMissingMessageDependencyRepairAttemptIndex(): number {
   return Math.max(0, MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS.length - 1);
 }
 
+function toUnixTimestampFromIso(value: unknown): number | null {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const unixTimestamp = Math.floor(parsed / 1000);
+  return unixTimestamp > 0 ? unixTimestamp : null;
+}
+
 interface PrivateMessagesBackfillRuntimeDeps {
   buildFilterSinceDetails: (since: number | undefined) => Record<string, unknown>;
   buildFilterUntilDetails: (until: number | undefined) => Record<string, unknown>;
@@ -406,9 +420,13 @@ export function createPrivateMessagesBackfillRuntime({
     recipientPubkey: string;
     relayUrls: string[];
     since: number;
-    until: number;
+    until?: number;
   }): Promise<void> {
-    if (options.since >= options.until || options.relayUrls.length === 0) {
+    const normalizedUntil = Number.isInteger(options.until) ? Number(options.until) : undefined;
+    if (
+      options.relayUrls.length === 0 ||
+      (normalizedUntil !== undefined && options.since >= normalizedUntil)
+    ) {
       return;
     }
 
@@ -450,14 +468,14 @@ export function createPrivateMessagesBackfillRuntime({
             },
           ],
           ...buildFilterSinceDetails(options.since),
-          ...buildFilterUntilDetails(options.until),
+          ...buildFilterUntilDetails(normalizedUntil),
           ...buildSubscriptionRelayDetails(options.relayUrls),
         });
         const groupEpochHistoryFilters: NDKFilter = {
           kinds: [NDKKind.GiftWrap],
           '#p': [options.recipientPubkey],
           since: options.since,
-          until: options.until,
+          ...(normalizedUntil !== undefined ? { until: normalizedUntil } : {}),
         };
         subscription = subscribeWithReqLogging(
           'private-messages',
@@ -488,7 +506,7 @@ export function createPrivateMessagesBackfillRuntime({
             groupPublicKey: formatSubscriptionLogValue(options.groupPublicKey),
             epochRecipientPubkey: formatSubscriptionLogValue(options.recipientPubkey),
             ...buildFilterSinceDetails(options.since),
-            ...buildFilterUntilDetails(options.until),
+            ...buildFilterUntilDetails(normalizedUntil),
             ...buildSubscriptionRelayDetails(options.relayUrls),
           }
         );
@@ -1024,13 +1042,20 @@ export function createPrivateMessagesBackfillRuntime({
 
       await ensureRelayConnections(relayUrls);
       const now = Math.floor(Date.now() / 1000);
+      const latestMessages = await chatDataService.listLatestMessages(normalizedGroupPublicKey, 1);
+      const latestMessageTime =
+        toUnixTimestampFromIso(latestMessages.rows[0]?.created_at) ??
+        toUnixTimestampFromIso(groupChat.last_message_at);
+      const since =
+        latestMessageTime !== null
+          ? Math.max(0, latestMessageTime - PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS)
+          : getPrivateMessagesStartupFloorSince(now);
       await runGroupEpochHistoryRestoreWindow({
         loggedInPubkeyHex,
         groupPublicKey: normalizedGroupPublicKey,
         recipientPubkey: normalizedEpochPublicKey,
         relayUrls,
-        since: getPrivateMessagesStartupFloorSince(now),
-        until: now,
+        since,
       });
       restoredGroupEpochHistoryKeys.add(restoreKey);
     })()
