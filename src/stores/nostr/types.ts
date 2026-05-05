@@ -134,6 +134,10 @@ export interface RefreshPrivateMessagesLiveSubscriptionOptions
   probeTimeoutMs?: number;
 }
 
+export interface RefreshPrivateMessagesLiveSubscriptionResult {
+  recreatedLiveSubscription: boolean;
+}
+
 export interface PrivateMessagesBackfillState {
   pubkey: string;
   nextSince: number;

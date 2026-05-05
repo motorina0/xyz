@@ -75,6 +75,7 @@ import type {
   PendingIncomingReaction,
   PrivatePreferences,
   RefreshPrivateMessagesLiveSubscriptionOptions,
+  RefreshPrivateMessagesLiveSubscriptionResult,
   RelaySaveStatus,
   RepairMissingMessageDependencyOptions,
   SubscribePrivateMessagesOptions,
@@ -214,7 +215,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   };
   let refreshPrivateMessagesLiveSubscriptionRuntime: (
     options?: RefreshPrivateMessagesLiveSubscriptionOptions
-  ) => Promise<void> = async () => {
+  ) => Promise<RefreshPrivateMessagesLiveSubscriptionResult> = async () => {
     throw new Error('Private messages subscription refresh runtime is not initialized.');
   };
   let subscribeGroupMembershipRosterUpdatesRuntime: (
@@ -478,7 +479,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
 
   function refreshPrivateMessagesLiveSubscriptionForReconnect(
     options: { forceRecreate?: boolean } = {}
-  ): Promise<void> {
+  ): Promise<RefreshPrivateMessagesLiveSubscriptionResult> {
     return refreshPrivateMessagesLiveSubscriptionRuntime({
       forceRecreate: options.forceRecreate,
       sinceOverride: getPrivateMessagesReconnectSince(),
@@ -1878,6 +1879,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     resetReconnectHealingRuntimeState: resetReconnectHealingRuntimeStateImpl,
   } = createReconnectHealingRuntime({
     getLoggedInPublicKeyHex,
+    getPrivateMessagesLiveEoseAt: () => privateMessagesSubscriptionLastEoseAt.value,
     getVisibleChatTarget: () => {
       if (!chatStore.visibleChatId) {
         return null;
@@ -1914,6 +1916,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setReconnectHealingStatusLabel: (value) => {
       reconnectHealingStatusLabel.value = value;
     },
+    waitForPrivateMessagesIngestQueue: () => getPrivateMessagesIngestQueueRuntime(),
   });
   notifyReconnectHealingBrowserOnlineRuntime = notifyReconnectHealingBrowserOnlineImpl;
   notifyReconnectHealingVisibilityHiddenRuntime = notifyReconnectHealingVisibilityHiddenImpl;

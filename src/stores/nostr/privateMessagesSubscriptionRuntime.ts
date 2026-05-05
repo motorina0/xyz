@@ -17,6 +17,7 @@ import {
 } from 'src/stores/nostr/constants';
 import type {
   RefreshPrivateMessagesLiveSubscriptionOptions,
+  RefreshPrivateMessagesLiveSubscriptionResult,
   SubscribePrivateMessagesOptions,
 } from 'src/stores/nostr/types';
 import type { Ref } from 'vue';
@@ -392,7 +393,7 @@ export function createPrivateMessagesSubscriptionRuntime({
 
   async function refreshPrivateMessagesLiveSubscription(
     options: RefreshPrivateMessagesLiveSubscriptionOptions = {}
-  ): Promise<void> {
+  ): Promise<RefreshPrivateMessagesLiveSubscriptionResult> {
     const sinceOverride = getPrivateMessagesSubscriptionSinceOverride(options.sinceOverride);
     const subscribeOptions: SubscribePrivateMessagesOptions = {
       ...(options.seedRelayUrls ? { seedRelayUrls: options.seedRelayUrls } : {}),
@@ -400,13 +401,21 @@ export function createPrivateMessagesSubscriptionRuntime({
       restoreThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
     };
 
-    const recreateLiveSubscription = async (reason: string): Promise<void> => {
+    const recreateLiveSubscription = async (
+      reason: string
+    ): Promise<RefreshPrivateMessagesLiveSubscriptionResult> => {
+      const previousStartedAt = privateMessagesSubscriptionStartedAt.value;
       logSubscription('private-messages', 'live-refresh-recreate', {
         reason,
         ...buildFilterSinceDetails(subscribeOptions.sinceOverride),
       });
       try {
         await subscribePrivateMessagesForLoggedInUser(true, subscribeOptions);
+        return {
+          recreatedLiveSubscription:
+            privateMessagesSubscription !== null &&
+            privateMessagesSubscriptionStartedAt.value !== previousStartedAt,
+        };
       } catch (error) {
         console.warn('Failed to refresh private messages live subscription', error);
         logSubscription('private-messages', 'live-refresh-recreate-error', {
@@ -414,12 +423,12 @@ export function createPrivateMessagesSubscriptionRuntime({
           error,
           ...buildFilterSinceDetails(subscribeOptions.sinceOverride),
         });
+        return { recreatedLiveSubscription: false };
       }
     };
 
     if (options.forceRecreate === true) {
-      await recreateLiveSubscription('force-recreate');
-      return;
+      return recreateLiveSubscription('force-recreate');
     }
 
     let probeSucceeded = false;
@@ -441,10 +450,10 @@ export function createPrivateMessagesSubscriptionRuntime({
         reason: 'probe-ok',
         ...buildFilterSinceDetails(subscribeOptions.sinceOverride),
       });
-      return;
+      return { recreatedLiveSubscription: false };
     }
 
-    await recreateLiveSubscription('probe-failed');
+    return recreateLiveSubscription('probe-failed');
   }
 
   async function recoverPrivateMessagesSubscriptionFromWatchdog(

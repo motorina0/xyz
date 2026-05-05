@@ -38,8 +38,10 @@ describe('reconnectHealingRuntime', () => {
       visibleChat?: ReconnectHealingChatTarget | null;
       isRestoringStartupState?: boolean;
       isNativeAndroid?: boolean;
+      refreshRecreatedLiveSubscription?: boolean;
     } = {}
   ) {
+    let privateMessagesLiveEoseAt: string | null = null;
     const healingState = ref(false);
     const statusLabel = ref<string | null>(null);
     const statusLabelUpdates: StatusLabelUpdate[] = [];
@@ -49,10 +51,14 @@ describe('reconnectHealingRuntime', () => {
       initialEntryCount: 1,
       remainingEntryCount: 0,
     }));
-    const refreshDirectMessages = vi.fn(async () => {});
+    const refreshDirectMessages = vi.fn(async () => ({
+      recreatedLiveSubscription: options.refreshRecreatedLiveSubscription ?? false,
+    }));
+    const waitForPrivateMessagesIngestQueue = vi.fn(async () => {});
 
     const runtime = createReconnectHealingRuntime({
       getLoggedInPublicKeyHex: () => LOGGED_IN_PUBLIC_KEY,
+      getPrivateMessagesLiveEoseAt: () => privateMessagesLiveEoseAt,
       getVisibleChatTarget: () => options.visibleChat ?? null,
       isNativeAndroid: () => options.isNativeAndroid ?? false,
       isRestoringStartupState: ref(options.isRestoringStartupState ?? false),
@@ -70,17 +76,22 @@ describe('reconnectHealingRuntime', () => {
           value,
         });
       },
+      waitForPrivateMessagesIngestQueue,
     });
 
     return {
       healingState,
       statusLabel,
       statusLabelUpdates,
+      setPrivateMessagesLiveEoseAt: (value: string | null) => {
+        privateMessagesLiveEoseAt = value;
+      },
       queueOutboundMessageReplay,
       queuePrivateMessagesWatchdog,
       refreshDeveloperPendingQueues,
       refreshDirectMessages,
       runtime,
+      waitForPrivateMessagesIngestQueue,
     };
   }
 
@@ -185,6 +196,49 @@ describe('reconnectHealingRuntime', () => {
       forceLiveSubscriptionRecreate: true,
     });
     expectStatusLabelsWereVisibleForMinimumDuration(statusLabelUpdates);
+  });
+
+  it('waits for live private-message EOSE after a recreated subscription', async () => {
+    const {
+      refreshDeveloperPendingQueues,
+      runtime,
+      setPrivateMessagesLiveEoseAt,
+      waitForPrivateMessagesIngestQueue,
+    } = createRuntime({
+      isNativeAndroid: true,
+      refreshRecreatedLiveSubscription: true,
+    });
+
+    const runPromise = runtime.runReconnectHealing('visibility-regain');
+    await runQueuedTimersForStatusSteps(3);
+    expect(refreshDeveloperPendingQueues).not.toHaveBeenCalled();
+
+    setPrivateMessagesLiveEoseAt('2026-05-05T10:00:00.000Z');
+    await vi.advanceTimersByTimeAsync(100);
+    await runQueuedTimersForStatusSteps(5);
+    await runPromise;
+
+    expect(waitForPrivateMessagesIngestQueue).toHaveBeenCalledTimes(1);
+    expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
+  });
+
+  it('continues healing after the live private-message EOSE wait times out', async () => {
+    const { refreshDeveloperPendingQueues, runtime, waitForPrivateMessagesIngestQueue } =
+      createRuntime({
+        isNativeAndroid: true,
+        refreshRecreatedLiveSubscription: true,
+      });
+
+    const runPromise = runtime.runReconnectHealing('visibility-regain');
+    await runQueuedTimersForStatusSteps(3);
+    expect(refreshDeveloperPendingQueues).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    await runQueuedTimersForStatusSteps(5);
+    await runPromise;
+
+    expect(waitForPrivateMessagesIngestQueue).not.toHaveBeenCalled();
+    expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
   });
 
   it('runs healing when a window-focus notifier follows a long enough background period', async () => {

@@ -22,6 +22,10 @@ interface RefreshDirectMessagesOptions {
   forceLiveSubscriptionRecreate?: boolean;
 }
 
+interface RefreshDirectMessagesResult {
+  recreatedLiveSubscription: boolean;
+}
+
 export interface ReconnectHealingChatTarget {
   id: string;
   publicKey: string;
@@ -31,15 +35,19 @@ export interface ReconnectHealingChatTarget {
 
 interface ReconnectHealingRuntimeDeps {
   getLoggedInPublicKeyHex: () => string | null;
+  getPrivateMessagesLiveEoseAt: () => string | null;
   getVisibleChatTarget: () => ReconnectHealingChatTarget | null;
   isNativeAndroid: () => boolean;
   isRestoringStartupState: Ref<boolean>;
   queueOutboundMessageReplay: (reason: 'reconnect-healing', delayMs?: number) => void;
   queuePrivateMessagesWatchdog: (delayMs?: number) => void;
   refreshDeveloperPendingQueues: () => Promise<unknown>;
-  refreshDirectMessages: (options?: RefreshDirectMessagesOptions) => Promise<void>;
+  refreshDirectMessages: (
+    options?: RefreshDirectMessagesOptions
+  ) => Promise<RefreshDirectMessagesResult>;
   setIsReconnectHealing: (value: boolean) => void;
   setReconnectHealingStatusLabel: (value: string | null) => void;
+  waitForPrivateMessagesIngestQueue: () => Promise<void>;
 }
 
 const RECONNECT_HEALING_STATUS_LABELS = {
@@ -53,6 +61,8 @@ const RECONNECT_HEALING_STATUS_LABELS = {
   finishingSync: 'Finishing sync',
 } as const;
 const RECONNECT_HEALING_STATUS_MIN_VISIBLE_MS = 200;
+const RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_TIMEOUT_MS = 60 * 1000;
+const RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_POLL_MS = 100;
 
 function hasWindow(): boolean {
   return typeof window !== 'undefined';
@@ -114,6 +124,7 @@ function delay(ms: number): Promise<void> {
 
 export function createReconnectHealingRuntime({
   getLoggedInPublicKeyHex,
+  getPrivateMessagesLiveEoseAt,
   getVisibleChatTarget,
   isNativeAndroid,
   isRestoringStartupState,
@@ -123,6 +134,7 @@ export function createReconnectHealingRuntime({
   refreshDirectMessages,
   setIsReconnectHealing,
   setReconnectHealingStatusLabel,
+  waitForPrivateMessagesIngestQueue,
 }: ReconnectHealingRuntimeDeps) {
   let reconnectHealingTimeoutId: ReturnType<typeof globalThis.setTimeout> | null = null;
   let reconnectHealingScheduledAt = 0;
@@ -177,6 +189,47 @@ export function createReconnectHealingRuntime({
     await waitForReconnectHealingStatusMinimumVisibleMs();
     setIsReconnectHealing(false);
     setReconnectHealingStatusLabelNow(null);
+  }
+
+  async function waitForPrivateMessagesLiveEoseAfter(
+    previousEoseAt: string | null
+  ): Promise<boolean> {
+    const deadlineAt = Date.now() + RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_TIMEOUT_MS;
+
+    while (Date.now() < deadlineAt) {
+      const nextEoseAt = getPrivateMessagesLiveEoseAt();
+      if (nextEoseAt && nextEoseAt !== previousEoseAt) {
+        return true;
+      }
+
+      await delay(
+        Math.min(
+          RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_POLL_MS,
+          Math.max(1, deadlineAt - Date.now())
+        )
+      );
+    }
+
+    return false;
+  }
+
+  async function waitForRefreshedPrivateMessagesLiveEose(previousEoseAt: string | null) {
+    logReconnectHealing('private-messages-live-eose-wait-start', {
+      timeoutMs: RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_TIMEOUT_MS,
+    });
+    const didReachEose = await waitForPrivateMessagesLiveEoseAfter(previousEoseAt);
+    logReconnectHealing(
+      didReachEose
+        ? 'private-messages-live-eose-wait-complete'
+        : 'private-messages-live-eose-wait-timeout',
+      {
+        timeoutMs: RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_TIMEOUT_MS,
+      }
+    );
+
+    if (didReachEose) {
+      await waitForPrivateMessagesIngestQueue();
+    }
   }
 
   function clearReconnectHealingTimer(): void {
@@ -339,9 +392,13 @@ export function createReconnectHealingRuntime({
       await showReconnectHealingStatusLabel(
         RECONNECT_HEALING_STATUS_LABELS.refreshingDirectMessages
       );
-      await refreshDirectMessages({
+      const previousPrivateMessagesLiveEoseAt = getPrivateMessagesLiveEoseAt();
+      const directMessagesRefreshResult = await refreshDirectMessages({
         forceLiveSubscriptionRecreate: isNativeAndroid(),
       });
+      if (directMessagesRefreshResult.recreatedLiveSubscription) {
+        await waitForRefreshedPrivateMessagesLiveEose(previousPrivateMessagesLiveEoseAt);
+      }
       refreshedDirectMessages = true;
 
       await showReconnectHealingStatusLabel(

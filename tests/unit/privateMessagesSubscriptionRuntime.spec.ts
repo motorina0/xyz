@@ -122,11 +122,12 @@ describe('privateMessagesSubscriptionRuntime', () => {
   it('recreates the live subscription directly when forced', async () => {
     const { runtime, subscribeWithReqLogging } = createRuntime();
 
-    await runtime.refreshPrivateMessagesLiveSubscription({
+    const result = await runtime.refreshPrivateMessagesLiveSubscription({
       forceRecreate: true,
       sinceOverride: 123,
     });
 
+    expect(result).toEqual({ recreatedLiveSubscription: true });
     expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
     expect(subscribeWithReqLogging).toHaveBeenCalledWith(
       'private-messages',
@@ -144,11 +145,12 @@ describe('privateMessagesSubscriptionRuntime', () => {
     const { privateMessagesSubscriptionLiveCoverageAt, runtime, subscribeWithReqLogging } =
       createRuntime();
 
-    await runtime.refreshPrivateMessagesLiveSubscription({
+    const result = await runtime.refreshPrivateMessagesLiveSubscription({
       sinceOverride: 123,
       probeTimeoutMs: 10,
     });
 
+    expect(result).toEqual({ recreatedLiveSubscription: false });
     expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
     expect(subscribeWithReqLogging).toHaveBeenCalledWith(
       'private-messages',
@@ -184,8 +186,9 @@ describe('privateMessagesSubscriptionRuntime', () => {
 
     await vi.runAllTicks();
     await vi.advanceTimersByTimeAsync(10);
-    await refreshPromise;
+    const result = await refreshPromise;
 
+    expect(result).toEqual({ recreatedLiveSubscription: true });
     expect(subscribeWithReqLogging).toHaveBeenCalledTimes(2);
     expect(subscribeWithReqLogging).toHaveBeenNthCalledWith(
       1,
