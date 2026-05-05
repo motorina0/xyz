@@ -285,6 +285,8 @@ export interface DeveloperPrivateMessagesSubscriptionSnapshot {
   lastEventCreatedAt: number | null;
   lastEventCreatedAtIso: string | null;
   lastEoseAt: string | null;
+  liveCoverageAt: number | null;
+  liveCoverageAtIso: string | null;
 }
 
 export interface DeveloperGroupMessageSubscriptionSnapshot {

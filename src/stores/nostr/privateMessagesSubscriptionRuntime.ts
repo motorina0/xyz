@@ -63,6 +63,7 @@ interface PrivateMessagesSubscriptionRuntimeDeps {
   privateMessagesSubscriptionLastEventCreatedAt: Ref<number | null>;
   privateMessagesSubscriptionLastEventId: Ref<string | null>;
   privateMessagesSubscriptionLastEventSeenAt: Ref<string | null>;
+  privateMessagesSubscriptionLiveCoverageAt: Ref<number | null>;
   privateMessagesSubscriptionRelayUrls: Ref<string[]>;
   privateMessagesSubscriptionSince: Ref<number | null>;
   privateMessagesSubscriptionStartedAt: Ref<string | null>;
@@ -126,6 +127,7 @@ export function createPrivateMessagesSubscriptionRuntime({
   privateMessagesSubscriptionLastEventCreatedAt,
   privateMessagesSubscriptionLastEventId,
   privateMessagesSubscriptionLastEventSeenAt,
+  privateMessagesSubscriptionLiveCoverageAt,
   privateMessagesSubscriptionRelayUrls,
   privateMessagesSubscriptionSince,
   privateMessagesSubscriptionStartedAt,
@@ -215,6 +217,19 @@ export function createPrivateMessagesSubscriptionRuntime({
 
   function isBrowserOfflineForPrivateMessagesWatchdog(): boolean {
     return typeof navigator !== 'undefined' && navigator.onLine === false;
+  }
+
+  function markPrivateMessagesLiveCoverageNow(): void {
+    const now = Math.floor(Date.now() / 1000);
+    if (
+      privateMessagesSubscriptionLiveCoverageAt.value !== null &&
+      privateMessagesSubscriptionLiveCoverageAt.value >= now
+    ) {
+      return;
+    }
+
+    privateMessagesSubscriptionLiveCoverageAt.value = now;
+    bumpDeveloperDiagnosticsVersion();
   }
 
   function normalizePrivateMessagesLiveProbeTimeoutMs(value: number | undefined): number {
@@ -348,6 +363,7 @@ export function createPrivateMessagesSubscriptionRuntime({
               queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
             },
             onEose: () => {
+              markPrivateMessagesLiveCoverageNow();
               flushPrivateMessagesUiRefreshNow();
               schedulePostPrivateMessagesEoseChecks();
               finish(true, 'eose');
@@ -595,6 +611,7 @@ export function createPrivateMessagesSubscriptionRuntime({
     privateMessagesSubscriptionLastEventId.value = null;
     privateMessagesSubscriptionLastEventCreatedAt.value = null;
     privateMessagesSubscriptionLastEoseAt.value = null;
+    privateMessagesSubscriptionLiveCoverageAt.value = null;
   }
 
   async function subscribePrivateMessagesForLoggedInUser(
@@ -776,6 +793,7 @@ export function createPrivateMessagesSubscriptionRuntime({
           cacheUsage: NDKSubscriptionCacheUsage.ONLY_RELAY,
           onEvent: (event) => {
             const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
+            markPrivateMessagesLiveCoverageNow();
             logSubscription('private-messages', 'event', {
               signature,
               ...buildSubscriptionEventDetails(wrappedEvent),
@@ -795,6 +813,7 @@ export function createPrivateMessagesSubscriptionRuntime({
             queuePrivateMessageIngestion(wrappedEvent, loggedInPubkeyHex);
           },
           onEose: () => {
+            markPrivateMessagesLiveCoverageNow();
             logSubscription('private-messages', 'eose', {
               signature,
               restoreThrottleMs: getPrivateMessagesRestoreThrottleMs(),

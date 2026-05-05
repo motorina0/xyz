@@ -39,6 +39,38 @@ function parseOptionalUnixTimestampValue(value: string | null | undefined): numb
   return Math.floor(parsed / 1000);
 }
 
+function normalizeOptionalUnixSecondsValue(value: number | null | undefined): number | null {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+
+  const normalizedValue = Math.floor(Number(value));
+  return normalizedValue >= 0 ? normalizedValue : null;
+}
+
+export function resolvePrivateMessagesLiveReconnectSinceValue(input: {
+  liveCoverageAt: number | null | undefined;
+  lastEventTime: number | null | undefined;
+  startupFloorSince: number;
+  lookbackSeconds: number;
+}): number {
+  const normalizedLookbackSeconds =
+    Number.isFinite(input.lookbackSeconds) && input.lookbackSeconds > 0
+      ? Math.floor(input.lookbackSeconds)
+      : 0;
+  const liveCoverageAt = normalizeOptionalUnixSecondsValue(input.liveCoverageAt);
+  if (liveCoverageAt !== null) {
+    return Math.max(0, liveCoverageAt - normalizedLookbackSeconds);
+  }
+
+  const lastEventTime = normalizeOptionalUnixSecondsValue(input.lastEventTime);
+  if (lastEventTime !== null) {
+    return Math.max(0, lastEventTime - normalizedLookbackSeconds);
+  }
+
+  return normalizeOptionalUnixSecondsValue(input.startupFloorSince) ?? 0;
+}
+
 export function normalizeChatGroupEpochKeysValue(value: unknown): ChatGroupEpochKey[] {
   if (!Array.isArray(value)) {
     return [];

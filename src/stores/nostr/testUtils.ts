@@ -25,6 +25,7 @@ import {
   resolveGroupDisplayNameValue,
   resolveGroupPublishRelayUrlsValue,
   resolveIncomingChatInboxStateValue,
+  resolvePrivateMessagesLiveReconnectSinceValue,
   shouldPreserveExistingGroupRelaysValue,
 } from 'src/stores/nostr/valueUtils';
 
@@ -53,5 +54,6 @@ export const __nostrStoreTestUtils = {
   resolveCurrentGroupChatEpochEntry: resolveCurrentGroupChatEpochEntryValue,
   resolveGroupChatEpochEntries: resolveGroupChatEpochEntriesValue,
   resolveIncomingChatInboxState: resolveIncomingChatInboxStateValue,
+  resolvePrivateMessagesLiveReconnectSince: resolvePrivateMessagesLiveReconnectSinceValue,
   shouldPreserveExistingGroupRelays: shouldPreserveExistingGroupRelaysValue,
 };

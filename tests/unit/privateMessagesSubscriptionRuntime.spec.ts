@@ -30,6 +30,7 @@ type SubscriptionOptions = {
 };
 
 function createRuntime(overrides: { subscribeWithReqLogging?: ReturnType<typeof vi.fn> } = {}) {
+  const privateMessagesSubscriptionLiveCoverageAt = ref<number | null>(null);
   const subscribeWithReqLogging =
     overrides.subscribeWithReqLogging ??
     vi.fn(
@@ -83,6 +84,7 @@ function createRuntime(overrides: { subscribeWithReqLogging?: ReturnType<typeof 
     privateMessagesSubscriptionLastEventCreatedAt: ref(null),
     privateMessagesSubscriptionLastEventId: ref(null),
     privateMessagesSubscriptionLastEventSeenAt: ref(null),
+    privateMessagesSubscriptionLiveCoverageAt,
     privateMessagesSubscriptionRelayUrls: ref([]),
     privateMessagesSubscriptionSince: ref(null),
     privateMessagesSubscriptionStartedAt: ref(null),
@@ -100,6 +102,7 @@ function createRuntime(overrides: { subscribeWithReqLogging?: ReturnType<typeof 
 
   return {
     logSubscription,
+    privateMessagesSubscriptionLiveCoverageAt,
     runtime,
     subscribeWithReqLogging,
   };
@@ -138,7 +141,8 @@ describe('privateMessagesSubscriptionRuntime', () => {
   });
 
   it('keeps the live subscription when the probe reaches EOSE', async () => {
-    const { runtime, subscribeWithReqLogging } = createRuntime();
+    const { privateMessagesSubscriptionLiveCoverageAt, runtime, subscribeWithReqLogging } =
+      createRuntime();
 
     await runtime.refreshPrivateMessagesLiveSubscription({
       sinceOverride: 123,
@@ -158,6 +162,7 @@ describe('privateMessagesSubscriptionRuntime', () => {
       }),
       expect.any(Object)
     );
+    expect(privateMessagesSubscriptionLiveCoverageAt.value).toBeGreaterThan(0);
   });
 
   it('recreates the live subscription when the probe times out', async () => {

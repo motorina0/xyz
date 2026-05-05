@@ -26,6 +26,7 @@ const {
   resolveCurrentGroupChatEpochEntry,
   resolveGroupChatEpochEntries,
   resolveIncomingChatInboxState,
+  resolvePrivateMessagesLiveReconnectSince,
   shouldPreserveExistingGroupRelays,
 } = __nostrStoreTestUtils;
 
@@ -104,6 +105,39 @@ describe('nostrStore logic', () => {
     });
 
     expect(resetStartupStepSnapshots().every((step) => step.status === 'pending')).toBe(true);
+  });
+
+  it('anchors private-message live reconnects to the last known live coverage time first', () => {
+    expect(
+      resolvePrivateMessagesLiveReconnectSince({
+        liveCoverageAt: 1_700_200_000,
+        lastEventTime: 1_600_000_000,
+        startupFloorSince: 1_500_000_000,
+        lookbackSeconds: 2 * 24 * 60 * 60,
+      })
+    ).toBe(1_700_200_000 - 2 * 24 * 60 * 60);
+  });
+
+  it('falls back to last private-message event time for live reconnects without coverage', () => {
+    expect(
+      resolvePrivateMessagesLiveReconnectSince({
+        liveCoverageAt: null,
+        lastEventTime: 1_700_100_000,
+        startupFloorSince: 1_500_000_000,
+        lookbackSeconds: 2 * 24 * 60 * 60,
+      })
+    ).toBe(1_700_100_000 - 2 * 24 * 60 * 60);
+  });
+
+  it('falls back to the startup floor for live reconnects without coverage or events', () => {
+    expect(
+      resolvePrivateMessagesLiveReconnectSince({
+        liveCoverageAt: null,
+        lastEventTime: null,
+        startupFloorSince: 1_500_000_000,
+        lookbackSeconds: 2 * 24 * 60 * 60,
+      })
+    ).toBe(1_500_000_000);
   });
 
   it('normalizes group epoch entries, filters invalid rows, and sorts descending', () => {

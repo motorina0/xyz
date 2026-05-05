@@ -70,6 +70,7 @@ interface DeveloperDiagnosticsDeps {
   privateMessagesSubscriptionLastEventCreatedAt: Ref<number | null>;
   privateMessagesSubscriptionLastEventId: Ref<string | null>;
   privateMessagesSubscriptionLastEventSeenAt: Ref<string | null>;
+  privateMessagesSubscriptionLiveCoverageAt: Ref<number | null>;
   privateMessagesSubscriptionRelayUrls: Ref<string[]>;
   privateMessagesSubscriptionSince: Ref<number | null>;
   privateMessagesSubscriptionStartedAt: Ref<string | null>;
@@ -123,6 +124,7 @@ export function createDeveloperDiagnosticsRuntime({
   privateMessagesSubscriptionLastEventCreatedAt,
   privateMessagesSubscriptionLastEventId,
   privateMessagesSubscriptionLastEventSeenAt,
+  privateMessagesSubscriptionLiveCoverageAt,
   privateMessagesSubscriptionRelayUrls,
   privateMessagesSubscriptionSince,
   privateMessagesSubscriptionStartedAt,
@@ -505,6 +507,10 @@ export function createDeveloperDiagnosticsRuntime({
           privateMessagesSubscriptionLastEventCreatedAt.value
         ),
         lastEoseAt: privateMessagesSubscriptionLastEoseAt.value,
+        liveCoverageAt: privateMessagesSubscriptionLiveCoverageAt.value,
+        liveCoverageAtIso: toOptionalIsoTimestampFromUnix(
+          privateMessagesSubscriptionLiveCoverageAt.value
+        ),
       },
       groupMessagesSubscription,
       relayRows,

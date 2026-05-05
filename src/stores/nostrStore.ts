@@ -101,6 +101,7 @@ import {
   resolveGroupDisplayNameValue,
   resolveGroupPublishRelayUrlsValue,
   resolveIncomingChatInboxStateValue,
+  resolvePrivateMessagesLiveReconnectSinceValue,
   shouldPreserveExistingGroupRelaysValue,
 } from 'src/stores/nostr/valueUtils';
 import { useRelayStore } from 'src/stores/relayStore';
@@ -165,6 +166,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
   const privateMessagesSubscriptionLastEventId = ref<string | null>(null);
   const privateMessagesSubscriptionLastEventCreatedAt = ref<number | null>(null);
   const privateMessagesSubscriptionLastEoseAt = ref<string | null>(null);
+  const privateMessagesSubscriptionLiveCoverageAt = ref<number | null>(null);
   const isAppForeground = ref(false);
   const isReconnectHealing = ref(false);
   const reconnectHealingStatusLabel = ref<string | null>(null);
@@ -467,12 +469,12 @@ export const useNostrStore = defineStore('nostrStore', () => {
   }
 
   function getPrivateMessagesReconnectSince(baseUnixTime = Math.floor(Date.now() / 1000)): number {
-    const lastEventTime = readStoredPrivateMessagesLastReceivedCreatedAt();
-    if (lastEventTime !== null) {
-      return Math.max(0, lastEventTime - PRIVATE_MESSAGES_LIVE_RECONNECT_LOOKBACK_SECONDS);
-    }
-
-    return getPrivateMessagesStartupFloorSince(baseUnixTime);
+    return resolvePrivateMessagesLiveReconnectSinceValue({
+      liveCoverageAt: privateMessagesSubscriptionLiveCoverageAt.value,
+      lastEventTime: readStoredPrivateMessagesLastReceivedCreatedAt(),
+      startupFloorSince: getPrivateMessagesStartupFloorSince(baseUnixTime),
+      lookbackSeconds: PRIVATE_MESSAGES_LIVE_RECONNECT_LOOKBACK_SECONDS,
+    });
   }
 
   function createInitialGroupEpochSecretState(): Pick<
@@ -1291,6 +1293,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesSubscriptionLastEventCreatedAt,
     privateMessagesSubscriptionLastEventId,
     privateMessagesSubscriptionLastEventSeenAt,
+    privateMessagesSubscriptionLiveCoverageAt,
     privateMessagesSubscriptionRelayUrls,
     privateMessagesSubscriptionSince,
     privateMessagesSubscriptionStartedAt,
@@ -1959,6 +1962,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     privateMessagesSubscriptionLastEventCreatedAt,
     privateMessagesSubscriptionLastEventId,
     privateMessagesSubscriptionLastEventSeenAt,
+    privateMessagesSubscriptionLiveCoverageAt,
     privateMessagesSubscriptionRelayUrls,
     privateMessagesSubscriptionSince,
     privateMessagesSubscriptionStartedAt,
