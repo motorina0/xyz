@@ -139,9 +139,9 @@ describe('reconnectHealingRuntime', () => {
     expectStatusLabels(statusLabelUpdates, [
       'Preparing sync',
       'Checking session and network',
+      'Refreshing direct messages',
       'Queing message relay check',
       'Queing unsent message retries',
-      'Refreshing direct messages',
       'Applying pending message updates',
       'Finishing sync',
       null,

@@ -326,15 +326,6 @@ export function createReconnectHealingRuntime({
       }
 
       reconnectHealingLastStartedAt = Date.now();
-      await showReconnectHealingStatusLabel(
-        RECONNECT_HEALING_STATUS_LABELS.queueingMessageRelayCheck
-      );
-      queuePrivateMessagesWatchdog(0);
-      await showReconnectHealingStatusLabel(
-        RECONNECT_HEALING_STATUS_LABELS.queueingUnsentMessageRetries
-      );
-      queueOutboundMessageReplay('reconnect-healing', 0);
-
       const visibleChatTarget = normalizeChatTarget(getVisibleChatTarget());
       logReconnectHealing('start', {
         reason,
@@ -352,6 +343,15 @@ export function createReconnectHealingRuntime({
         forceLiveSubscriptionRecreate: isNativeAndroid(),
       });
       refreshedDirectMessages = true;
+
+      await showReconnectHealingStatusLabel(
+        RECONNECT_HEALING_STATUS_LABELS.queueingMessageRelayCheck
+      );
+      queuePrivateMessagesWatchdog(0);
+      await showReconnectHealingStatusLabel(
+        RECONNECT_HEALING_STATUS_LABELS.queueingUnsentMessageRetries
+      );
+      queueOutboundMessageReplay('reconnect-healing', 0);
 
       await showReconnectHealingStatusLabel(
         RECONNECT_HEALING_STATUS_LABELS.applyingPendingMessageUpdates
