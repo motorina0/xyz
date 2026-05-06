@@ -27,57 +27,6 @@ import {
 
 test.describe.configure({ mode: 'serial' });
 
-test('missing group messages are repaired from encrypted backrefs on the next group message', async ({
-  browser,
-}) => {
-  test.slow();
-
-  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupBackrefAlice);
-  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupBackrefBob);
-
-  try {
-    const groupPublicKey = await createGroup(alice.page, {
-      name: `Backref Group ${Date.now()}`,
-      about: 'Backref repair coverage',
-    });
-    const targetMessage = `group-backref-target-${Date.now()}`;
-    const followupMessage = `group-backref-followup-${Date.now()}`;
-
-    await addGroupMemberAndPublish(alice.page, bob.session.publicKey);
-    await openRequests(bob.page);
-    await expect(bob.page.getByTestId('chat-request-item')).toContainText('Group invitation');
-    await acceptFirstRequest(bob.page);
-
-    await navigateToChat(alice.page, groupPublicKey);
-    const [seededTarget] = await sendMessagesViaBridge(alice.page, groupPublicKey, [targetMessage]);
-    if (!seededTarget?.eventId) {
-      throw new Error('Expected the seeded group backref target to have an event id.');
-    }
-
-    await navigateToChat(bob.page, groupPublicKey);
-    await waitForThreadMessage(bob.page, targetMessage, {
-      chatId: groupPublicKey,
-    });
-    await removeStoredMessageByEventId(bob.page, groupPublicKey, seededTarget.eventId);
-    await waitForNoThreadMessage(bob.page, targetMessage, {
-      chatId: groupPublicKey,
-      refresh: false,
-      timeoutMs: 6_000,
-    });
-
-    await sendMessagesViaBridge(alice.page, groupPublicKey, [followupMessage]);
-    await waitForThreadMessage(bob.page, followupMessage, {
-      chatId: groupPublicKey,
-    });
-    await expect(threadMessage(bob.page, targetMessage)).toBeVisible({
-      timeout: 45_000,
-    });
-    await expectNoUnexpectedBrowserErrors([alice, bob]);
-  } finally {
-    await disposeUsers(alice, bob);
-  }
-});
-
 test('group delivery still works after both users restart', async ({ browser }) => {
   let alice = await bootstrapUser(browser, TEST_ACCOUNTS.groupRestartAlice);
   let bob = await bootstrapUser(browser, TEST_ACCOUNTS.groupRestartBob);

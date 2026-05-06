@@ -20,51 +20,6 @@ import {
 
 test.describe.configure({ mode: 'serial' });
 
-test('missing direct messages are repaired from encrypted backrefs on the next message', async ({
-  browser,
-}) => {
-  test.slow();
-
-  const alice = await bootstrapUser(browser, TEST_ACCOUNTS.backrefRepairAlice);
-  const bob = await bootstrapUser(browser, TEST_ACCOUNTS.backrefRepairBob);
-
-  try {
-    const targetMessage = `backref-repair-target-${Date.now()}`;
-    const followupMessage = `backref-repair-followup-${Date.now()}`;
-
-    await establishAcceptedDirectChat(alice, bob);
-    await navigateToChat(alice.page, bob.session.publicKey);
-
-    const [seededTarget] = await sendMessagesViaBridge(alice.page, bob.session.publicKey, [
-      targetMessage,
-    ]);
-    if (!seededTarget?.eventId) {
-      throw new Error('Expected the seeded DM backref target to have an event id.');
-    }
-
-    await waitForThreadMessage(bob.page, targetMessage, {
-      chatId: alice.session.publicKey,
-    });
-    await removeStoredMessageByEventId(bob.page, alice.session.publicKey, seededTarget.eventId);
-    await waitForNoThreadMessage(bob.page, targetMessage, {
-      chatId: alice.session.publicKey,
-      refresh: false,
-      timeoutMs: 6_000,
-    });
-
-    await sendMessagesViaBridge(alice.page, bob.session.publicKey, [followupMessage]);
-    await waitForThreadMessage(bob.page, followupMessage, {
-      chatId: alice.session.publicKey,
-    });
-    await expect(threadMessage(bob.page, targetMessage)).toBeVisible({
-      timeout: 45_000,
-    });
-    await expectNoUnexpectedBrowserErrors([alice, bob]);
-  } finally {
-    await disposeUsers(alice, bob);
-  }
-});
-
 test('missing reply targets are repaired when the reply preview is opened', async ({ browser }) => {
   test.slow();
 

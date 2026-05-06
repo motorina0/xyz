@@ -182,16 +182,6 @@ export interface PrivateMessagesIngestRuntimeDeps {
     fallbackName: string,
     seedRelayUrls?: string[]
   ) => void;
-  queueMessageBackrefRepair: (
-    chatPublicKey: string,
-    targetEventIds: string[],
-    options: {
-      discoveryDepth: number;
-      referenceCreatedAt?: number | null;
-      seedRelayUrls?: string[];
-      uiThrottleMs?: number;
-    }
-  ) => Promise<void>;
   queuePrivateMessagesUiRefresh: (options: {
     throttleMs?: number;
     reloadChats?: boolean;

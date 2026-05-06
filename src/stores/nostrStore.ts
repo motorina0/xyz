@@ -292,16 +292,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ) => Promise<boolean> = async () => {
     throw new Error('Missing message dependency repair runtime is not initialized.');
   };
-  let queueMessageBackrefRepairRuntime: (
-    chatPublicKey: string,
-    targetEventIds: string[],
-    options: {
-      discoveryDepth: number;
-      referenceCreatedAt?: number | null;
-      seedRelayUrls?: string[];
-      uiThrottleMs?: number;
-    }
-  ) => Promise<void> = async () => {};
   let resolveMissingMessageDependencyRepairRuntime: (targetEventId: string) => void = () => {};
   let resetPrivateMessagesBackfillRuntimeStateRuntime: () => void = () => {};
   let upsertIncomingGroupInviteRequestChatRuntime: (
@@ -1247,8 +1237,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     queueBackgroundGroupContactRefresh: (groupPublicKey, fallbackName, seedRelayUrls) => {
       queueBackgroundGroupContactRefreshRuntime(groupPublicKey, fallbackName, seedRelayUrls);
     },
-    queueMessageBackrefRepair: (chatPublicKey, targetEventIds, options) =>
-      queueMessageBackrefRepairRuntime(chatPublicKey, targetEventIds, options),
     queuePrivateMessagesUiRefresh,
     readReplyTargetEventId,
     refreshReplyPreviewsForTargetMessage,
@@ -1350,7 +1338,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
   ensurePrivateMessagesWatchdogImpl();
 
   const {
-    queueMessageBackrefRepair: queueMessageBackrefRepairImpl,
     repairMissingMessageDependency: repairMissingMessageDependencyImpl,
     resetPrivateMessagesBackfillRuntimeState: resetPrivateMessagesBackfillRuntimeStateImpl,
     resolveMissingMessageDependencyRepair: resolveMissingMessageDependencyRepairImpl,
@@ -1384,7 +1371,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     updateStoredPrivateMessagesLastReceivedFromCreatedAt,
     writePrivateMessagesBackfillState,
   });
-  queueMessageBackrefRepairRuntime = queueMessageBackrefRepairImpl;
   repairMissingMessageDependencyRuntime = repairMissingMessageDependencyImpl;
   resetPrivateMessagesBackfillRuntimeStateRuntime = resetPrivateMessagesBackfillRuntimeStateImpl;
   resolveMissingMessageDependencyRepairRuntime = resolveMissingMessageDependencyRepairImpl;

@@ -165,14 +165,6 @@ export const TEST_ACCOUNTS = {
     privateKey: 'dab1a69c14f05653be2fcf725d04068cd85214f9dbe09c2ac0fadbd1f9545d4c',
     displayName: 'Bob Restart',
   },
-  groupBackrefAlice: {
-    privateKey: '6aa2ad635c7592b47b00791e1321c0fc17ccbc11432c947a43d099eecc34bc1e',
-    displayName: 'Alice Group Backref',
-  },
-  groupBackrefBob: {
-    privateKey: '146d52f0e6caf876ab32f2a9bfc7f0c1e6cb26dff0d17b2c945d3c724896180b',
-    displayName: 'Bob Group Backref',
-  },
   groupRelayAlice: {
     privateKey: '2483f2c5443f2a4992e6ada11e76d603fbcf52fa97633b315e4c3e3d53ede5bc',
     displayName: 'Alice Relay',
@@ -296,14 +288,6 @@ export const TEST_ACCOUNTS = {
   replyRepairBob: {
     privateKey: '0000ffffeeeeddddccccbbbbaaaa999988887777666655554444333322221111',
     displayName: 'Bob Reply Repair',
-  },
-  backrefRepairAlice: {
-    privateKey: '7efce254cdc45b6729625d75bb3989a2c9a773bf7e5a602b16687005e28d343c',
-    displayName: 'Alice Backref Repair',
-  },
-  backrefRepairBob: {
-    privateKey: '9ddf701090e74120eb623b797be13b60dcfba095bb39a8f97c1ea39b0eb635a6',
-    displayName: 'Bob Backref Repair',
   },
   reactionRepairAlice: {
     privateKey: '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
@@ -1141,15 +1125,11 @@ export async function waitForThreadSearchStatus(page: Page, statusText: string):
 }
 
 export async function openPreviousThreadSearchResult(page: Page): Promise<void> {
-  const previousButton = page.getByTestId('thread-search-prev-button');
-  await expect(previousButton).toBeEnabled({ timeout: 12_000 });
-  await previousButton.click();
+  await page.getByTestId('thread-search-prev-button').click();
 }
 
 export async function openNextThreadSearchResult(page: Page): Promise<void> {
-  const nextButton = page.getByTestId('thread-search-next-button');
-  await expect(nextButton).toBeEnabled({ timeout: 12_000 });
-  await nextButton.click();
+  await page.getByTestId('thread-search-next-button').click();
 }
 
 export async function waitForThreadSearchFocusedMessage(page: Page, text: string): Promise<void> {

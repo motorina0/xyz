@@ -119,7 +119,7 @@ function createDeps() {
       );
     }),
     createDirectMessageRumorEvent: vi.fn(
-      (senderPubkey, recipientPubkey, message, createdAt, replyToEventId, backrefEventIds) => ({
+      (senderPubkey, recipientPubkey, message, createdAt, replyToEventId) => ({
         id: 'direct-rumor',
         kind: NDKKind.PrivateDirectMessage,
         pubkey: senderPubkey,
@@ -127,7 +127,6 @@ function createDeps() {
         message,
         created_at: createdAt,
         replyToEventId,
-        backrefEventIds,
         tags: [],
       })
     ),
@@ -273,7 +272,6 @@ describe('userActions runtime', () => {
       {
         createdAt: '2026-01-02T00:00:00.000Z',
         replyToEventId: '  REPLY-ID  ',
-        backrefEventIds: [` ${'A'.repeat(64)} `, 'a'.repeat(64), 'B'.repeat(64)],
         publishSelfCopy: true,
       }
     );
@@ -283,8 +281,7 @@ describe('userActions runtime', () => {
       'r'.repeat(64),
       'hello there',
       123456,
-      'reply-id',
-      ['a'.repeat(64), 'b'.repeat(64)]
+      'reply-id'
     );
     expect(deps.sendGiftWrappedRumor).toHaveBeenCalledWith(
       'r'.repeat(64),
@@ -294,7 +291,6 @@ describe('userActions runtime', () => {
       {
         createdAt: '2026-01-02T00:00:00.000Z',
         replyToEventId: '  REPLY-ID  ',
-        backrefEventIds: [` ${'A'.repeat(64)} `, 'a'.repeat(64), 'B'.repeat(64)],
         publishSelfCopy: true,
       }
     );

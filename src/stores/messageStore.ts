@@ -10,11 +10,6 @@ import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
 import { useChatStore } from 'src/stores/chatStore';
-import {
-  MESSAGE_BACKREF_LIMIT,
-  MESSAGE_WRAPPER_EVENT_ID_META_KEY,
-  MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY,
-} from 'src/stores/nostr/constants';
 import type {
   DeletedMessageMetadata,
   Message,
@@ -108,94 +103,6 @@ function normalizeEventId(value: unknown): string | null {
 
   const normalizedValue = value.trim().toLowerCase();
   return normalizedValue || null;
-}
-
-function readMessageWrapperEventId(
-  meta: Record<string, unknown> | null | undefined
-): string | null {
-  const normalizedEventId = normalizeEventId(meta?.[MESSAGE_WRAPPER_EVENT_ID_META_KEY]);
-  return normalizedEventId ? inputSanitizerService.normalizeHexKey(normalizedEventId) : null;
-}
-
-function readMessageWrapperRecipientPublicKey(
-  meta: Record<string, unknown> | null | undefined
-): string | null {
-  return inputSanitizerService.normalizeHexKey(
-    typeof meta?.[MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY] === 'string'
-      ? meta[MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY]
-      : ''
-  );
-}
-
-function isDeletedMessageRow(row: Pick<MessageRow, 'meta'>): boolean {
-  const deletedMeta = row.meta.deleted;
-  return typeof deletedMeta === 'object' && deletedMeta !== null && !Array.isArray(deletedMeta);
-}
-
-function collectMessageBackrefEventIdsValue(
-  rows: MessageRow[],
-  chat: Pick<ChatRow, 'type' | 'meta'>,
-  loggedInPublicKey: string | null,
-  limit = MESSAGE_BACKREF_LIMIT
-): string[] {
-  const normalizedLimit = Math.max(0, Math.floor(Number(limit) || 0));
-  if (normalizedLimit <= 0) {
-    return [];
-  }
-
-  const normalizedLoggedInPublicKey =
-    typeof loggedInPublicKey === 'string'
-      ? inputSanitizerService.normalizeHexKey(loggedInPublicKey)
-      : null;
-  const currentGroupEpochPublicKey =
-    chat.type === 'group'
-      ? inputSanitizerService.normalizeHexKey(
-          typeof chat.meta.current_epoch_public_key === 'string'
-            ? chat.meta.current_epoch_public_key
-            : ''
-        )
-      : null;
-  const backrefEventIds: string[] = [];
-  const seenEventIds = new Set<string>();
-
-  for (let index = rows.length - 1; index >= 0; index -= 1) {
-    const row = rows[index];
-    if (!row || isDeletedMessageRow(row)) {
-      continue;
-    }
-
-    if (chat.type === 'group') {
-      const wrapperRecipientPublicKey = readMessageWrapperRecipientPublicKey(row.meta);
-      if (
-        currentGroupEpochPublicKey &&
-        wrapperRecipientPublicKey &&
-        wrapperRecipientPublicKey !== currentGroupEpochPublicKey
-      ) {
-        continue;
-      }
-      if (currentGroupEpochPublicKey && !wrapperRecipientPublicKey) {
-        continue;
-      }
-    } else if (
-      !normalizedLoggedInPublicKey ||
-      inputSanitizerService.normalizeHexKey(row.author_public_key) !== normalizedLoggedInPublicKey
-    ) {
-      continue;
-    }
-
-    const wrapperEventId = readMessageWrapperEventId(row.meta);
-    if (!wrapperEventId || seenEventIds.has(wrapperEventId)) {
-      continue;
-    }
-
-    seenEventIds.add(wrapperEventId);
-    backrefEventIds.push(wrapperEventId);
-    if (backrefEventIds.length >= normalizedLimit) {
-      break;
-    }
-  }
-
-  return backrefEventIds;
 }
 
 function normalizeTimestamp(value: unknown): string | null {
@@ -558,17 +465,6 @@ function resolveReplyTargetEventIdValue(
   return normalizeEventId(persistedEventId);
 }
 
-async function collectMessageBackrefEventIds(
-  chat: Pick<ChatRow, 'public_key' | 'type' | 'meta'>
-): Promise<string[]> {
-  const latestMessages = await chatDataService.listLatestMessages(
-    chat.public_key,
-    MESSAGE_BACKREF_LIMIT * 4
-  );
-
-  return collectMessageBackrefEventIdsValue(latestMessages.rows, chat, getLoggedInPublicKey());
-}
-
 function applyMessageUpsert(
   currentMessages: Message[],
   paginationState: ChatMessagePaginationState | null | undefined,
@@ -666,7 +562,6 @@ export const __messageStoreTestUtils = {
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
-  collectMessageBackrefEventIds: collectMessageBackrefEventIdsValue,
   compareMessageCursors,
   countOwnUnseenReactions,
   mergeMessagesById,
@@ -1553,7 +1448,6 @@ export const useMessageStore = defineStore('messageStore', () => {
     }
 
     const recipientRelayUrls = await resolveSendRelayUrls(chat.public_key, options.relayUrls);
-    const backrefEventIds = await collectMessageBackrefEventIds(chat);
 
     const replyTargetEventId = await resolveReplyTargetEventId(replyTo);
     const replyPreview = replyTo
@@ -1585,30 +1479,12 @@ export const useMessageStore = defineStore('messageStore', () => {
 
     try {
       const nostrStore = await getNostrStore();
-      const giftWrapEvent = await nostrStore.sendDirectMessage(
-        recipientPublicKey,
-        newMessage.text,
-        recipientRelayUrls,
-        {
-          localMessageId: created.id,
-          createdAt: created.created_at,
-          replyToEventId: replyTargetEventId,
-          backrefEventIds,
-          publishSelfCopy: shouldPublishSelfCopyForChatRow(chat),
-        }
-      );
-      const wrapperEventId = inputSanitizerService.normalizeHexKey(giftWrapEvent.id ?? '');
-      const wrapperRecipientPublicKey = inputSanitizerService.normalizeHexKey(recipientPublicKey);
-      if (wrapperEventId || wrapperRecipientPublicKey) {
-        const currentMessageRow = (await chatDataService.getMessageById(created.id)) ?? created;
-        await chatDataService.updateMessageMeta(created.id, {
-          ...currentMessageRow.meta,
-          ...(wrapperEventId ? { [MESSAGE_WRAPPER_EVENT_ID_META_KEY]: wrapperEventId } : {}),
-          ...(wrapperRecipientPublicKey
-            ? { [MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY]: wrapperRecipientPublicKey }
-            : {}),
-        });
-      }
+      await nostrStore.sendDirectMessage(recipientPublicKey, newMessage.text, recipientRelayUrls, {
+        localMessageId: created.id,
+        createdAt: created.created_at,
+        replyToEventId: replyTargetEventId,
+        publishSelfCopy: shouldPublishSelfCopyForChatRow(chat),
+      });
     } catch (error) {
       sendError = error;
     }

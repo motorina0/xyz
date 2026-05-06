@@ -1,16 +1,9 @@
 import { giftUnwrap, type NDKEvent, NDKKind } from '@nostr-dev-kit/ndk';
-import { type ChatRow, chatDataService, type MessageRow } from 'src/services/chatDataService';
+import { type ChatRow, chatDataService } from 'src/services/chatDataService';
 import { contactsService } from 'src/services/contactsService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
 import { nostrEventDataService } from 'src/services/nostrEventDataService';
-import {
-  CHAT_REQUEST_CLEARED_AT_META_KEY,
-  MESSAGE_BACKREF_LIMIT,
-  MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
-  MESSAGE_BACKREF_TAG_NAME,
-  MESSAGE_WRAPPER_EVENT_ID_META_KEY,
-  MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY,
-} from 'src/stores/nostr/constants';
+import { CHAT_REQUEST_CLEARED_AT_META_KEY } from 'src/stores/nostr/constants';
 import type {
   GroupEpochContext,
   PrivateMessagesIngestRuntimeDeps,
@@ -51,7 +44,6 @@ export function createPrivateMessagesIngestRuntime({
   processIncomingDeletionRumorEvent,
   processIncomingReactionRumorEvent,
   queueBackgroundGroupContactRefresh,
-  queueMessageBackrefRepair,
   queuePrivateMessagesUiRefresh,
   readReplyTargetEventId,
   refreshReplyPreviewsForTargetMessage,
@@ -153,89 +145,11 @@ export function createPrivateMessagesIngestRuntime({
     return chat.type === 'group' ? 'Nostr Group' : 'Nostr Chat';
   }
 
-  function readMessageBackrefEventIds(rumorEvent: NDKEvent): string[] {
-    return Array.from(
-      new Set(
-        rumorEvent
-          .getMatchingTags(MESSAGE_BACKREF_TAG_NAME)
-          .map((tag) => normalizeEventId(tag[1] ?? ''))
-          .filter((eventId): eventId is string => Boolean(eventId))
-      )
-    ).slice(0, MESSAGE_BACKREF_LIMIT);
-  }
-
-  function buildWrapperMessageMeta(
-    wrappedEvent: NDKEvent,
-    recipientPubkey: string
-  ): Record<string, string> {
-    const wrapperEventId = inputSanitizerService.normalizeHexKey(wrappedEvent.id ?? '');
-    const wrapperRecipientPublicKey = inputSanitizerService.normalizeHexKey(recipientPubkey);
-
-    return {
-      ...(wrapperEventId ? { [MESSAGE_WRAPPER_EVENT_ID_META_KEY]: wrapperEventId } : {}),
-      ...(wrapperRecipientPublicKey
-        ? { [MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY]: wrapperRecipientPublicKey }
-        : {}),
-    };
-  }
-
-  async function ensureMessageWrapperMeta(
-    messageRow: MessageRow,
-    wrappedEvent: NDKEvent,
-    recipientPubkey: string
-  ): Promise<MessageRow> {
-    const wrapperMeta = buildWrapperMessageMeta(wrappedEvent, recipientPubkey);
-    const wrapperMetaEntries = Object.entries(wrapperMeta);
-    if (wrapperMetaEntries.length === 0) {
-      return messageRow;
-    }
-
-    const hasChanges = wrapperMetaEntries.some(([key, value]) => messageRow.meta[key] !== value);
-    if (!hasChanges) {
-      return messageRow;
-    }
-
-    return (
-      (await chatDataService.updateMessageMeta(messageRow.id, {
-        ...messageRow.meta,
-        ...wrapperMeta,
-      })) ?? messageRow
-    );
-  }
-
-  function queueValidatedMessageBackrefRepair(options: {
-    chatPublicKey: string;
-    rumorEvent: NDKEvent;
-    referenceCreatedAt: number | null;
-    seedRelayUrls: string[];
-    currentBackrefDepth: number;
-    uiThrottleMs: number;
-  }): void {
-    if (options.currentBackrefDepth >= MESSAGE_BACKREF_MAX_DISCOVERY_WAVES) {
-      return;
-    }
-
-    const backrefEventIds = readMessageBackrefEventIds(options.rumorEvent);
-    if (backrefEventIds.length === 0) {
-      return;
-    }
-
-    void queueMessageBackrefRepair(options.chatPublicKey, backrefEventIds, {
-      discoveryDepth: options.currentBackrefDepth + 1,
-      referenceCreatedAt: options.referenceCreatedAt,
-      seedRelayUrls: options.seedRelayUrls,
-      uiThrottleMs: options.uiThrottleMs,
-    }).catch((error) => {
-      console.warn('Failed to queue message backref repair', options.chatPublicKey, error);
-    });
-  }
-
   function queuePrivateMessageIngestion(
     wrappedEvent: NDKEvent,
     loggedInPubkeyHex: string,
     options: {
       uiThrottleMs?: number;
-      backrefDepth?: number;
     } = {}
   ): void {
     const uiThrottleMs =
@@ -247,7 +161,6 @@ export function createPrivateMessagesIngestRuntime({
       .then(() =>
         processIncomingPrivateMessage(wrappedEvent, loggedInPubkeyHex, {
           uiThrottleMs,
-          backrefDepth: options.backrefDepth,
         })
       )
       .catch((error) => {
@@ -260,7 +173,6 @@ export function createPrivateMessagesIngestRuntime({
     loggedInPubkeyHex: string,
     options: {
       uiThrottleMs?: number;
-      backrefDepth?: number;
     } = {}
   ): Promise<void> {
     const wrappedRelayUrls = extractRelayUrlsFromEvent(wrappedEvent);
@@ -382,7 +294,6 @@ export function createPrivateMessagesIngestRuntime({
     }
 
     const uiThrottleMs = normalizeThrottleMs(options.uiThrottleMs);
-    const currentBackrefDepth = Math.max(0, Math.floor(Number(options.backrefDepth) || 0));
 
     const rumorNostrEvent = await toStoredNostrEvent(rumorEvent);
     const loggedRumorEvent = buildLoggedNostrEvent(rumorEvent, rumorNostrEvent);
@@ -649,21 +560,8 @@ export function createPrivateMessagesIngestRuntime({
         });
         const refreshedExistingMessage =
           (await chatDataService.getMessageById(existingMessage.id)) ?? existingMessage;
-        const existingMessageWithWrapperMeta = await ensureMessageWrapperMeta(
-          refreshedExistingMessage,
-          wrappedEvent,
-          recipientContext.recipientPubkey
-        );
-        queueValidatedMessageBackrefRepair({
-          chatPublicKey: chatPubkey,
-          rumorEvent,
-          referenceCreatedAt: rumorEvent.created_at ?? null,
-          seedRelayUrls: wrappedRelayUrls,
-          currentBackrefDepth,
-          uiThrottleMs,
-        });
         let updatedExistingMessage = await applyPendingIncomingReactionsForMessage(
-          existingMessageWithWrapperMeta,
+          refreshedExistingMessage,
           {
             uiThrottleMs,
           }
@@ -860,7 +758,7 @@ export function createPrivateMessagesIngestRuntime({
       meta: {
         source: 'nostr',
         kind: NDKKind.PrivateDirectMessage,
-        ...buildWrapperMessageMeta(wrappedEvent, recipientContext.recipientPubkey),
+        wrapper_event_id: wrappedEvent.id ?? '',
         ...(replyPreview ? { reply: replyPreview } : {}),
       },
     });
@@ -880,15 +778,6 @@ export function createPrivateMessagesIngestRuntime({
       });
       return;
     }
-
-    queueValidatedMessageBackrefRepair({
-      chatPublicKey: chat.public_key,
-      rumorEvent,
-      referenceCreatedAt: rumorEvent.created_at ?? null,
-      seedRelayUrls: wrappedRelayUrls,
-      currentBackrefDepth,
-      uiThrottleMs,
-    });
 
     await chatStore.recordIncomingActivity(chat.public_key, createdAt);
     let nextMessageRow = await applyPendingIncomingReactionsForMessage(createdMessage, {

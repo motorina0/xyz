@@ -10,7 +10,6 @@ const {
   buildInitialMessageWindowFromUnreadAnchor,
   buildMessageCursorFromMessage,
   buildMessageCursorFromSearchResult,
-  collectMessageBackrefEventIds,
   compareMessageCursors,
   countOwnUnseenReactions,
   mergeMessagesById,
@@ -267,88 +266,6 @@ describe('messageStore logic', () => {
         recipientRelayUrls: ['wss://group.example'],
       })
     ).toBeNull();
-  });
-
-  it('collects only the logged-in user wrapper ids for direct-message backrefs', () => {
-    const ownWrapperNewest = '1'.repeat(64);
-    const ownWrapperOlder = '2'.repeat(64);
-    const theirWrapper = '3'.repeat(64);
-
-    expect(
-      collectMessageBackrefEventIds(
-        [
-          {
-            author_public_key: 'a'.repeat(64),
-            meta: {
-              wrapper_event_id: ownWrapperOlder,
-              deleted: {
-                deletedAt: '2026-01-01T00:00:00.000Z',
-              },
-            },
-          },
-          {
-            author_public_key: 'b'.repeat(64),
-            meta: {
-              wrapper_event_id: theirWrapper,
-            },
-          },
-          {
-            author_public_key: 'a'.repeat(64),
-            meta: {
-              wrapper_event_id: ownWrapperNewest,
-            },
-          },
-        ] as never,
-        {
-          type: 'user',
-          meta: {},
-        } as never,
-        'a'.repeat(64)
-      )
-    ).toEqual([ownWrapperNewest]);
-  });
-
-  it('collects current-epoch group wrapper ids across authors for group backrefs', () => {
-    const currentEpoch = '4'.repeat(64);
-    const previousEpoch = '5'.repeat(64);
-    const currentWrapperNewest = '6'.repeat(64);
-    const currentWrapperOlder = '7'.repeat(64);
-    const previousWrapper = '8'.repeat(64);
-
-    expect(
-      collectMessageBackrefEventIds(
-        [
-          {
-            author_public_key: 'a'.repeat(64),
-            meta: {
-              wrapper_event_id: currentWrapperOlder,
-              wrapper_recipient_public_key: currentEpoch,
-            },
-          },
-          {
-            author_public_key: 'b'.repeat(64),
-            meta: {
-              wrapper_event_id: previousWrapper,
-              wrapper_recipient_public_key: previousEpoch,
-            },
-          },
-          {
-            author_public_key: 'c'.repeat(64),
-            meta: {
-              wrapper_event_id: currentWrapperNewest,
-              wrapper_recipient_public_key: currentEpoch,
-            },
-          },
-        ] as never,
-        {
-          type: 'group',
-          meta: {
-            current_epoch_public_key: currentEpoch,
-          },
-        } as never,
-        'a'.repeat(64)
-      )
-    ).toEqual([currentWrapperNewest, currentWrapperOlder]);
   });
 
   it('does not publish a backup self-copy when the selected chat is the logged-in user', () => {
