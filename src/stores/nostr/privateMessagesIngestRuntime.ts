@@ -190,6 +190,24 @@ export function createPrivateMessagesIngestRuntime({
       return messageRow;
     }
 
+    const wrapperRecipientPublicKey = inputSanitizerService.normalizeHexKey(
+      wrapperMeta[MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY] ?? ''
+    );
+    const authorPublicKey = inputSanitizerService.normalizeHexKey(messageRow.author_public_key);
+    const existingWrapperEventId = inputSanitizerService.normalizeHexKey(
+      typeof messageRow.meta[MESSAGE_WRAPPER_EVENT_ID_META_KEY] === 'string'
+        ? messageRow.meta[MESSAGE_WRAPPER_EVENT_ID_META_KEY]
+        : ''
+    );
+    if (
+      existingWrapperEventId &&
+      wrapperRecipientPublicKey &&
+      authorPublicKey &&
+      wrapperRecipientPublicKey === authorPublicKey
+    ) {
+      return messageRow;
+    }
+
     const hasChanges = wrapperMetaEntries.some(([key, value]) => messageRow.meta[key] !== value);
     if (!hasChanges) {
       return messageRow;
@@ -206,10 +224,7 @@ export function createPrivateMessagesIngestRuntime({
   function queueValidatedMessageBackrefRepair(options: {
     chatPublicKey: string;
     rumorEvent: NDKEvent;
-    referenceCreatedAt: number | null;
-    seedRelayUrls: string[];
     currentBackrefDepth: number;
-    uiThrottleMs: number;
   }): void {
     if (options.currentBackrefDepth >= MESSAGE_BACKREF_MAX_DISCOVERY_WAVES) {
       return;
@@ -222,9 +237,6 @@ export function createPrivateMessagesIngestRuntime({
 
     void queueMessageBackrefRepair(options.chatPublicKey, backrefEventIds, {
       discoveryDepth: options.currentBackrefDepth + 1,
-      referenceCreatedAt: options.referenceCreatedAt,
-      seedRelayUrls: options.seedRelayUrls,
-      uiThrottleMs: options.uiThrottleMs,
     }).catch((error) => {
       console.warn('Failed to queue message backref repair', options.chatPublicKey, error);
     });
@@ -657,10 +669,7 @@ export function createPrivateMessagesIngestRuntime({
         queueValidatedMessageBackrefRepair({
           chatPublicKey: chatPubkey,
           rumorEvent,
-          referenceCreatedAt: rumorEvent.created_at ?? null,
-          seedRelayUrls: wrappedRelayUrls,
           currentBackrefDepth,
-          uiThrottleMs,
         });
         let updatedExistingMessage = await applyPendingIncomingReactionsForMessage(
           existingMessageWithWrapperMeta,
@@ -881,14 +890,13 @@ export function createPrivateMessagesIngestRuntime({
       return;
     }
 
-    queueValidatedMessageBackrefRepair({
-      chatPublicKey: chat.public_key,
-      rumorEvent,
-      referenceCreatedAt: rumorEvent.created_at ?? null,
-      seedRelayUrls: wrappedRelayUrls,
-      currentBackrefDepth,
-      uiThrottleMs,
-    });
+    const queueBackrefRepairAfterIngest = () => {
+      queueValidatedMessageBackrefRepair({
+        chatPublicKey: chat.public_key,
+        rumorEvent,
+        currentBackrefDepth,
+      });
+    };
 
     await chatStore.recordIncomingActivity(chat.public_key, createdAt);
     let nextMessageRow = await applyPendingIncomingReactionsForMessage(createdMessage, {
@@ -1040,6 +1048,7 @@ export function createPrivateMessagesIngestRuntime({
         reloadChats: true,
         reloadMessages: true,
       });
+      queueBackrefRepairAfterIngest();
       return;
     }
 
@@ -1065,6 +1074,8 @@ export function createPrivateMessagesIngestRuntime({
     } catch (error) {
       console.error('Failed to sync incoming private message into live state', error);
     }
+
+    queueBackrefRepairAfterIngest();
   }
 
   return {

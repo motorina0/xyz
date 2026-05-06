@@ -187,9 +187,6 @@ export interface PrivateMessagesIngestRuntimeDeps {
     targetEventIds: string[],
     options: {
       discoveryDepth: number;
-      referenceCreatedAt?: number | null;
-      seedRelayUrls?: string[];
-      uiThrottleMs?: number;
     }
   ) => Promise<void>;
   queuePrivateMessagesUiRefresh: (options: {

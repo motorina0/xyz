@@ -273,6 +273,7 @@ describe('messageStore logic', () => {
     const ownWrapperNewest = '1'.repeat(64);
     const ownWrapperOlder = '2'.repeat(64);
     const theirWrapper = '3'.repeat(64);
+    const selfCopyWrapper = '4'.repeat(64);
 
     expect(
       collectMessageBackrefEventIds(
@@ -296,6 +297,14 @@ describe('messageStore logic', () => {
             author_public_key: 'a'.repeat(64),
             meta: {
               wrapper_event_id: ownWrapperNewest,
+              wrapper_recipient_public_key: 'b'.repeat(64),
+            },
+          },
+          {
+            author_public_key: 'a'.repeat(64),
+            meta: {
+              wrapper_event_id: selfCopyWrapper,
+              wrapper_recipient_public_key: 'a'.repeat(64),
             },
           },
         ] as never,

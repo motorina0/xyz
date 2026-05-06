@@ -1,6 +1,7 @@
 import NDK from '@nostr-dev-kit/ndk';
 import {
   MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
+  MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS,
   MISSING_MESSAGE_DEPENDENCY_REPAIR_WINDOW_SECONDS,
   PRIVATE_MESSAGES_RECONNECT_LOOKBACK_SECONDS,
   PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
@@ -40,6 +41,8 @@ const TARGET_EVENT_ID = 'f'.repeat(64);
 function createRuntime(
   overrides: {
     getPrivateMessagesStartupFloorSince?: ReturnType<typeof vi.fn>;
+    isMessageBackrefRepairBlocked?: () => boolean;
+    resolveLoggedInReadRelayUrls?: ReturnType<typeof vi.fn>;
     subscribeWithReqLogging?: ReturnType<typeof vi.fn>;
     resolveGroupChatEpochEntries?: (chat: {
       meta: Record<string, unknown>;
@@ -76,6 +79,7 @@ function createRuntime(
     getPrivateMessagesIngestQueue: vi.fn(async () => {}),
     getPrivateMessagesStartupFloorSince:
       overrides.getPrivateMessagesStartupFloorSince ?? vi.fn(() => 1700000000),
+    isMessageBackrefRepairBlocked: overrides.isMessageBackrefRepairBlocked ?? (() => false),
     logSubscription: vi.fn(),
     ndk: new NDK(),
     normalizeThrottleMs: (value) => value ?? 0,
@@ -88,6 +92,8 @@ function createRuntime(
           epoch_public_key: GROUP_EPOCH_A,
         },
       ]),
+    resolveLoggedInReadRelayUrls:
+      overrides.resolveLoggedInReadRelayUrls ?? vi.fn(async () => ['wss://relay.example']),
     resolvePrivateMessageReadRelayUrls: vi.fn(async () => ['wss://relay.example']),
     schedulePostPrivateMessagesEoseChecks: vi.fn(),
     subscribeWithReqLogging,
@@ -162,7 +168,6 @@ describe('privateMessagesBackfillRuntime', () => {
 
   it('fetches missing wrapper events by encrypted message backref ids', async () => {
     const targetWrapperEventId = '1'.repeat(64);
-    serviceMocks.chatDataService.listMessages.mockResolvedValueOnce([]);
     const wrappedEvent = {
       id: targetWrapperEventId,
       kind: 1059,
@@ -192,9 +197,10 @@ describe('privateMessagesBackfillRuntime', () => {
 
     await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
       discoveryDepth: 1,
-      referenceCreatedAt: 1700003600,
-      seedRelayUrls: ['wss://seed.example'],
     });
+
+    expect(subscribeWithReqLogging).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS);
 
     expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
     expect(queuePrivateMessageIngestion).toHaveBeenCalledWith(
@@ -205,50 +211,137 @@ describe('privateMessagesBackfillRuntime', () => {
       LOGGED_IN_PUBLIC_KEY,
       {
         uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-        backrefDepth: 1,
+        backrefDepth: MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
       }
     );
 
     runtime.resetPrivateMessagesBackfillRuntimeState();
   });
 
-  it('falls back to a bounded recipient window when backref id lookup misses', async () => {
-    vi.setSystemTime(new Date('2026-05-06T12:00:00.000Z'));
-
+  it('batches and deduplicates pending backref ids globally', async () => {
     const targetWrapperEventId = '1'.repeat(64);
-    const wrappedEvent = {
-      id: targetWrapperEventId,
-      kind: 1059,
-      created_at: 1778067600,
-      pubkey: '2'.repeat(64),
-      content: 'wrapped',
-      tags: [['p', LOGGED_IN_PUBLIC_KEY]],
-    };
+    const secondWrapperEventId = '2'.repeat(64);
     const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
-      if (requestLabel === 'private-message-backref-repair') {
-        expect(filters).toEqual({
-          ids: [targetWrapperEventId],
-          kinds: [1059],
-        });
-        Promise.resolve().then(() => {
-          options.onEose?.();
-        });
-        return {
-          stop: vi.fn(),
-        } as never;
-      }
-
-      expect(requestLabel).toBe('private-message-backref-repair-window');
-      expect(filters).toMatchObject({
+      expect(requestLabel).toBe('private-message-backref-repair');
+      expect(filters).toEqual({
+        ids: [targetWrapperEventId, secondWrapperEventId],
         kinds: [1059],
-        '#p': [LOGGED_IN_PUBLIC_KEY],
       });
-      expect((filters as { since: number; until: number }).since).toBeLessThanOrEqual(1778067600);
-      expect((filters as { since: number; until: number }).until).toBeGreaterThanOrEqual(
-        1778067600
+      Promise.resolve().then(() => {
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { queuePrivateMessageIngestion, runtime } = createRuntime({
+      subscribeWithReqLogging,
+    });
+
+    await runtime.queueMessageBackrefRepair(
+      DIRECT_CHAT_PUBLIC_KEY,
+      [targetWrapperEventId, secondWrapperEventId],
+      {
+        discoveryDepth: 1,
+      }
+    );
+    await runtime.queueMessageBackrefRepair(GROUP_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
+      discoveryDepth: 1,
+    });
+
+    expect(subscribeWithReqLogging).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS);
+
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+    expect(queuePrivateMessageIngestion).not.toHaveBeenCalled();
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('uses logged-in read relays for passive backref repair and ignores seed relays', async () => {
+    const targetWrapperEventId = '1'.repeat(64);
+    const resolveLoggedInReadRelayUrls = vi.fn(async () => [
+      'wss://logged-in.example',
+      'wss://app.example',
+    ]);
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, _filters, options, details) => {
+      expect(requestLabel).toBe('private-message-backref-repair');
+      expect(details).toEqual(
+        expect.objectContaining({
+          relayUrls: ['wss://logged-in.example', 'wss://app.example'],
+        })
       );
       Promise.resolve().then(() => {
-        options.onEvent?.(wrappedEvent);
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { runtime } = createRuntime({
+      resolveLoggedInReadRelayUrls,
+      subscribeWithReqLogging,
+    });
+
+    await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
+      discoveryDepth: 1,
+    });
+
+    await vi.advanceTimersByTimeAsync(MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS);
+
+    expect(resolveLoggedInReadRelayUrls).toHaveBeenCalledWith();
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('defers passive backref repair while restore or healing is active', async () => {
+    const targetWrapperEventId = '1'.repeat(64);
+    let isBlocked = true;
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      expect(requestLabel).toBe('private-message-backref-repair');
+      expect(filters).toEqual({
+        ids: [targetWrapperEventId],
+        kinds: [1059],
+      });
+      Promise.resolve().then(() => {
+        options.onEose?.();
+      });
+
+      return {
+        stop: vi.fn(),
+      } as never;
+    });
+    const { runtime } = createRuntime({
+      isMessageBackrefRepairBlocked: () => isBlocked,
+      subscribeWithReqLogging,
+    });
+
+    await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
+      discoveryDepth: 1,
+    });
+
+    await vi.advanceTimersByTimeAsync(MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS);
+    expect(subscribeWithReqLogging).not.toHaveBeenCalled();
+
+    isBlocked = false;
+    await vi.advanceTimersByTimeAsync(MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS);
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+
+    runtime.resetPrivateMessagesBackfillRuntimeState();
+  });
+
+  it('does not fall back to recipient-window repair when exact backref ids miss', async () => {
+    const targetWrapperEventId = '1'.repeat(64);
+    const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
+      expect(requestLabel).toBe('private-message-backref-repair');
+      expect(filters).toEqual({
+        ids: [targetWrapperEventId],
+        kinds: [1059],
+      });
+      Promise.resolve().then(() => {
         options.onEose?.();
       });
 
@@ -262,69 +355,35 @@ describe('privateMessagesBackfillRuntime', () => {
 
     await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
       discoveryDepth: 1,
-      referenceCreatedAt: 1778067600,
-      seedRelayUrls: ['wss://seed.example'],
     });
 
-    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(2);
-    expect(queuePrivateMessageIngestion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: targetWrapperEventId,
-        kind: 1059,
-      }),
-      LOGGED_IN_PUBLIC_KEY,
-      {
-        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-        backrefDepth: MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
-      }
-    );
+    await vi.advanceTimersByTimeAsync(MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS);
+
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
+    expect(queuePrivateMessageIngestion).not.toHaveBeenCalled();
 
     runtime.resetPrivateMessagesBackfillRuntimeState();
   });
 
-  it('falls back to recipient-window candidates when exact backref wrappers are for another recipient', async () => {
-    vi.setSystemTime(new Date('2026-05-06T12:00:00.000Z'));
-
+  it('ignores exact backref wrapper matches for other event ids', async () => {
     const targetWrapperEventId = '1'.repeat(64);
-    const recipientWrapperEventId = '2'.repeat(64);
-    const otherRecipientWrapperEvent = {
-      id: targetWrapperEventId,
+    const otherWrapperEventId = '2'.repeat(64);
+    const otherWrapperEvent = {
+      id: otherWrapperEventId,
       kind: 1059,
       created_at: 1778067600,
       pubkey: '3'.repeat(64),
       content: 'wrapped',
-      tags: [['p', '4'.repeat(64)]],
-    };
-    const wrappedEvent = {
-      id: recipientWrapperEventId,
-      kind: 1059,
-      created_at: 1778067600,
-      pubkey: '5'.repeat(64),
-      content: 'wrapped',
       tags: [['p', LOGGED_IN_PUBLIC_KEY]],
     };
     const subscribeWithReqLogging = vi.fn((_label, requestLabel, filters, options) => {
-      if (requestLabel === 'private-message-backref-repair') {
-        expect(filters).toEqual({
-          ids: [targetWrapperEventId],
-          kinds: [1059],
-        });
-        Promise.resolve().then(() => {
-          options.onEvent?.(otherRecipientWrapperEvent);
-          options.onEose?.();
-        });
-        return {
-          stop: vi.fn(),
-        } as never;
-      }
-
-      expect(requestLabel).toBe('private-message-backref-repair-window');
-      expect(filters).toMatchObject({
+      expect(requestLabel).toBe('private-message-backref-repair');
+      expect(filters).toEqual({
+        ids: [targetWrapperEventId],
         kinds: [1059],
-        '#p': [LOGGED_IN_PUBLIC_KEY],
       });
       Promise.resolve().then(() => {
-        options.onEvent?.(wrappedEvent);
+        options.onEvent?.(otherWrapperEvent);
         options.onEose?.();
       });
 
@@ -338,28 +397,17 @@ describe('privateMessagesBackfillRuntime', () => {
 
     await runtime.queueMessageBackrefRepair(DIRECT_CHAT_PUBLIC_KEY, [targetWrapperEventId], {
       discoveryDepth: 1,
-      referenceCreatedAt: 1778067600,
-      seedRelayUrls: ['wss://seed.example'],
     });
 
-    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(MESSAGE_BACKREF_REPAIR_DEBOUNCE_MS);
+
+    expect(subscribeWithReqLogging).toHaveBeenCalledTimes(1);
     expect(queuePrivateMessageIngestion).not.toHaveBeenCalledWith(
       expect.objectContaining({
-        id: targetWrapperEventId,
+        id: otherWrapperEventId,
       }),
       expect.anything(),
       expect.anything()
-    );
-    expect(queuePrivateMessageIngestion).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: recipientWrapperEventId,
-        kind: 1059,
-      }),
-      LOGGED_IN_PUBLIC_KEY,
-      {
-        uiThrottleMs: PRIVATE_MESSAGES_STARTUP_RESTORE_THROTTLE_MS,
-        backrefDepth: MESSAGE_BACKREF_MAX_DISCOVERY_WAVES,
-      }
     );
 
     runtime.resetPrivateMessagesBackfillRuntimeState();

@@ -181,6 +181,8 @@ function collectMessageBackrefEventIdsValue(
       inputSanitizerService.normalizeHexKey(row.author_public_key) !== normalizedLoggedInPublicKey
     ) {
       continue;
+    } else if (readMessageWrapperRecipientPublicKey(row.meta) === normalizedLoggedInPublicKey) {
+      continue;
     }
 
     const wrapperEventId = readMessageWrapperEventId(row.meta);

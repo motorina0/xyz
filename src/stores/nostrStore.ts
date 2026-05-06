@@ -297,9 +297,6 @@ export const useNostrStore = defineStore('nostrStore', () => {
     targetEventIds: string[],
     options: {
       discoveryDepth: number;
-      referenceCreatedAt?: number | null;
-      seedRelayUrls?: string[];
-      uiThrottleMs?: number;
     }
   ) => Promise<void> = async () => {};
   let resolveMissingMessageDependencyRepairRuntime: (targetEventId: string) => void = () => {};
@@ -1370,12 +1367,14 @@ export const useNostrStore = defineStore('nostrStore', () => {
     getPrivateMessagesBackfillResumeState,
     getPrivateMessagesIngestQueue: () => getPrivateMessagesIngestQueueRuntime(),
     getPrivateMessagesStartupFloorSince,
+    isMessageBackrefRepairBlocked: () => isRestoringStartupState.value || isReconnectHealing.value,
     logSubscription,
     ndk,
     normalizeThrottleMs,
     queuePrivateMessageIngestion,
     relaySignature,
     resolveGroupChatEpochEntries,
+    resolveLoggedInReadRelayUrls,
     resolvePrivateMessageReadRelayUrls,
     schedulePostPrivateMessagesEoseChecks,
     subscribeWithReqLogging,

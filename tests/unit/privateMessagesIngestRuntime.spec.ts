@@ -381,9 +381,6 @@ describe('privateMessagesIngestRuntime', () => {
       [firstBackref, secondBackref],
       {
         discoveryDepth: 1,
-        referenceCreatedAt: 1700000000,
-        seedRelayUrls: ['wss://relay.example'],
-        uiThrottleMs: 25,
       }
     );
   });
@@ -392,11 +389,13 @@ describe('privateMessagesIngestRuntime', () => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);
     const chatPublicKey = 'a'.repeat(64);
+    const backrefEventId = '1'.repeat(64);
     const createdAt = '2023-11-14T22:13:20.000Z';
     const rumorEvent = makeRumorEvent({
       recipientPubkey: 'b'.repeat(64),
       senderPubkey: chatPublicKey,
       content: '  Named hello  ',
+      backrefEventIds: [backrefEventId],
     });
 
     deps.resolveIncomingChatInboxStateValue.mockReturnValue('accepted');
@@ -435,6 +434,14 @@ describe('privateMessagesIngestRuntime', () => {
         title: 'Alice Local',
         messageText: 'Named hello',
       })
+    );
+    expect(deps.queueMessageBackrefRepair).toHaveBeenCalledWith(
+      chatPublicKey,
+      [backrefEventId],
+      expect.any(Object)
+    );
+    expect(deps.showIncomingMessageBrowserNotification.mock.invocationCallOrder[0]).toBeLessThan(
+      deps.queueMessageBackrefRepair.mock.invocationCallOrder[0]
     );
   });
 
@@ -682,6 +689,56 @@ describe('privateMessagesIngestRuntime', () => {
     });
     expect(deps.applyPendingIncomingDeletionsForMessage).toHaveBeenCalled();
     expect(serviceMocks.chatDataService.createMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite recipient wrapper metadata with a self-copy wrapper', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const loggedInPublicKey = 'a'.repeat(64);
+    const chatPublicKey = 'b'.repeat(64);
+    const recipientWrapperEventId = '1'.repeat(64);
+    const selfCopyWrapperEventId = 'f'.repeat(64);
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: chatPublicKey,
+      senderPubkey: loggedInPublicKey,
+      eventId: 'duplicate-event',
+    });
+    const existingMessage = {
+      id: 100,
+      chat_public_key: chatPublicKey,
+      author_public_key: loggedInPublicKey,
+      created_at: '2023-11-14T22:13:20.000Z',
+      event_id: 'duplicate-event',
+      meta: {
+        [MESSAGE_WRAPPER_EVENT_ID_META_KEY]: recipientWrapperEventId,
+        [MESSAGE_WRAPPER_RECIPIENT_PUBLIC_KEY_META_KEY]: chatPublicKey,
+      },
+    };
+
+    deps.resolveIncomingPrivateMessageRecipientContext.mockResolvedValue({
+      recipientPubkey: loggedInPublicKey,
+      unwrapSigner: {} as never,
+      groupChatPublicKey: null,
+    });
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.chatDataService.getMessageById.mockResolvedValue(existingMessage);
+    serviceMocks.chatDataService.getMessageByEventId.mockResolvedValue(existingMessage);
+
+    runtime.queuePrivateMessageIngestion(
+      makeWrappedEvent({
+        id: selfCopyWrapperEventId,
+      }),
+      loggedInPublicKey,
+      {
+        uiThrottleMs: 25,
+      }
+    );
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(serviceMocks.chatDataService.updateMessageMeta).not.toHaveBeenCalled();
+    expect(deps.applyPendingIncomingReactionsForMessage).toHaveBeenCalledWith(existingMessage, {
+      uiThrottleMs: 25,
+    });
   });
 
   it('routes inbound reaction rumors through the reaction processor', async () => {
