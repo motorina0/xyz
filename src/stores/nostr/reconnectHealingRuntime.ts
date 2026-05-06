@@ -52,10 +52,10 @@ interface ReconnectHealingRuntimeDeps {
 
 const RECONNECT_HEALING_STATUS_LABELS = {
   preparingSync: 'Preparing sync',
-  queueingPreparingSync: 'Queing preparing sync',
+  queueingPreparingSync: 'Queueing preparing sync',
   checkingSessionAndNetwork: 'Checking session and network',
-  queueingMessageRelayCheck: 'Queing message relay check',
-  queueingUnsentMessageRetries: 'Queing unsent message retries',
+  checkingMessageRelays: 'Checking message relays',
+  retryingUnsentMessages: 'Retrying unsent messages',
   refreshingDirectMessages: 'Refreshing direct messages',
   applyingPendingMessageUpdates: 'Applying pending message updates',
   finishingSync: 'Finishing sync',
@@ -515,13 +515,9 @@ export function createReconnectHealingRuntime({
       }
       refreshedDirectMessages = true;
 
-      await showReconnectHealingStatusLabel(
-        RECONNECT_HEALING_STATUS_LABELS.queueingMessageRelayCheck
-      );
+      await showReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.checkingMessageRelays);
       queuePrivateMessagesWatchdog(0);
-      await showReconnectHealingStatusLabel(
-        RECONNECT_HEALING_STATUS_LABELS.queueingUnsentMessageRetries
-      );
+      await showReconnectHealingStatusLabel(RECONNECT_HEALING_STATUS_LABELS.retryingUnsentMessages);
       queueOutboundMessageReplay('reconnect-healing', 0);
 
       await showReconnectHealingStatusLabel(

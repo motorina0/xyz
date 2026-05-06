@@ -159,8 +159,8 @@ describe('reconnectHealingRuntime', () => {
       'Preparing sync',
       'Checking session and network',
       'Refreshing direct messages',
-      'Queing message relay check',
-      'Queing unsent message retries',
+      'Checking message relays',
+      'Retrying unsent messages',
       'Applying pending message updates',
       'Finishing sync',
       null,
@@ -259,7 +259,7 @@ describe('reconnectHealingRuntime', () => {
     } = createRuntime();
 
     runtime.notifyRelayListChanged();
-    expectStatusLabels(statusLabelUpdates, ['Queing preparing sync']);
+    expectStatusLabels(statusLabelUpdates, ['Queueing preparing sync']);
 
     setIsRestoringStartupState(true);
     await vi.advanceTimersByTimeAsync(1500);
@@ -267,7 +267,7 @@ describe('reconnectHealingRuntime', () => {
 
     expect(refreshDirectMessages).not.toHaveBeenCalled();
     expect(refreshDeveloperPendingQueues).not.toHaveBeenCalled();
-    expectStatusLabels(statusLabelUpdates, ['Queing preparing sync', null]);
+    expectStatusLabels(statusLabelUpdates, ['Queueing preparing sync', null]);
     expect(statusLabelUpdates.map((entry) => entry.value)).not.toContain(
       'Checking session and network'
     );
@@ -287,13 +287,13 @@ describe('reconnectHealingRuntime', () => {
     expect(refreshDirectMessages).toHaveBeenCalledTimes(1);
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
     expect(statusLabelUpdates.map((entry) => entry.value)).toEqual([
-      'Queing preparing sync',
+      'Queueing preparing sync',
       null,
       'Preparing sync',
       'Checking session and network',
       'Refreshing direct messages',
-      'Queing message relay check',
-      'Queing unsent message retries',
+      'Checking message relays',
+      'Retrying unsent messages',
       'Applying pending message updates',
       'Finishing sync',
       null,
@@ -341,7 +341,7 @@ describe('reconnectHealingRuntime', () => {
 
     expect(refreshDirectMessages).toHaveBeenCalledTimes(2);
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(2);
-    expect(statusLabelUpdates.map((entry) => entry.value)).not.toContain('Queing preparing sync');
+    expect(statusLabelUpdates.map((entry) => entry.value)).not.toContain('Queueing preparing sync');
   });
 
   it('delays a cooldown trigger until ten seconds after the previous run finishes', async () => {
@@ -364,7 +364,7 @@ describe('reconnectHealingRuntime', () => {
     expect(refreshDirectMessages).toHaveBeenCalledTimes(2);
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(2);
     expect(statusLabelUpdates.map((entry) => entry.value).filter(Boolean)).not.toContain(
-      'Queing preparing sync'
+      'Queueing preparing sync'
     );
 
     await vi.advanceTimersByTimeAsync(10_000);
@@ -378,7 +378,7 @@ describe('reconnectHealingRuntime', () => {
     runtime.notifyWindowBlur();
     await vi.advanceTimersByTimeAsync(3000);
     runtime.notifyWindowFocus();
-    expectStatusLabels(statusLabelUpdates, ['Queing preparing sync']);
+    expectStatusLabels(statusLabelUpdates, ['Queueing preparing sync']);
     await vi.advanceTimersByTimeAsync(750);
     await runQueuedTimersForStatusSteps(10);
     runtime.resetReconnectHealingRuntimeState();
