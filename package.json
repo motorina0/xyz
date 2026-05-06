@@ -56,6 +56,7 @@
     "test:e2e:local:session-smoke": "node ./scripts/run-e2e-local.cjs e2e/session.spec.ts"
   },
   "dependencies": {
+    "@capacitor/app": "^6.0.3",
     "@capacitor/core": "^6.0.0",
     "@capacitor/push-notifications": "^6.0.0",
     "@nostr-dev-kit/ndk": "^3.0.0",

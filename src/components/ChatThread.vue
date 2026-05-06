@@ -2,46 +2,50 @@
   <div class="thread-root" @focusin="handleThreadFocusIn">
     <template v-if="chat">
       <div class="thread-header">
-        <q-btn
-          v-if="showBackButton"
-          flat
-          dense
-          round
-          icon="arrow_back"
-          aria-label="Back"
-          @click="handleBack"
-        />
-        <div class="thread-header__identity" @click="handleOpenProfile">
-          <CachedAvatar
-            :src="avatarImageUrl"
-            :alt="chat.name"
-            :fallback="chat.avatar"
-            class="thread-header__avatar"
+        <div class="thread-header__row">
+          <q-btn
+            v-if="showBackButton"
+            flat
+            dense
+            round
+            icon="arrow_back"
+            aria-label="Back"
+            @click="handleBack"
           />
-          <div class="thread-header__meta">
-            <div class="thread-header__name">{{ chat.name }}</div>
-            <div class="thread-header__time">Last active {{ headerTime }}</div>
+          <div class="thread-header__identity" @click="handleOpenProfile">
+            <CachedAvatar
+              :src="avatarImageUrl"
+              :alt="chat.name"
+              :fallback="chat.avatar"
+              class="thread-header__avatar"
+            />
+            <div class="thread-header__meta">
+              <div class="thread-header__name">{{ chat.name }}</div>
+              <div class="thread-header__time">Last active {{ headerTime }}</div>
+            </div>
           </div>
+          <q-btn
+            flat
+            dense
+            round
+            icon="search"
+            data-testid="thread-search-open-button"
+            aria-label="Search Messages"
+            class="thread-header__action"
+            @click="handleOpenThreadSearch"
+          />
+          <q-btn
+            flat
+            dense
+            round
+            icon="badge"
+            aria-label="Open Profile"
+            class="thread-header__action"
+            @click="handleOpenProfile"
+          />
         </div>
-        <q-btn
-          flat
-          dense
-          round
-          icon="search"
-          data-testid="thread-search-open-button"
-          aria-label="Search Messages"
-          class="thread-header__action"
-          @click="handleOpenThreadSearch"
-        />
-        <q-btn
-          flat
-          dense
-          round
-          icon="badge"
-          aria-label="Open Profile"
-          class="thread-header__action"
-          @click="handleOpenProfile"
-        />
+
+        <ReconnectHealingBanner v-if="showBackButton" class="thread-healing-banner" />
       </div>
 
       <transition name="thread-search-bar">
@@ -271,6 +275,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
 import MessageBubble from 'src/components/MessageBubble.vue';
 import MessageComposer from 'src/components/MessageComposer.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
@@ -2237,11 +2242,23 @@ onBeforeUnmount(() => {
   top: 0;
   z-index: 6;
   display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--nc-border);
+  background: var(--nc-panel-header-bg);
+}
+
+.thread-header__row {
+  display: flex;
   align-items: center;
   gap: 10px;
   padding: 10px 16px;
-  border-bottom: 1px solid var(--nc-border);
-  background: var(--nc-panel-header-bg);
+  width: 100%;
+  min-width: 0;
+}
+
+.thread-healing-banner {
+  flex: 0 0 auto;
+  width: 100%;
 }
 
 .thread-header__identity {

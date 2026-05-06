@@ -1,4 +1,7 @@
-import { createAppLifecycleRuntime } from 'src/stores/nostr/appLifecycleRuntime';
+import {
+  createAppLifecycleRuntime,
+  type NativeAppLifecycleRuntimeHandlers,
+} from 'src/stores/nostr/appLifecycleRuntime';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const CHAT_PUBLIC_KEY = 'a'.repeat(64);
@@ -113,5 +116,57 @@ describe('appLifecycleRuntime', () => {
       'visibilitychange',
       visibilityHandler
     );
+  });
+
+  it('uses native app active state as a reconnect-healing fallback', () => {
+    const notifyReconnectHealingBrowserOnline = vi.fn();
+    const notifyReconnectHealingVisibilityHidden = vi.fn();
+    const notifyReconnectHealingVisibilityRegain = vi.fn();
+    const notifyReconnectHealingWindowBlur = vi.fn();
+    const notifyReconnectHealingWindowFocus = vi.fn();
+    const setIsAppForeground = vi.fn();
+    const setVisibleChatId = vi.fn();
+    const stopNativeAppLifecycleRuntime = vi.fn();
+    let nativeHandlers: NativeAppLifecycleRuntimeHandlers | null = null;
+
+    const runtime = createAppLifecycleRuntime({
+      notifyReconnectHealingBrowserOnline,
+      notifyReconnectHealingVisibilityHidden,
+      notifyReconnectHealingVisibilityRegain,
+      notifyReconnectHealingWindowBlur,
+      notifyReconnectHealingWindowFocus,
+      setIsAppForeground,
+      setVisibleChatId,
+      startNativeAppLifecycleRuntime: (handlers) => {
+        nativeHandlers = handlers;
+        return stopNativeAppLifecycleRuntime;
+      },
+    });
+
+    runtime.setRouteChatId(CHAT_PUBLIC_KEY);
+    runtime.startAppLifecycleRuntime();
+
+    expect(nativeHandlers).not.toBeNull();
+    expect(setIsAppForeground).toHaveBeenLastCalledWith(true);
+    expect(setVisibleChatId).toHaveBeenLastCalledWith(CHAT_PUBLIC_KEY);
+
+    nativeHandlers?.setNativeAppActive(false);
+    expect(setIsAppForeground).toHaveBeenLastCalledWith(false);
+    expect(setVisibleChatId).toHaveBeenLastCalledWith(null);
+    expect(notifyReconnectHealingVisibilityHidden).toHaveBeenCalledTimes(1);
+    expect(notifyReconnectHealingWindowBlur).toHaveBeenCalledTimes(1);
+
+    nativeHandlers?.setNativeAppActive(false);
+    expect(notifyReconnectHealingVisibilityHidden).toHaveBeenCalledTimes(1);
+    expect(notifyReconnectHealingWindowBlur).toHaveBeenCalledTimes(1);
+
+    nativeHandlers?.setNativeAppActive(true);
+    expect(setIsAppForeground).toHaveBeenLastCalledWith(true);
+    expect(setVisibleChatId).toHaveBeenLastCalledWith(CHAT_PUBLIC_KEY);
+    expect(notifyReconnectHealingVisibilityRegain).toHaveBeenCalledTimes(1);
+    expect(notifyReconnectHealingWindowFocus).toHaveBeenCalledTimes(1);
+
+    runtime.resetAppLifecycleRuntimeState();
+    expect(stopNativeAppLifecycleRuntime).toHaveBeenCalledTimes(1);
   });
 });

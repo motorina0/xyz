@@ -6,6 +6,7 @@ import NDK, {
   normalizeRelayUrl,
 } from '@nostr-dev-kit/ndk';
 import { defineStore } from 'pinia';
+import { startCapacitorAppLifecycleListeners } from 'src/services/capacitorAppLifecycleService';
 import type { ChatRow } from 'src/services/chatDataService';
 import {
   inputSanitizerService,
@@ -827,6 +828,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     setVisibleChatId: (chatId) => {
       chatStore.setVisibleChatId(chatId);
     },
+    startNativeAppLifecycleRuntime: startCapacitorAppLifecycleListeners,
   });
   resetAppLifecycleRuntimeStateRuntime = resetAppLifecycleRuntimeStateImpl;
   setAppLifecycleRouteChatIdRuntime = setAppLifecycleRouteChatIdImpl;

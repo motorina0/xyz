@@ -8,6 +8,11 @@ interface AppLifecycleRuntimeDeps {
   notifyReconnectHealingWindowFocus: () => void;
   setIsAppForeground: (value: boolean) => void;
   setVisibleChatId: (chatId: string | null) => void;
+  startNativeAppLifecycleRuntime?: (handlers: NativeAppLifecycleRuntimeHandlers) => () => void;
+}
+
+export interface NativeAppLifecycleRuntimeHandlers {
+  setNativeAppActive: (value: boolean) => void;
 }
 
 function hasWindow(): boolean {
@@ -50,17 +55,20 @@ export function createAppLifecycleRuntime({
   notifyReconnectHealingWindowFocus,
   setIsAppForeground,
   setVisibleChatId,
+  startNativeAppLifecycleRuntime,
 }: AppLifecycleRuntimeDeps) {
   let routeChatId: string | null = null;
   let isDocumentVisible = false;
   let isWindowFocused = false;
+  let isNativeAppActive = true;
   let hasOnlineListener = false;
   let hasVisibilityListener = false;
   let hasFocusListener = false;
   let hasBlurListener = false;
+  let stopNativeAppLifecycleRuntime: (() => void) | null = null;
 
   function syncDerivedLifecycleState(): void {
-    const isAppForeground = isDocumentVisible && isWindowFocused;
+    const isAppForeground = isDocumentVisible && isWindowFocused && isNativeAppActive;
     setIsAppForeground(isAppForeground);
     setVisibleChatId(isAppForeground ? routeChatId : null);
   }
@@ -124,9 +132,33 @@ export function createAppLifecycleRuntime({
     syncDerivedLifecycleState();
   }
 
+  function setNativeAppActive(nextActive: boolean): void {
+    const normalizedValue = Boolean(nextActive);
+    const wasActive = isNativeAppActive;
+
+    isNativeAppActive = normalizedValue;
+    isDocumentVisible = normalizedValue;
+    isWindowFocused = normalizedValue;
+    syncDerivedLifecycleState();
+
+    if (normalizedValue === wasActive) {
+      return;
+    }
+
+    if (normalizedValue) {
+      notifyReconnectHealingVisibilityRegain();
+      notifyReconnectHealingWindowFocus();
+      return;
+    }
+
+    notifyReconnectHealingVisibilityHidden();
+    notifyReconnectHealingWindowBlur();
+  }
+
   function startAppLifecycleRuntime(): void {
     isDocumentVisible = readIsDocumentVisible();
     isWindowFocused = readIsWindowFocused();
+    isNativeAppActive = true;
     syncDerivedLifecycleState();
 
     if (!hasWindow()) {
@@ -152,12 +184,24 @@ export function createAppLifecycleRuntime({
       document.addEventListener('visibilitychange', handleDocumentVisibilityChange);
       hasVisibilityListener = true;
     }
+
+    if (!stopNativeAppLifecycleRuntime && startNativeAppLifecycleRuntime) {
+      stopNativeAppLifecycleRuntime = startNativeAppLifecycleRuntime({
+        setNativeAppActive,
+      });
+    }
   }
 
   function resetAppLifecycleRuntimeState(): void {
+    if (stopNativeAppLifecycleRuntime) {
+      stopNativeAppLifecycleRuntime();
+      stopNativeAppLifecycleRuntime = null;
+    }
+
     routeChatId = null;
     isDocumentVisible = false;
     isWindowFocused = false;
+    isNativeAppActive = false;
     syncDerivedLifecycleState();
 
     if (hasWindow() && hasOnlineListener) {
