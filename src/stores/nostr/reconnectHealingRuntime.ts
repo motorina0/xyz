@@ -52,7 +52,6 @@ interface ReconnectHealingRuntimeDeps {
 
 const RECONNECT_HEALING_STATUS_LABELS = {
   preparingSync: 'Preparing sync',
-  queueingPreparingSync: 'Queueing preparing sync',
   checkingSessionAndNetwork: 'Checking session and network',
   checkingMessageRelays: 'Checking message relays',
   retryingUnsentMessages: 'Retrying unsent messages',
@@ -60,6 +59,14 @@ const RECONNECT_HEALING_STATUS_LABELS = {
   applyingPendingMessageUpdates: 'Applying pending message updates',
   finishingSync: 'Finishing sync',
 } as const;
+const RECONNECT_HEALING_QUEUED_STATUS_LABEL_PREFIX = 'Sync started: ';
+const RECONNECT_HEALING_REASON_LABELS: Record<ReconnectHealingReason, string> = {
+  'browser-online': 'browser online',
+  'window-focus': 'window focus',
+  'visibility-regain': 'visibility restored',
+  'relay-connected': 'relay connected',
+  'relay-list-changed': 'relay list changed',
+};
 const RECONNECT_HEALING_STATUS_MIN_VISIBLE_MS = 500;
 const RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_TIMEOUT_MS = 60 * 1000;
 const RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_POLL_MS = 100;
@@ -114,6 +121,14 @@ function getReconnectHealingDelayMs(reason: ReconnectHealingReason): number {
     default:
       return RECONNECT_HEALING_ONLINE_DELAY_MS;
   }
+}
+
+function getReconnectHealingQueuedStatusLabel(reason: ReconnectHealingReason): string {
+  return `${RECONNECT_HEALING_QUEUED_STATUS_LABEL_PREFIX}${RECONNECT_HEALING_REASON_LABELS[reason]}`;
+}
+
+function isReconnectHealingQueuedStatusLabel(value: string | null): boolean {
+  return value?.startsWith(RECONNECT_HEALING_QUEUED_STATUS_LABEL_PREFIX) === true;
 }
 
 function delay(ms: number): Promise<void> {
@@ -276,7 +291,7 @@ export function createReconnectHealingRuntime({
   }
 
   function clearQueuedReconnectHealingStatus(): void {
-    if (reconnectHealingStatusLabel !== RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync) {
+    if (!isReconnectHealingQueuedStatusLabel(reconnectHealingStatusLabel)) {
       return;
     }
 
@@ -411,11 +426,9 @@ export function createReconnectHealingRuntime({
 
     clearReconnectHealingTimer();
     reconnectHealingScheduledAt = nextScheduledAt;
-    if (
-      options.showQueuedLabel &&
-      reconnectHealingStatusLabel !== RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync
-    ) {
-      setReconnectHealingStatusLabelNow(RECONNECT_HEALING_STATUS_LABELS.queueingPreparingSync);
+    const queuedStatusLabel = getReconnectHealingQueuedStatusLabel(reason);
+    if (options.showQueuedLabel && reconnectHealingStatusLabel !== queuedStatusLabel) {
+      setReconnectHealingStatusLabelNow(queuedStatusLabel);
       setIsReconnectHealing(true);
     }
     logReconnectHealing('queued', {

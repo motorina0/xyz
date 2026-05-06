@@ -6,6 +6,8 @@ the progress bar should be shown own the chat thread header too
 wait for EOS for private list
 
 
+do not have multiple subscriptions for the same events
+
 
 App init:
  - if no relays ask the user if it wants the app relays on its profile

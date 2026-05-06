@@ -259,7 +259,7 @@ describe('reconnectHealingRuntime', () => {
     } = createRuntime();
 
     runtime.notifyRelayListChanged();
-    expectStatusLabels(statusLabelUpdates, ['Queueing preparing sync']);
+    expectStatusLabels(statusLabelUpdates, ['Sync started: relay list changed']);
 
     setIsRestoringStartupState(true);
     await vi.advanceTimersByTimeAsync(1500);
@@ -267,7 +267,7 @@ describe('reconnectHealingRuntime', () => {
 
     expect(refreshDirectMessages).not.toHaveBeenCalled();
     expect(refreshDeveloperPendingQueues).not.toHaveBeenCalled();
-    expectStatusLabels(statusLabelUpdates, ['Queueing preparing sync', null]);
+    expectStatusLabels(statusLabelUpdates, ['Sync started: relay list changed', null]);
     expect(statusLabelUpdates.map((entry) => entry.value)).not.toContain(
       'Checking session and network'
     );
@@ -287,7 +287,7 @@ describe('reconnectHealingRuntime', () => {
     expect(refreshDirectMessages).toHaveBeenCalledTimes(1);
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
     expect(statusLabelUpdates.map((entry) => entry.value)).toEqual([
-      'Queueing preparing sync',
+      'Sync started: relay list changed',
       null,
       'Preparing sync',
       'Checking session and network',
@@ -341,7 +341,9 @@ describe('reconnectHealingRuntime', () => {
 
     expect(refreshDirectMessages).toHaveBeenCalledTimes(2);
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(2);
-    expect(statusLabelUpdates.map((entry) => entry.value)).not.toContain('Queueing preparing sync');
+    expect(statusLabelUpdates.map((entry) => entry.value)).not.toContain(
+      'Sync started: relay connected'
+    );
   });
 
   it('delays a cooldown trigger until ten seconds after the previous run finishes', async () => {
@@ -364,7 +366,7 @@ describe('reconnectHealingRuntime', () => {
     expect(refreshDirectMessages).toHaveBeenCalledTimes(2);
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(2);
     expect(statusLabelUpdates.map((entry) => entry.value).filter(Boolean)).not.toContain(
-      'Queueing preparing sync'
+      'Sync started: relay connected'
     );
 
     await vi.advanceTimersByTimeAsync(10_000);
@@ -378,7 +380,7 @@ describe('reconnectHealingRuntime', () => {
     runtime.notifyWindowBlur();
     await vi.advanceTimersByTimeAsync(3000);
     runtime.notifyWindowFocus();
-    expectStatusLabels(statusLabelUpdates, ['Queueing preparing sync']);
+    expectStatusLabels(statusLabelUpdates, ['Sync started: window focus']);
     await vi.advanceTimersByTimeAsync(750);
     await runQueuedTimersForStatusSteps(10);
     runtime.resetReconnectHealingRuntimeState();
