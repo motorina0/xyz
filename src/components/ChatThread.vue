@@ -2236,6 +2236,7 @@ onBeforeUnmount(() => {
   min-width: 0;
   width: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   background: transparent;
 }
 
@@ -2348,6 +2349,7 @@ body.body--dark .thread-header__action {
   position: relative;
   background: var(--nc-thread-bg);
   overflow-anchor: none;
+  overscroll-behavior: contain;
 }
 
 .thread-body--scroll-locked {

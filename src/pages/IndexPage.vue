@@ -93,7 +93,7 @@
             placeholder="Search"
           />
 
-          <ReconnectHealingBanner />
+          <ReconnectHealingBanner class="sidebar-top__healing" />
         </div>
 
         <ChatList
@@ -264,6 +264,7 @@ const messageStore = useMessageStore();
 const nostrStore = useNostrStore();
 const {
   visibleViewportHeight,
+  visibleViewportOffsetTop,
   visibleViewportKeyboardInset,
   isVisualViewportKeyboardVisible
 } = useVisibleViewportHeight(() => $q.screen.height);
@@ -365,12 +366,17 @@ const mobileViewportShellStyle = computed<Record<string, string>>(() => {
   }
 
   const viewportHeight = Math.max(0, visibleViewportHeight.value ?? $q.screen.height);
+  const viewportOffsetTop = isVisualViewportKeyboardVisible.value
+    ? Math.max(0, visibleViewportOffsetTop.value)
+    : 0;
 
   return {
     '--nc-mobile-keyboard-inset': `${Math.max(0, visibleViewportKeyboardInset.value)}px`,
+    '--nc-mobile-visual-viewport-offset-top': `${viewportOffsetTop}px`,
     height: `${viewportHeight}px`,
     minHeight: `${viewportHeight}px`,
-    maxHeight: `${viewportHeight}px`
+    maxHeight: `${viewportHeight}px`,
+    transform: viewportOffsetTop > 0 ? `translateY(${viewportOffsetTop}px)` : 'translateY(0)'
   };
 });
 const homeShellStyle = computed<Record<string, string>>(() => ({
@@ -1032,6 +1038,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 .home-page {
   padding: 0;
   overflow: hidden;
+  overscroll-behavior: none;
   width: 100%;
   max-width: 100%;
   background: var(--nc-app-background);
@@ -1047,6 +1054,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
   width: 100%;
   max-width: 100%;
   background: var(--nc-panel-thread-bg);
+  overscroll-behavior: none;
 }
 
 .home-shell--mobile {
@@ -1056,6 +1064,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 .sidebar,
 .thread-panel {
   overflow: hidden;
+  overscroll-behavior: none;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -1117,6 +1126,14 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 
 .sidebar-top__action:deep(.q-btn-dropdown__arrow) {
   margin-left: 0;
+}
+
+@media (min-width: 1024px) {
+  .sidebar-top .sidebar-top__healing {
+    margin-right: -12px;
+    margin-bottom: -13px;
+    margin-left: -12px;
+  }
 }
 
 body.body--dark .q-btn.sidebar-top__action {

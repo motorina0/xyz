@@ -58,7 +58,7 @@
             placeholder="Filter contacts"
           />
 
-          <ReconnectHealingBanner />
+          <ReconnectHealingBanner class="contacts-sidebar__healing" />
         </div>
 
         <q-scroll-area class="contacts-list">
@@ -1027,6 +1027,14 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 .contacts-sidebar__search--mobile {
   flex: 1;
   min-width: 0;
+}
+
+@media (min-width: 1024px) {
+  .contacts-sidebar__top .contacts-sidebar__healing {
+    margin-right: -12px;
+    margin-bottom: -13px;
+    margin-left: -12px;
+  }
 }
 
 .contacts-list {

@@ -8,6 +8,9 @@ wait for EOS for private list
 
 do not have multiple subscriptions for the same events
 
+do not notify when restoring
+how do I know its restoring?
+
 
 App init:
  - if no relays ask the user if it wants the app relays on its profile

@@ -64,6 +64,7 @@
   --nc-mobile-header-subtitle-font-size: 14px;
   --nc-mobile-header-subtitle-line-height: 18px;
   --nc-visual-viewport-height: 100vh;
+  --nc-visual-viewport-offset-top: 0px;
   --nc-mobile-keyboard-inset: 0px;
   --nc-btn-radius: 12px;
   --nc-btn-soft-bg: transparent;
@@ -263,6 +264,26 @@ body.native-mobile.mobile .home-shell__sync-status {
 
 body.native-mobile.mobile .thread-more--top {
   top: calc(var(--nc-native-app-safe-area-top) + 44px);
+}
+
+body.native-mobile.mobile.platform-android.nc-native-keyboard-visible {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: var(--nc-visual-viewport-height);
+  min-height: var(--nc-visual-viewport-height);
+  max-height: var(--nc-visual-viewport-height);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body.native-mobile.mobile.platform-android.nc-native-keyboard-visible #q-app,
+body.native-mobile.mobile.platform-android.nc-native-keyboard-visible .q-layout,
+body.native-mobile.mobile.platform-android.nc-native-keyboard-visible .q-page-container {
+  height: var(--nc-visual-viewport-height) !important;
+  min-height: var(--nc-visual-viewport-height) !important;
+  max-height: var(--nc-visual-viewport-height) !important;
+  overflow: hidden;
 }
 
 body.native-mobile.mobile.nc-native-keyboard-visible .q-dialog__inner {

@@ -103,6 +103,7 @@ const nativeViewportBaselineHeight = ref(0);
 const hasNativeFocusedTextControl = ref(false);
 const {
   visibleViewportHeight,
+  visibleViewportOffsetTop,
   visibleViewportKeyboardInset,
   isVisualViewportKeyboardVisible
 } = useVisibleViewportHeight(() => $q.screen.height);
@@ -126,6 +127,7 @@ type RouteLoader = () => Promise<unknown>;
 
 const NATIVE_KEYBOARD_VISIBLE_CLASS = 'nc-native-keyboard-visible';
 const pendingDialogFocusTimeoutIds = new Set<number>();
+const pendingNativeKeyboardScrollResetTimeoutIds = new Set<number>();
 
 const activeSection = computed<NavigationSection>(() => {
   const routeName = String(route.name ?? '');
@@ -263,6 +265,7 @@ onBeforeUnmount(() => {
   document.removeEventListener('focusin', handleNativeDialogFocusIn);
   document.removeEventListener('focusout', handleNativeFocusOut);
   clearPendingDialogFocusScrolls();
+  clearPendingNativeKeyboardScrollResets();
   resetNativeViewportCssVariables();
 
   if (mobilePreloadTimeoutId !== null) {
@@ -285,19 +288,27 @@ watch(
     isNativeMobile,
     hasNativeFocusedTextControl,
     visibleViewportHeight,
+    visibleViewportOffsetTop,
     visibleViewportKeyboardInset,
     isVisualViewportKeyboardVisible
   ],
   () => {
     syncNativeViewportCssVariables();
+    if (isNativeKeyboardVisible.value) {
+      scheduleNativeKeyboardScrollReset();
+    }
   },
   { immediate: true }
 );
 
 watch(isNativeKeyboardVisible, (isVisible) => {
   if (isVisible) {
+    scheduleNativeKeyboardScrollReset();
     scheduleFocusedDialogControlIntoView(document.activeElement);
+    return;
   }
+
+  clearPendingNativeKeyboardScrollResets();
 });
 
 watch(
@@ -328,12 +339,14 @@ function syncNativeViewportCssVariables(): void {
   updateNativeViewportBaseline();
 
   const viewportHeight = Math.max(0, Math.round(readGlobalViewportHeight()));
+  const viewportOffsetTop = Math.max(0, Math.round(visibleViewportOffsetTop.value));
   const keyboardInset = isMobile.value
     ? Math.max(0, Math.round(visibleViewportKeyboardInset.value))
     : 0;
   const effectiveKeyboardInset = isNativeKeyboardVisible.value ? keyboardInset : 0;
 
   document.documentElement.style.setProperty('--nc-visual-viewport-height', `${viewportHeight}px`);
+  document.documentElement.style.setProperty('--nc-visual-viewport-offset-top', `${viewportOffsetTop}px`);
   document.documentElement.style.setProperty('--nc-mobile-keyboard-inset', `${effectiveKeyboardInset}px`);
   document.documentElement.classList.toggle(NATIVE_KEYBOARD_VISIBLE_CLASS, isNativeKeyboardVisible.value);
   document.body.classList.toggle(NATIVE_KEYBOARD_VISIBLE_CLASS, isNativeKeyboardVisible.value);
@@ -345,6 +358,7 @@ function resetNativeViewportCssVariables(): void {
   }
 
   document.documentElement.style.removeProperty('--nc-visual-viewport-height');
+  document.documentElement.style.removeProperty('--nc-visual-viewport-offset-top');
   document.documentElement.style.removeProperty('--nc-mobile-keyboard-inset');
   document.documentElement.classList.remove(NATIVE_KEYBOARD_VISIBLE_CLASS);
   document.body.classList.remove(NATIVE_KEYBOARD_VISIBLE_CLASS);
@@ -355,6 +369,54 @@ function clearPendingDialogFocusScrolls(): void {
     window.clearTimeout(timeoutId);
   });
   pendingDialogFocusTimeoutIds.clear();
+}
+
+function clearPendingNativeKeyboardScrollResets(): void {
+  pendingNativeKeyboardScrollResetTimeoutIds.forEach((timeoutId) => {
+    window.clearTimeout(timeoutId);
+  });
+  pendingNativeKeyboardScrollResetTimeoutIds.clear();
+}
+
+function resetNativeKeyboardScrollPosition(): void {
+  if (
+    !isNativeKeyboardVisible.value ||
+    !isMobile.value ||
+    !isNativeMobile.value ||
+    $q.platform.is.android !== true ||
+    typeof window === 'undefined' ||
+    typeof document === 'undefined'
+  ) {
+    return;
+  }
+
+  document.scrollingElement?.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+  document.documentElement.scrollTop = 0;
+  document.documentElement.scrollLeft = 0;
+  document.body.scrollTop = 0;
+  document.body.scrollLeft = 0;
+  window.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+}
+
+function scheduleNativeKeyboardScrollReset(): void {
+  if (
+    !isMobile.value ||
+    !isNativeMobile.value ||
+    $q.platform.is.android !== true ||
+    typeof window === 'undefined'
+  ) {
+    return;
+  }
+
+  clearPendingNativeKeyboardScrollResets();
+
+  [0, 80, 220, 420].forEach((delay) => {
+    const timeoutId = window.setTimeout(() => {
+      pendingNativeKeyboardScrollResetTimeoutIds.delete(timeoutId);
+      resetNativeKeyboardScrollPosition();
+    }, delay);
+    pendingNativeKeyboardScrollResetTimeoutIds.add(timeoutId);
+  });
 }
 
 function scheduleFocusedDialogControlIntoView(target: EventTarget | null): void {
