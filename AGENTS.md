@@ -6,6 +6,13 @@
 - Primary state lives in Pinia stores backed by IndexedDB persistence and NDK-based relay/runtime code.
 - `README.md` still reflects an older mock-data version of the app. Trust `src/`, `package.json`, `NIPS_USED.md`, and the test suite first.
 
+## Session Bootstrap
+
+- For any fresh checkout, container, cloud session, or AI coding tool session, install dependencies before running project scripts.
+- Run `npm install` from the repo root when `node_modules/` is missing, after dependency changes in `package.json` or `package-lock.json`, or when npm scripts fail because local binaries are unavailable.
+- This repo uses npm with `package-lock.json`; do not switch to yarn or pnpm unless the user explicitly asks.
+- If `npm install` cannot run because of network, sandbox, or registry access, report that blocker before attempting validation commands that depend on installed packages.
+
 ## Code Map
 
 - `src/stores/nostrStore.ts`: composition root for auth, relay, subscription, ingest, and group runtimes.
