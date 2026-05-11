@@ -1,7 +1,5 @@
 prompt
 
-if `No internal tasks recorded.` then do not make it an expandable list
-the internal tasks should be indented (relative to the parent)
 
 
 do not have multiple subscriptions for the same events
@@ -29,7 +27,7 @@ post to user write relays
 
 confety emoji
 
-do not show login page if the user is logged in. Just go back to chats
+
 
 @someUser
  - more clear membership management in group chats

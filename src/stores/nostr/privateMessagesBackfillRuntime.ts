@@ -23,6 +23,7 @@ import type {
   PrivateMessagesBackfillState,
   RepairMissingMessageDependencyOptions,
 } from 'src/stores/nostr/types';
+import type { StartupStepId } from 'src/stores/nostr/startupState';
 
 interface GroupEpochHistoryRestoreOptions {
   force?: boolean;
@@ -71,6 +72,12 @@ function toUnixTimestampFromIso(value: unknown): number | null {
 }
 
 interface PrivateMessagesBackfillRuntimeDeps {
+  beginStartupInternalTask: (
+    parentStepId: StartupStepId,
+    taskId: string,
+    label: string,
+    updates?: { eventCount?: number | null; label?: string }
+  ) => void;
   buildFilterSinceDetails: (since: number | undefined) => Record<string, unknown>;
   buildFilterUntilDetails: (until: number | undefined) => Record<string, unknown>;
   buildPrivateMessageSubscriptionTargetDetails: (
@@ -78,7 +85,20 @@ interface PrivateMessagesBackfillRuntimeDeps {
     loggedInPubkeyHex: string
   ) => Promise<Record<string, unknown>>;
   buildSubscriptionRelayDetails: (relayUrls: string[]) => Record<string, unknown>;
+  completeStartupInternalTask: (
+    parentStepId: StartupStepId,
+    taskId: string,
+    updates?: { eventCount?: number | null; label?: string }
+  ) => void;
+  completeStartupStep: (stepId: StartupStepId) => void;
   ensureRelayConnections: (relayUrls: string[]) => Promise<void>;
+  failStartupInternalTask: (
+    parentStepId: StartupStepId,
+    taskId: string,
+    error: unknown,
+    updates?: { eventCount?: number | null; label?: string }
+  ) => void;
+  failStartupStep: (stepId: StartupStepId, error: unknown) => void;
   flushPrivateMessagesUiRefreshNow: () => void;
   formatSubscriptionLogValue: (value: string | null | undefined) => string | null;
   getLoggedInPublicKeyHex: () => string | null;
@@ -123,15 +143,25 @@ interface PrivateMessagesBackfillRuntimeDeps {
   toOptionalIsoTimestampFromUnix: (value: number | null | undefined) => string | null;
   updateStoredEventSinceFromCreatedAt: (value: unknown) => void;
   updateStoredPrivateMessagesLastReceivedFromCreatedAt: (value: unknown) => void;
+  updateStartupInternalTask: (
+    parentStepId: StartupStepId,
+    taskId: string,
+    updates: { eventCount?: number | null; label?: string }
+  ) => void;
   writePrivateMessagesBackfillState: (state: PrivateMessagesBackfillState) => void;
 }
 
 export function createPrivateMessagesBackfillRuntime({
+  beginStartupInternalTask,
   buildFilterSinceDetails,
   buildFilterUntilDetails,
   buildPrivateMessageSubscriptionTargetDetails,
   buildSubscriptionRelayDetails,
+  completeStartupInternalTask,
+  completeStartupStep,
   ensureRelayConnections,
+  failStartupInternalTask,
+  failStartupStep,
   flushPrivateMessagesUiRefreshNow,
   formatSubscriptionLogValue,
   getLoggedInPublicKeyHex,
@@ -150,6 +180,7 @@ export function createPrivateMessagesBackfillRuntime({
   toOptionalIsoTimestampFromUnix,
   updateStoredEventSinceFromCreatedAt,
   updateStoredPrivateMessagesLastReceivedFromCreatedAt,
+  updateStartupInternalTask,
   writePrivateMessagesBackfillState,
 }: PrivateMessagesBackfillRuntimeDeps) {
   let privateMessagesBackfillSubscription: ReturnType<NDK['subscribe']> | null = null;
@@ -166,6 +197,16 @@ export function createPrivateMessagesBackfillRuntime({
 
   function normalizeRepairDelayMs(value: number): number {
     return Math.max(0, Math.floor(value));
+  }
+
+  function buildStartupBackfillChunkTaskId(since: number, until: number): string {
+    return `private-message-backfill:${Math.max(0, Math.floor(since))}:${Math.max(0, Math.floor(until))}`;
+  }
+
+  function formatStartupBackfillChunkLabel(since: number, until: number): string {
+    const sinceIso = toOptionalIsoTimestampFromUnix(since) ?? String(since);
+    const untilIso = toOptionalIsoTimestampFromUnix(until) ?? String(until);
+    return `Backfill ${sinceIso} -> ${untilIso}`;
   }
 
   function normalizeRepairReferenceCreatedAt(value: number | null | undefined): number | null {
@@ -312,6 +353,7 @@ export function createPrivateMessagesBackfillRuntime({
     since: number;
     until: number;
     signature: string;
+    startupTaskId: string;
   }): Promise<number> {
     const privateMessageTargetDetails = await buildPrivateMessageSubscriptionTargetDetails(
       options.recipientPubkeys,
@@ -369,6 +411,9 @@ export function createPrivateMessagesBackfillRuntime({
             onEvent: (event) => {
               const wrappedEvent = event instanceof NDKEvent ? event : new NDKEvent(ndk, event);
               eventCount += 1;
+              updateStartupInternalTask('private-messages-subscribe', options.startupTaskId, {
+                eventCount,
+              });
               updateStoredPrivateMessagesLastReceivedFromCreatedAt(wrappedEvent.created_at);
               updateStoredEventSinceFromCreatedAt(wrappedEvent.created_at);
               queuePrivateMessageIngestion(wrappedEvent, options.loggedInPubkeyHex, {
@@ -1172,6 +1217,7 @@ export function createPrivateMessagesBackfillRuntime({
       )
     );
     if (!normalizedPubkey || relayUrls.length === 0 || normalizedRecipientPubkeys.length === 0) {
+      completeStartupStep('private-messages-subscribe');
       return;
     }
 
@@ -1195,6 +1241,7 @@ export function createPrivateMessagesBackfillRuntime({
           floorSince,
           floorSinceIso: toOptionalIsoTimestampFromUnix(floorSince),
         });
+        completeStartupStep('private-messages-subscribe');
         return;
       }
 
@@ -1220,10 +1267,21 @@ export function createPrivateMessagesBackfillRuntime({
             floorSince: state.floorSince,
             floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince),
           });
+          completeStartupStep('private-messages-subscribe');
           return;
         }
 
         writePrivateMessagesBackfillState(state);
+        const startupTaskId = buildStartupBackfillChunkTaskId(state.nextSince, state.nextUntil);
+        const startupTaskLabel = formatStartupBackfillChunkLabel(state.nextSince, state.nextUntil);
+        beginStartupInternalTask(
+          'private-messages-subscribe',
+          startupTaskId,
+          startupTaskLabel,
+          {
+            eventCount: 0,
+          }
+        );
         logSubscription('private-messages', 'backfill-window-start', {
           signature,
           ...buildFilterSinceDetails(state.nextSince),
@@ -1231,14 +1289,23 @@ export function createPrivateMessagesBackfillRuntime({
           delayMs: state.delayMs,
         });
 
-        await runPrivateMessagesBackfillWindow({
-          loggedInPubkeyHex: normalizedPubkey,
-          recipientPubkeys: normalizedRecipientPubkeys,
-          relayUrls,
-          since: state.nextSince,
-          until: state.nextUntil,
-          signature,
-        });
+        try {
+          const eventCount = await runPrivateMessagesBackfillWindow({
+            loggedInPubkeyHex: normalizedPubkey,
+            recipientPubkeys: normalizedRecipientPubkeys,
+            relayUrls,
+            since: state.nextSince,
+            until: state.nextUntil,
+            signature,
+            startupTaskId,
+          });
+          completeStartupInternalTask('private-messages-subscribe', startupTaskId, {
+            eventCount,
+          });
+        } catch (error) {
+          failStartupInternalTask('private-messages-subscribe', startupTaskId, error);
+          throw error;
+        }
 
         if (runToken !== privateMessagesBackfillRunToken) {
           return;
@@ -1257,6 +1324,7 @@ export function createPrivateMessagesBackfillRuntime({
             floorSince: state.floorSince,
             floorSinceIso: toOptionalIsoTimestampFromUnix(state.floorSince),
           });
+          completeStartupStep('private-messages-subscribe');
           return;
         }
 
@@ -1299,6 +1367,7 @@ export function createPrivateMessagesBackfillRuntime({
           signature,
           error,
         });
+        failStartupStep('private-messages-subscribe', error);
       })
       .finally(() => {
         if (runToken !== privateMessagesBackfillRunToken) {

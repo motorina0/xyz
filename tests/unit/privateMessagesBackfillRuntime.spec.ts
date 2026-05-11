@@ -59,11 +59,16 @@ function createRuntime(
     });
 
   const runtime = createPrivateMessagesBackfillRuntime({
+    beginStartupInternalTask: vi.fn(),
     buildFilterSinceDetails: (since) => ({ since }),
     buildFilterUntilDetails: (until) => ({ until }),
     buildPrivateMessageSubscriptionTargetDetails: vi.fn(async () => ({})),
     buildSubscriptionRelayDetails: (relayUrls) => ({ relayUrls }),
+    completeStartupInternalTask: vi.fn(),
+    completeStartupStep: vi.fn(),
     ensureRelayConnections: vi.fn(async () => {}),
+    failStartupInternalTask: vi.fn(),
+    failStartupStep: vi.fn(),
     flushPrivateMessagesUiRefreshNow: vi.fn(),
     formatSubscriptionLogValue: (value) => value ?? null,
     getLoggedInPublicKeyHex: () => LOGGED_IN_PUBLIC_KEY,
@@ -90,6 +95,7 @@ function createRuntime(
       typeof value === 'number' ? new Date(value * 1000).toISOString() : null,
     updateStoredEventSinceFromCreatedAt: vi.fn(),
     updateStoredPrivateMessagesLastReceivedFromCreatedAt: vi.fn(),
+    updateStartupInternalTask: vi.fn(),
     writePrivateMessagesBackfillState: vi.fn(),
   });
 

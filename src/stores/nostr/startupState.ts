@@ -96,10 +96,11 @@ export interface StartupTimedSnapshot {
   completedAt: number | null;
   durationMs: number | null;
   errorMessage: string | null;
+  eventCount: number | null;
 }
 
 export interface StartupInternalTaskSnapshot extends StartupTimedSnapshot {
-  id: StartupInternalTaskId;
+  id: string;
 }
 
 export interface StartupStepSnapshot extends StartupTimedSnapshot {
@@ -123,6 +124,7 @@ export function createInitialStartupStepSnapshots(): StartupStepSnapshot[] {
     completedAt: null,
     durationMs: null,
     errorMessage: null,
+    eventCount: null,
     internalTasks: [],
   }));
 }
@@ -142,6 +144,7 @@ export function beginStartupTimedSnapshotValue<TSnapshot extends StartupTimedSna
     completedAt: null,
     durationMs: null,
     errorMessage: null,
+    eventCount: step.eventCount ?? null,
   } as TSnapshot;
 }
 
@@ -157,6 +160,7 @@ export function completeStartupTimedSnapshotValue<TSnapshot extends StartupTimed
     completedAt: now,
     durationMs: Math.max(0, now - startedAt),
     errorMessage: null,
+    eventCount: step.eventCount ?? null,
   } as TSnapshot;
 }
 
@@ -173,6 +177,7 @@ export function failStartupTimedSnapshotValue<TSnapshot extends StartupTimedSnap
     completedAt: now,
     durationMs: Math.max(0, now - startedAt),
     errorMessage: error instanceof Error ? error.message : String(error),
+    eventCount: step.eventCount ?? null,
   } as TSnapshot;
 }
 
@@ -196,7 +201,7 @@ export function resolveStartupStepIdValue(trackId: StartupTrackId): StartupStepI
 }
 
 export function getStartupInternalTaskDefinitionValue(
-  trackId: StartupTrackId
+  trackId: string
 ): (typeof STARTUP_INTERNAL_TASK_DEFINITIONS)[number] | null {
   return STARTUP_INTERNAL_TASK_DEFINITIONS.find((task) => task.id === trackId) ?? null;
 }

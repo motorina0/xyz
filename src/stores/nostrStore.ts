@@ -351,12 +351,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     shouldApplyPrivateContactListEvent,
   } = createTrackedContactStateRuntime();
   const {
+    beginStartupInternalTask,
     beginStartupStep,
+    completeStartupInternalTask,
     completeStartupStep,
     createStartupBatchTracker,
+    failStartupInternalTask,
     failStartupStep,
     getStartupStepSnapshot,
     resetStartupStepTracking,
+    updateStartupInternalTask,
   } = createStartupRuntime({
     startupDisplay,
     startupState: startupRuntimeState,
@@ -1349,11 +1353,16 @@ export const useNostrStore = defineStore('nostrStore', () => {
     startPrivateMessagesStartupBackfill: startPrivateMessagesStartupBackfillImpl,
     stopPrivateMessagesBackfill: stopPrivateMessagesBackfillImpl,
   } = createPrivateMessagesBackfillRuntime({
+    beginStartupInternalTask,
     buildFilterSinceDetails,
     buildFilterUntilDetails,
     buildPrivateMessageSubscriptionTargetDetails,
     buildSubscriptionRelayDetails,
+    completeStartupInternalTask,
+    completeStartupStep,
     ensureRelayConnections,
+    failStartupInternalTask,
+    failStartupStep,
     flushPrivateMessagesUiRefreshNow,
     formatSubscriptionLogValue,
     getLoggedInPublicKeyHex,
@@ -1372,6 +1381,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     toOptionalIsoTimestampFromUnix,
     updateStoredEventSinceFromCreatedAt,
     updateStoredPrivateMessagesLastReceivedFromCreatedAt,
+    updateStartupInternalTask,
     writePrivateMessagesBackfillState,
   });
   repairMissingMessageDependencyRuntime = repairMissingMessageDependencyImpl;

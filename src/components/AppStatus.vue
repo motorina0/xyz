@@ -198,21 +198,34 @@ function startupStatusClass(status: StartupStepStatus | null): string {
 }
 
 function startupStepMeta(step: StartupTimedSnapshot & { showProgress?: boolean }): string {
+  const eventCountMeta = startupStepEventCountMeta(step);
   if (step.status === 'error') {
-    return step.errorMessage?.trim() || 'Failed';
+    return [step.errorMessage?.trim() || 'Failed', eventCountMeta].filter(Boolean).join(' - ');
   }
 
   if (step.status === 'success') {
-    return `Completed in ${startupStepDuration(step)}`;
+    return [`Completed in ${startupStepDuration(step)}`, eventCountMeta]
+      .filter(Boolean)
+      .join(' - ');
   }
 
   if (step.status === 'in_progress') {
-    return 'showProgress' in step && step.showProgress === true
+    const statusMeta = 'showProgress' in step && step.showProgress === true
       ? 'Fetching from relays...'
       : 'In progress';
+    return [statusMeta, eventCountMeta].filter(Boolean).join(' - ');
   }
 
-  return 'Pending';
+  return ['Pending', eventCountMeta].filter(Boolean).join(' - ');
+}
+
+function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
+  if (typeof step.eventCount !== 'number' || !Number.isFinite(step.eventCount)) {
+    return null;
+  }
+
+  const eventCount = Math.max(0, Math.floor(step.eventCount));
+  return `${eventCount} ${eventCount === 1 ? 'event' : 'events'}`;
 }
 
 function startupStepDuration(step: StartupTimedSnapshot): string {
