@@ -10,18 +10,6 @@
         <div class="settings-sidebar__top">
           <div class="settings-sidebar__header">
             <div class="settings-sidebar__title">Settings</div>
-            <div class="settings-sidebar__actions">
-              <q-btn
-                flat
-                dense
-                round
-                icon="fact_check"
-                aria-label="Open Status"
-                class="settings-sidebar__status-button"
-                :class="{ 'settings-sidebar__status-button--active': isStatusView }"
-                @click="goToSetting('settings-status')"
-              />
-            </div>
           </div>
 
           <ReconnectHealingBanner />
@@ -148,7 +136,6 @@ const isLoggingOut = ref(false);
 
 type SettingsRouteName =
   | 'settings-profile'
-  | 'settings-status'
   | 'settings-theme'
   | 'settings-relays'
   | 'settings-language'
@@ -187,7 +174,6 @@ const activeSettingKey = computed(() => {
   const match = settingsItems.find((item) => item.routeName === route.name);
   return match?.key ?? null;
 });
-const isStatusView = computed(() => route.name === 'settings-status');
 
 watch(
   [isMobile, () => route.name],
@@ -299,22 +285,6 @@ async function handleConfirmLogout(): Promise<void> {
   font-size: 20px;
   font-weight: 600;
   line-height: 1.2;
-}
-
-.settings-sidebar__actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.settings-sidebar__status-button {
-  flex-shrink: 0;
-}
-
-.settings-sidebar__status-button--active {
-  background: var(--nc-active);
-  color: var(--nc-active-text) !important;
 }
 
 .settings-menu {

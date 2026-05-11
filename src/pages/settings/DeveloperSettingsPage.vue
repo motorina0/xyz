@@ -754,6 +754,40 @@
           </div>
         </q-slide-transition>
       </q-card>
+
+      <q-card flat bordered class="developer-card">
+        <q-card-section
+          class="developer-card__header developer-card__header--clickable"
+          role="button"
+          tabindex="0"
+          @click="toggleExpandableCard('startupHistory')"
+          @keydown.enter.prevent="toggleExpandableCard('startupHistory')"
+          @keydown.space.prevent="toggleExpandableCard('startupHistory')"
+        >
+          <div class="developer-card__header-main">
+            <div class="text-h6">Startup History</div>
+            <div class="text-caption text-grey-6">
+              Restore steps captured during login and startup state recovery.
+            </div>
+          </div>
+
+          <div class="developer-card__header-side">
+            <q-icon
+              :name="expandedCards.startupHistory ? 'expand_less' : 'expand_more'"
+              size="20px"
+              class="developer-card__header-icon"
+            />
+          </div>
+        </q-card-section>
+
+        <q-slide-transition>
+          <div v-show="expandedCards.startupHistory">
+            <q-card-section class="developer-card__section developer-card__section--startup-history">
+              <AppStatus embedded />
+            </q-card-section>
+          </div>
+        </q-slide-transition>
+      </q-card>
     </div>
   </SettingsDetailLayout>
 </template>
@@ -761,6 +795,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
+import AppStatus from 'src/components/AppStatus.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import type {
   DeveloperDiagnosticsSnapshot,
@@ -781,7 +816,8 @@ type ExpandableDeveloperCardKey =
   | 'groupMessagesSubscription'
   | 'relayStatus'
   | 'pendingQueues'
-  | 'recentTrace';
+  | 'recentTrace'
+  | 'startupHistory';
 
 const diagnostics = ref<DeveloperDiagnosticsSnapshot | null>(null);
 const isRefreshingDiagnostics = ref(false);
@@ -797,7 +833,8 @@ const expandedCards = ref<Record<ExpandableDeveloperCardKey, boolean>>({
   groupMessagesSubscription: false,
   relayStatus: true,
   pendingQueues: true,
-  recentTrace: true
+  recentTrace: true,
+  startupHistory: false
 });
 
 let refreshRequestId = 0;
@@ -1407,6 +1444,10 @@ function syncTraceFiltersWithAvailableOptions(): void {
 
 .developer-card__section--flush {
   padding: 0;
+}
+
+.developer-card__section--startup-history {
+  display: block;
 }
 
 .developer-card__row {

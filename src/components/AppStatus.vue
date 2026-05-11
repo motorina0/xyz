@@ -1,7 +1,7 @@
 <template>
-  <div class="app-status">
+  <div class="app-status" :class="{ 'app-status--embedded': embedded }">
     <section class="app-status__card">
-      <div class="app-status__card-header">
+      <div v-if="!embedded" class="app-status__card-header">
         <div class="app-status__card-copy">
           <div class="app-status__card-title">Startup History</div>
           <div class="app-status__card-subtitle">{{ cardSubtitle }}</div>
@@ -122,6 +122,15 @@
 import { computed } from 'vue';
 import type { StartupStepStatus, StartupTimedSnapshot } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
+
+withDefaults(
+  defineProps<{
+    embedded?: boolean;
+  }>(),
+  {
+    embedded: false
+  }
+);
 
 const nostrStore = useNostrStore();
 
@@ -248,6 +257,10 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
   min-height: 0;
 }
 
+.app-status--embedded {
+  height: auto;
+}
+
 .app-status__card {
   display: flex;
   flex-direction: column;
@@ -257,6 +270,14 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
   border-radius: 14px;
   overflow: hidden;
   background: color-mix(in srgb, var(--nc-sidebar) 92%, transparent);
+}
+
+.app-status--embedded .app-status__card {
+  height: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .app-status__card-header {
@@ -312,6 +333,10 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
   display: flex;
   flex-direction: column;
   padding: 14px 16px 16px;
+}
+
+.app-status--embedded .app-status__content {
+  padding: 0;
 }
 
 .app-status__details-copy {
@@ -388,6 +413,11 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
+}
+
+.app-status--embedded .app-status__history-scroll {
+  overflow: visible;
+  padding-right: 0;
 }
 
 .app-status__history-entry + .app-status__history-entry {
