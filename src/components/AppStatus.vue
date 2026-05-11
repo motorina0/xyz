@@ -393,7 +393,7 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
 .app-status__internal-list {
   display: grid;
   gap: 8px;
-  padding: 0 0 10px 54px;
+  padding: 2px 0 10px 94px;
 }
 
 .app-status__internal-item {
@@ -450,7 +450,7 @@ body.body--dark .app-status__status-icon--pending {
   }
 
   .app-status__internal-list {
-    padding-left: 64px;
+    padding-left: 84px;
   }
 
   .app-status__internal-item {
