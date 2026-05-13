@@ -269,6 +269,7 @@ async function handleConfirmLogout(): Promise<void> {
 }
 
 .settings-sidebar__top {
+  position: relative;
   padding: 12px;
   border-bottom: 1px solid var(--nc-border);
   background: var(--nc-panel-header-bg);

@@ -264,23 +264,37 @@ watch(isDetailsVisible, (value) => {
 
 <style scoped>
 .startup-history-banner {
-  position: relative;
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
-  min-height: 12px;
-  margin: 6px -8px -8px;
-  padding: 0 30px 1px 0;
+  height: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
   color: var(--nc-text-primary);
   font-size: 10px;
   font-weight: 600;
   line-height: 1.15;
+  pointer-events: none;
 }
 
 .startup-history-banner--expanded {
+  position: relative;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: auto;
+  height: auto;
   min-height: 24px;
+  margin: 6px -8px -8px;
   padding: 6px 34px 8px 8px;
   border-top: 1px solid var(--nc-border);
   background: color-mix(in srgb, var(--q-primary) 7%, var(--nc-panel-header-bg));
+  pointer-events: auto;
 }
 
 .startup-history-banner__details {
@@ -422,6 +436,7 @@ watch(isDetailsVisible, (value) => {
   right: 0;
   bottom: 0;
   left: 0;
+  pointer-events: none;
 }
 
 .q-btn.startup-history-banner__toggle {
@@ -440,6 +455,7 @@ watch(isDetailsVisible, (value) => {
   border-radius: 0;
   box-shadow: none;
   transition: color 0.2s ease;
+  pointer-events: auto;
 }
 
 .q-btn.startup-history-banner__toggle :deep(.q-icon) {
