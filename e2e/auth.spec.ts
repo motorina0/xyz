@@ -1,9 +1,10 @@
-import { test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import {
   acceptFirstRequest,
   bootstrapExtensionUser,
   bootstrapUser,
   disposeUsers,
+  E2E_RELAY_URL,
   expectBrowserStorageToBeEmpty,
   expectNoUnexpectedBrowserErrors,
   logoutFromSettings,
@@ -16,6 +17,41 @@ import {
 } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
+
+test('generated key login opens profile onboarding before chats', async ({ browser }) => {
+  const context = await browser.newContext();
+  await context.addInitScript((relayUrl) => {
+    window.localStorage.setItem(
+      'relays',
+      JSON.stringify([{ url: relayUrl, read: true, write: true }])
+    );
+  }, E2E_RELAY_URL);
+  const page = await context.newPage();
+
+  try {
+    await page.goto('/#/register');
+    await expect(page.getByRole('button', { name: 'Login Now', exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
+    await page.getByRole('button', { name: 'Login Now', exact: true }).click();
+
+    await expect(
+      page.locator(
+        '[data-testid="auth-onboarding-continue-button"], [data-testid="auth-onboarding-skip-button"]'
+      )
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(/#\/register$/);
+
+    await page.getByTestId('auth-onboarding-skip-button').click();
+    await page
+      .getByRole('button', { name: 'Not now', exact: true })
+      .click({ timeout: 3_000 })
+      .catch(() => undefined);
+    await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
+  } finally {
+    await context.close();
+  }
+});
 
 test('NIP-07 login can establish a direct chat and receive a reply', async ({ browser }) => {
   const alice = await bootstrapExtensionUser(browser, TEST_ACCOUNTS.nip07Alice);

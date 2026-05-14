@@ -1,7 +1,9 @@
 <template>
   <div class="register-page auth-entry-page">
-    <div class="register-shell">
-      <q-card flat bordered class="register-card register-card--light">
+    <div class="register-shell" :class="{ 'register-shell--wide': showProfileOnboarding }">
+      <AuthProfileOnboardingCard v-if="showProfileOnboarding" />
+
+      <q-card v-else flat bordered class="register-card register-card--light">
         <q-card-section class="register-card__header">
           <div class="register-card__title">Create Account</div>
           <div class="register-card__subtitle" v-if="isCreatingAccount">
@@ -60,12 +62,6 @@
         </q-card-section>
       </q-card>
     </div>
-
-    <BrowserNotificationsLoginDialog
-      v-model="isBrowserNotificationsLoginDialogOpen"
-      @enable="confirmBrowserNotificationsLoginDialog"
-      @skip="skipBrowserNotificationsLoginDialog"
-    />
   </div>
 </template>
 
@@ -73,8 +69,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
-import BrowserNotificationsLoginDialog from 'src/components/BrowserNotificationsLoginDialog.vue';
-import { useBrowserNotificationsLoginPrompt } from 'src/composables/useBrowserNotificationsLoginPrompt';
+import AuthProfileOnboardingCard from 'src/components/AuthProfileOnboardingCard.vue';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -87,16 +82,11 @@ interface GeneratedAccount {
 
 const router = useRouter();
 const nostrStore = useNostrStore();
-const {
-  isBrowserNotificationsLoginDialogOpen,
-  handleBrowserNotificationsAfterLogin,
-  confirmBrowserNotificationsLoginDialog,
-  skipBrowserNotificationsLoginDialog
-} = useBrowserNotificationsLoginPrompt();
 const generatedAccount = ref<GeneratedAccount | null>(null);
 const isCreatingAccount = ref(true);
 const creationProgress = ref(0);
 const isLoggingIn = ref(false);
+const showProfileOnboarding = ref(false);
 const ACCOUNT_CREATION_DURATION_MS = 2000;
 let creationAnimationFrameId: number | null = null;
 let creationCompletionFrameId: number | null = null;
@@ -211,8 +201,7 @@ async function handleLoginNow(): Promise<void> {
       throw new Error('Failed to persist the generated account key.');
     }
 
-    await handleBrowserNotificationsAfterLogin();
-    await router.push({ name: 'chats' });
+    showProfileOnboarding.value = true;
   } catch (error) {
     reportUiError('Failed to log in with generated account', error, 'Failed to log in.');
   } finally {
@@ -231,6 +220,10 @@ async function handleLoginNow(): Promise<void> {
 
 .register-shell {
   width: min(100%, 460px);
+}
+
+.register-shell--wide {
+  width: min(100%, 560px);
 }
 
 .register-card {

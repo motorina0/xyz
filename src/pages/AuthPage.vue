@@ -212,29 +212,30 @@
             </q-input>
 
             <q-list bordered separator class="onboarding-relay-list">
-              <q-item v-for="(relay, index) in onboardingRelayRows" :key="relay.url">
+              <q-item v-for="relay in onboardingRelayRows" :key="relay.url">
                 <q-item-section avatar>
-                  <q-icon
-                    :name="relay.connected ? 'check_circle' : 'radio_button_unchecked'"
-                    :color="relay.connected ? 'positive' : 'grey-6'"
+                  <q-checkbox
+                    dense
+                    color="primary"
+                    :model-value="relay.selected"
+                    :aria-label="`Use ${relay.url} when searching for profile`"
+                    @update:model-value="
+                      (value) => setOnboardingRelaySelected(relay.url, Boolean(value))
+                    "
                   />
                 </q-item-section>
                 <q-item-section>
                   <q-item-label class="onboarding-relay-list__url">{{ relay.url }}</q-item-label>
-                  <q-item-label caption>
-                    {{ relay.connected ? 'Connected' : 'Not connected yet' }}
-                  </q-item-label>
                 </q-item-section>
                 <q-item-section side>
-                  <q-btn
-                    flat
-                    round
-                    dense
-                    icon="delete"
-                    color="negative"
-                    aria-label="Delete relay"
-                    @click="removeOnboardingRelay(index)"
-                  />
+                  <q-badge
+                    outline
+                    :color="relay.statusColor"
+                    class="onboarding-relay-list__status"
+                    :aria-label="relay.statusLabel"
+                  >
+                    <q-icon :name="relay.statusIcon" size="18px" />
+                  </q-badge>
                 </q-item-section>
               </q-item>
             </q-list>
@@ -258,20 +259,20 @@
               outline
               color="primary"
               no-caps
-              label="Add relays"
-              class="auth-card__button"
-              data-testid="auth-onboarding-add-relays-button"
-              @click="showOnboardingRelaySetup"
-            />
-            <q-btn
-              unelevated
-              color="primary"
-              no-caps
               label="Skip for now"
               class="auth-card__button"
               data-testid="auth-onboarding-skip-button"
               :loading="isOnboardingContinuing"
               @click="continueFromOnboarding"
+            />
+            <q-btn
+              unelevated
+              color="primary"
+              no-caps
+              label="Add relays"
+              class="auth-card__button"
+              data-testid="auth-onboarding-add-relays-button"
+              @click="showOnboardingRelaySetup"
             />
           </div>
 
@@ -283,7 +284,7 @@
               label="Try again"
               class="auth-card__button"
               data-testid="auth-onboarding-retry-button"
-              @click="runProfileLookup"
+              @click="() => runProfileLookup()"
             />
             <div class="auth-card__button-row">
               <q-btn
@@ -325,7 +326,8 @@
               label="Search again"
               class="auth-card__button"
               data-testid="auth-onboarding-search-again-button"
-              @click="runProfileLookup"
+              :disable="!canSearchSelectedOnboardingRelays"
+              @click="runProfileLookup(selectedOnboardingRelayUrls)"
             />
           </div>
         </q-card-section>
@@ -376,6 +378,7 @@ const onboardingNpub = ref('');
 const onboardingError = ref('');
 const onboardingRelayInput = ref('');
 const onboardingAttempt = ref(0);
+const selectedOnboardingRelayKeys = ref<Set<string>>(new Set());
 const isOnboardingContinuing = ref(false);
 const PROFILE_LOOKUP_TIMEOUT_MS = 12_000;
 const privateKeyValidation = computed(() => nostrStore.validatePrivateKey(privateKey.value.trim()));
@@ -453,11 +456,26 @@ const canAddOnboardingRelay = computed(() => {
 });
 const onboardingRelayRows = computed(() => {
   void nostrStore.relayStatusVersion;
-  return relayStore.relays.map((url) => ({
-    url,
-    connected: nostrStore.getRelayConnectionState(url) === 'connected',
-  }));
+  return relayStore.relays.map((url) => {
+    const connected = nostrStore.getRelayConnectionState(url) === 'connected';
+    return {
+      url,
+      connected,
+      selected: selectedOnboardingRelayKeys.value.has(buildRelayLookupKey(url)),
+      statusColor: connected ? 'positive' : 'warning',
+      statusIcon: connected ? 'check' : 'warning_amber',
+      statusLabel: connected ? 'Connected' : 'Warning',
+    };
+  });
 });
+const selectedOnboardingRelayUrls = computed(() =>
+  uniqueRelayUrls(
+    relayStore.relays.filter((url) => selectedOnboardingRelayKeys.value.has(buildRelayLookupKey(url)))
+  )
+);
+const canSearchSelectedOnboardingRelays = computed(
+  () => selectedOnboardingRelayUrls.value.length > 0
+);
 
 function openLoginOptions(): void {
   try {
@@ -549,7 +567,7 @@ async function startProfileOnboarding(): Promise<void> {
   await runProfileLookup();
 }
 
-async function runProfileLookup(): Promise<void> {
+async function runProfileLookup(relayUrlOverride?: string[]): Promise<void> {
   if (!onboardingPubkey.value) {
     return;
   }
@@ -560,7 +578,7 @@ async function runProfileLookup(): Promise<void> {
   onboardingProfile.value = null;
   onboardingError.value = '';
 
-  const relayUrls = uniqueRelayUrls(relayStore.relays);
+  const relayUrls = uniqueRelayUrls(relayUrlOverride ?? relayStore.relays);
   if (relayUrls.length === 0) {
     onboardingStatus.value = 'not-found';
     return;
@@ -611,10 +629,11 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 }
 
 function showOnboardingRelaySetup(): void {
+  resetSelectedOnboardingRelaysToConnected();
   onboardingStatus.value = 'relay-setup';
 }
 
-function handleOnboardingAddRelay(): void {
+async function handleOnboardingAddRelay(): Promise<void> {
   try {
     const value = onboardingRelayInput.value.trim();
     if (!value || onboardingRelayValidationError.value) {
@@ -622,22 +641,42 @@ function handleOnboardingAddRelay(): void {
     }
 
     const normalizedRelay = normalizeRelayUrl(value);
-    relayStore.addRelay(normalizedRelay);
+    relayStore.replaceRelayEntries([
+      { url: normalizedRelay, read: true, write: true },
+      ...relayStore.relayEntries,
+    ]);
     onboardingRelayInput.value = '';
-    void nostrStore.ensureRelayConnections([normalizedRelay]).catch((error) => {
+
+    try {
+      await nostrStore.ensureRelayConnections([normalizedRelay]);
+      if (nostrStore.getRelayConnectionState(normalizedRelay) === 'connected') {
+        setOnboardingRelaySelected(normalizedRelay, true);
+      }
+    } catch (error) {
       console.warn('Failed to connect onboarding relay', normalizedRelay, error);
-    });
+    }
   } catch (error) {
     reportUiError('Failed to add relay during onboarding', error, 'Failed to add relay.');
   }
 }
 
-function removeOnboardingRelay(index: number): void {
-  try {
-    relayStore.removeRelay(index);
-  } catch (error) {
-    reportUiError('Failed to remove relay during onboarding', error, 'Failed to remove relay.');
+function resetSelectedOnboardingRelaysToConnected(): void {
+  selectedOnboardingRelayKeys.value = new Set(
+    relayStore.relays
+      .filter((url) => nostrStore.getRelayConnectionState(url) === 'connected')
+      .map((url) => buildRelayLookupKey(url))
+  );
+}
+
+function setOnboardingRelaySelected(relayUrl: string, selected: boolean): void {
+  const nextSelectedRelayKeys = new Set(selectedOnboardingRelayKeys.value);
+  const key = buildRelayLookupKey(relayUrl);
+  if (selected) {
+    nextSelectedRelayKeys.add(key);
+  } else {
+    nextSelectedRelayKeys.delete(key);
   }
+  selectedOnboardingRelayKeys.value = nextSelectedRelayKeys;
 }
 
 function validateRelayUrlForOnboarding(value: string): string {
@@ -807,6 +846,25 @@ async function goToRegister(): Promise<void> {
   padding-top: 16px;
 }
 
+.auth-card--light .nc-input :deep(.q-field__control) {
+  background: rgba(255, 255, 255, 0.94);
+  color: #182236;
+}
+
+.auth-card--light .nc-input :deep(.q-field__native),
+.auth-card--light .nc-input :deep(.q-field__input),
+.auth-card--light .nc-input :deep(.q-field__label) {
+  color: #182236;
+}
+
+.auth-card--light .nc-input :deep(.q-field__label) {
+  opacity: 0.72;
+}
+
+.auth-card--light .nc-input :deep(.q-field__marginal) {
+  color: #475569;
+}
+
 .onboarding-checking {
   display: flex;
   align-items: center;
@@ -896,13 +954,33 @@ async function goToRegister(): Promise<void> {
   max-height: 260px;
   overflow: auto;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(248, 250, 252, 0.94);
+  color: #182236;
+}
+
+.onboarding-relay-list :deep(.q-item) {
+  color: #182236;
+}
+
+.onboarding-relay-list :deep(.q-item__label) {
+  color: #182236;
+}
+
+.onboarding-relay-list :deep(.q-item__label--caption) {
+  color: #64748b;
+  opacity: 1;
 }
 
 .onboarding-relay-list__url {
   font-size: 13px;
   line-height: 1.3;
   overflow-wrap: anywhere;
+}
+
+.onboarding-relay-list__status {
+  min-width: 36px;
+  min-height: 26px;
+  justify-content: center;
 }
 
 @media (max-width: 520px) {
