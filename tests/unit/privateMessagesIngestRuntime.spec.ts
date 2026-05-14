@@ -434,6 +434,76 @@ describe('privateMessagesIngestRuntime', () => {
     );
   });
 
+  it('persists restored messages before the contact cursor without unread or notification state', async () => {
+    const deps = createDeps();
+    const runtime = createPrivateMessagesIngestRuntime(deps);
+    const chatPublicKey = 'a'.repeat(64);
+    const loggedInPubkey = 'b'.repeat(64);
+    const createdAt = '2023-11-14T22:13:20.000Z';
+    const seenAt = '2023-11-14T22:20:00.000Z';
+    const rumorEvent = makeRumorEvent({
+      recipientPubkey: loggedInPubkey,
+      senderPubkey: chatPublicKey,
+      eventId: 'restored-old-event',
+      content: '  Restored old hello  ',
+    });
+
+    deps.shouldNotifyForAcceptedChatOnly.mockResolvedValue(true);
+    ndkMocks.giftUnwrap.mockResolvedValue(rumorEvent);
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue({
+      id: 9,
+      public_key: chatPublicKey,
+      type: 'user',
+      name: 'Alice',
+      given_name: null,
+      meta: {
+        private_contact_list_member: true,
+        last_seen_incoming_activity_at: seenAt,
+        last_seen_incoming_activity_event_id: 'seen-event',
+      },
+      relays: [],
+      sendMessagesToAppRelays: false,
+    });
+    serviceMocks.chatDataService.getChatByPublicKey.mockResolvedValue({
+      id: chatPublicKey,
+      public_key: chatPublicKey,
+      type: 'user',
+      name: 'Alice',
+      last_message: 'Latest message',
+      last_message_at: '2023-11-14T22:30:00.000Z',
+      unread_count: 3,
+      meta: {
+        inbox_state: 'accepted',
+        accepted_at: '2023-11-14T22:00:00.000Z',
+        last_seen_received_activity_at: '2023-11-14T22:00:00.000Z',
+      },
+    });
+    serviceMocks.chatDataService.createMessage.mockResolvedValue({
+      id: 46,
+      chat_public_key: chatPublicKey,
+      author_public_key: chatPublicKey,
+      created_at: createdAt,
+      event_id: 'restored-old-event',
+      meta: {},
+    });
+
+    runtime.queuePrivateMessageIngestion(makeWrappedEvent(), loggedInPubkey, {
+      uiThrottleMs: 25,
+    });
+    await runtime.getPrivateMessagesIngestQueue();
+
+    expect(serviceMocks.chatDataService.createMessage).toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.updateChatPreview).not.toHaveBeenCalled();
+    expect(serviceMocks.chatDataService.updateChatUnreadCount).not.toHaveBeenCalled();
+    expect(deps.shouldNotifyForAcceptedChatOnly).not.toHaveBeenCalled();
+    expect(deps.showIncomingMessageBrowserNotification).not.toHaveBeenCalled();
+    expect(deps.queuePrivateMessagesUiRefresh).toHaveBeenCalledWith({
+      throttleMs: 25,
+      reloadChats: true,
+      reloadMessages: true,
+    });
+  });
+
   it('drops group messages sent to an older epoch after a higher epoch was issued', async () => {
     const deps = createDeps();
     const runtime = createPrivateMessagesIngestRuntime(deps);

@@ -94,6 +94,13 @@ export function createPrivateMessagesIngestRuntime({
       : currentPreviewAt;
   }
 
+  function isIncomingActivityAfterSeenBoundary(
+    createdAt: string,
+    lastSeenActivityAt: string | null
+  ): boolean {
+    return toComparableTimestamp(createdAt) > toComparableTimestamp(lastSeenActivityAt);
+  }
+
   function normalizeNotificationTitle(value: string | null | undefined): string {
     return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
   }
@@ -799,11 +806,15 @@ export function createPrivateMessagesIngestRuntime({
     }
 
     const currentUnreadCount = Math.max(0, Number(chat.unread_count ?? 0));
+    const isAfterSeenBoundary = isIncomingActivityAfterSeenBoundary(
+      createdAt,
+      effectiveLastSeenIncomingActivityAt
+    );
     const shouldIncrementUnreadCount =
       !isSelfSentMessage &&
       !isBlockedChat &&
       chatStore.visibleChatId !== chat.public_key &&
-      toComparableTimestamp(createdAt) > toComparableTimestamp(effectiveLastSeenIncomingActivityAt);
+      isAfterSeenBoundary;
     const nextUnreadCount = isSelfSentMessage
       ? currentUnreadCount
       : isBlockedChat || chatStore.visibleChatId === chat.public_key
@@ -913,6 +924,7 @@ export function createPrivateMessagesIngestRuntime({
     if (
       !isSelfSentMessage &&
       !isBlockedChat &&
+      isAfterSeenBoundary &&
       (await shouldNotifyForAcceptedChatOnly(chat.public_key, chat.meta ?? {}))
     ) {
       showIncomingMessageBrowserNotification({

@@ -995,6 +995,7 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 .contacts-sidebar__top {
+  position: relative;
   padding: 12px;
   border-bottom: 1px solid var(--nc-border);
   background: var(--nc-panel-header-bg);
@@ -1032,7 +1033,8 @@ async function handleContactMenuDelete(contact: ContactRecord): Promise<void> {
 }
 
 @media (min-width: 1024px) {
-  .contacts-sidebar__top .contacts-sidebar__healing {
+  .contacts-sidebar__top .contacts-sidebar__healing.reconnect-healing-banner--expanded,
+  .contacts-sidebar__top .contacts-sidebar__healing.startup-history-banner--expanded {
     margin-right: -12px;
     margin-bottom: -13px;
     margin-left: -12px;

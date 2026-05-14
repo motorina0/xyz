@@ -105,6 +105,17 @@ const serviceMocks = vi.hoisted(() => ({
   },
 }));
 
+const messageStoreMock = vi.hoisted(() => ({
+  reloadLoadedMessages: vi.fn(async () => {}),
+  syncChatsReadStateFromSeenBoundary: vi.fn(async () => ({
+    chatCount: 0,
+    boundaryAdvancedCount: 0,
+    unreadCountAdjustedCount: 0,
+    reactionMessageCount: 0,
+    reactionsMarkedCount: 0,
+  })),
+}));
+
 vi.mock('@nostr-dev-kit/ndk', async () => {
   const actual = await vi.importActual<typeof import('@nostr-dev-kit/ndk')>('@nostr-dev-kit/ndk');
 
@@ -122,6 +133,10 @@ vi.mock('src/services/chatDataService', () => ({
 
 vi.mock('src/services/contactsService', () => ({
   contactsService: serviceMocks.contactsService,
+}));
+
+vi.mock('src/stores/messageStore', () => ({
+  useMessageStore: () => messageStoreMock,
 }));
 
 afterEach(() => {
@@ -284,6 +299,15 @@ describe('privateStateRuntime', () => {
     serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(null);
     serviceMocks.contactsService.listContacts.mockResolvedValue([]);
     serviceMocks.contactsService.updateContact.mockResolvedValue(null);
+    messageStoreMock.reloadLoadedMessages.mockClear();
+    messageStoreMock.syncChatsReadStateFromSeenBoundary.mockClear();
+    messageStoreMock.syncChatsReadStateFromSeenBoundary.mockResolvedValue({
+      chatCount: 0,
+      boundaryAdvancedCount: 0,
+      unreadCountAdjustedCount: 0,
+      reactionMessageCount: 0,
+      reactionsMarkedCount: 0,
+    });
     ndkMocks.publishReplaceable.mockClear();
     ndkMocks.relaySetFromRelayUrls.mockClear();
     ndkMocks.MockNDKPrivateKeySigner.generate.mockClear();
@@ -1321,5 +1345,50 @@ describe('privateStateRuntime', () => {
     expect(deps.completeStartupStep).toHaveBeenCalledWith('contact-cursor-data');
     expect(serviceMocks.contactsService.updateContact).not.toHaveBeenCalled();
     expect(deps.chatStore.reload).not.toHaveBeenCalled();
+    expect(messageStoreMock.syncChatsReadStateFromSeenBoundary).not.toHaveBeenCalled();
+  });
+
+  it('reconciles local contact cursor read state when relays have no newer cursor', async () => {
+    const deps = createDeps({
+      readPrivatePreferencesFromStorage: vi.fn(() => ({
+        contactSecret: 'secret',
+      })),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+    const contactPublicKey = 'a'.repeat(64);
+
+    serviceMocks.contactsService.listContacts.mockResolvedValue([
+      {
+        id: 7,
+        public_key: contactPublicKey,
+        type: 'user',
+        name: 'Alice',
+        given_name: null,
+        meta: {
+          last_seen_incoming_activity_at: '2026-01-03T00:00:00.000Z',
+          last_seen_incoming_activity_event_id: 'cursor-event',
+        },
+        relays: [],
+        sendMessagesToAppRelays: false,
+      },
+    ]);
+    (deps.ndk.fetchEvents as ReturnType<typeof vi.fn>).mockResolvedValue([]);
+    messageStoreMock.syncChatsReadStateFromSeenBoundary.mockResolvedValueOnce({
+      chatCount: 1,
+      boundaryAdvancedCount: 1,
+      unreadCountAdjustedCount: 1,
+      reactionMessageCount: 0,
+      reactionsMarkedCount: 0,
+    });
+
+    await runtime.restoreContactCursorState(['wss://seed.example']);
+
+    expect(serviceMocks.contactsService.updateContact).not.toHaveBeenCalled();
+    expect(messageStoreMock.syncChatsReadStateFromSeenBoundary).toHaveBeenCalledWith([
+      contactPublicKey,
+    ]);
+    expect(deps.chatStore.reload).toHaveBeenCalledTimes(1);
+    expect(messageStoreMock.reloadLoadedMessages).toHaveBeenCalledTimes(1);
+    expect(deps.completeStartupStep).toHaveBeenCalledWith('contact-cursor-data');
   });
 });

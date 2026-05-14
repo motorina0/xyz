@@ -1087,6 +1087,7 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 }
 
 .sidebar-top {
+  position: relative;
   padding: 12px;
   border-bottom: 1px solid var(--nc-border);
   background: var(--nc-panel-header-bg);
@@ -1132,7 +1133,8 @@ watch([activeChatId, isMobile, chatIdSignature, isRequestsRoute], () => {
 }
 
 @media (min-width: 1024px) {
-  .sidebar-top .sidebar-top__healing {
+  .sidebar-top .sidebar-top__healing.reconnect-healing-banner--expanded,
+  .sidebar-top .sidebar-top__healing.startup-history-banner--expanded {
     margin-right: -12px;
     margin-bottom: -13px;
     margin-left: -12px;

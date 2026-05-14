@@ -291,6 +291,17 @@ export function createPrivateStateRuntime({
     return nextMeta;
   }
 
+  function hasContactSeenBoundary(contact: ContactRecord): boolean {
+    const contactMeta =
+      contact.meta && typeof contact.meta === 'object' && !Array.isArray(contact.meta)
+        ? (contact.meta as ContactMetadata)
+        : {};
+
+    return (
+      toComparableTimestamp(normalizeTimestamp(contactMeta.last_seen_incoming_activity_at)) > 0
+    );
+  }
+
   async function publishPrivatePreferences(
     preferences: PrivatePreferences,
     seedRelayUrls: string[] = []
@@ -2042,38 +2053,48 @@ export function createPrivateStateRuntime({
         }
 
         const cursorsByDTag = await fetchContactCursorEvents(contacts, seedRelayUrls);
-        if (cursorsByDTag.size === 0) {
-          completeStartupStep('contact-cursor-data');
-          return;
-        }
 
         let didApplyCursorState = false;
-        for (const contact of contacts) {
-          const contactDTag = await deriveContactCursorDTag(contact.public_key);
-          if (!contactDTag) {
-            continue;
-          }
+        if (cursorsByDTag.size > 0) {
+          for (const contact of contacts) {
+            const contactDTag = await deriveContactCursorDTag(contact.public_key);
+            if (!contactDTag) {
+              continue;
+            }
 
-          const cursor = cursorsByDTag.get(contactDTag);
-          if (!cursor) {
-            continue;
-          }
+            const cursor = cursorsByDTag.get(contactDTag);
+            if (!cursor) {
+              continue;
+            }
 
-          didApplyCursorState =
-            (await applyContactCursorStateToContact(contact, cursor)) || didApplyCursorState;
+            didApplyCursorState =
+              (await applyContactCursorStateToContact(contact, cursor)) || didApplyCursorState;
+          }
         }
 
-        if (!didApplyCursorState) {
+        const shouldReconcileContactReadState =
+          didApplyCursorState || contacts.some((contact) => hasContactSeenBoundary(contact));
+        if (!shouldReconcileContactReadState) {
           completeStartupStep('contact-cursor-data');
           return;
         }
 
-        await Promise.all([
-          chatStore.reload(),
-          import('src/stores/messageStore').then(({ useMessageStore }) =>
-            useMessageStore().reloadLoadedMessages()
-          ),
-        ]);
+        const { useMessageStore } = await import('src/stores/messageStore');
+        const messageStore = useMessageStore();
+        const readStateSyncSummary = await messageStore.syncChatsReadStateFromSeenBoundary(
+          contacts.map((contact) => contact.public_key)
+        );
+        const didSyncReadState =
+          Number(readStateSyncSummary?.boundaryAdvancedCount ?? 0) > 0 ||
+          Number(readStateSyncSummary?.unreadCountAdjustedCount ?? 0) > 0 ||
+          Number(readStateSyncSummary?.reactionsMarkedCount ?? 0) > 0;
+
+        if (!didApplyCursorState && !didSyncReadState) {
+          completeStartupStep('contact-cursor-data');
+          return;
+        }
+
+        await Promise.all([chatStore.reload(), messageStore.reloadLoadedMessages()]);
         completeStartupStep('contact-cursor-data');
       } catch (error) {
         failStartupStep('contact-cursor-data', error);
