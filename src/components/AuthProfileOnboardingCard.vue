@@ -197,21 +197,21 @@
           outline
           color="primary"
           no-caps
-          label="Skip for now"
-          class="auth-onboarding-card__button"
-          data-testid="auth-onboarding-skip-button"
-          :loading="isOnboardingContinuing"
-          @click="continueFromOnboarding"
-        />
-        <q-btn
-          unelevated
-          color="primary"
-          no-caps
           label="Search again"
           class="auth-onboarding-card__button"
           data-testid="auth-onboarding-search-again-button"
           :disable="!canSearchSelectedOnboardingRelays"
           @click="runProfileLookup(selectedOnboardingRelayUrls)"
+        />
+        <q-btn
+          unelevated
+          color="primary"
+          no-caps
+          label="Continue"
+          class="auth-onboarding-card__button"
+          data-testid="auth-onboarding-skip-button"
+          :loading="isOnboardingContinuing"
+          @click="continueFromOnboarding"
         />
       </div>
     </q-card-section>

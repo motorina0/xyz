@@ -3,8 +3,22 @@
     <div class="auth-shell" :class="{ 'auth-shell--wide': loginStep === 'onboarding' }">
       <q-card v-if="loginStep === 'welcome'" flat bordered class="auth-card auth-card--light">
         <q-card-section class="auth-card__header">
-          <div class="auth-card__title">Welcome</div>
-          <div class="auth-card__subtitle">Choose how you want to continue</div>
+          <div class="auth-card__header-main">
+            <q-btn
+              flat
+              round
+              dense
+              icon="arrow_back"
+              color="primary"
+              class="auth-card__back-button"
+              aria-label="Back"
+              @click="goBackFromWelcome"
+            />
+            <div class="auth-card__header-text">
+              <div class="auth-card__title">Welcome</div>
+              <div class="auth-card__subtitle">Choose how you want to continue</div>
+            </div>
+          </div>
         </q-card-section>
 
         <q-card-section class="auth-card__actions">
@@ -24,16 +38,52 @@
             no-caps
             icon="vpn_key"
             label="Create Account"
-            class="auth-card__button"
+            class="auth-card__button auth-card__button--secondary"
             @click="goToRegister"
           />
+        </q-card-section>
+
+        <q-card-section class="auth-card__footer">
+          <span>Made by the</span>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-logo-link"
+            aria-label="LNbits"
+          >
+            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+          </a>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-link"
+          >
+            LNbits
+          </a>
+          <span>team.</span>
         </q-card-section>
       </q-card>
 
       <q-card v-else-if="loginStep === 'methods'" flat bordered class="auth-card auth-card--light">
         <q-card-section class="auth-card__header">
-          <div class="auth-card__title">Login</div>
-          <div class="auth-card__subtitle">Choose a login method</div>
+          <div class="auth-card__header-main">
+            <q-btn
+              flat
+              round
+              dense
+              icon="arrow_back"
+              color="primary"
+              class="auth-card__back-button"
+              aria-label="Back"
+              @click="goBackToWelcome"
+            />
+            <div class="auth-card__header-text">
+              <div class="auth-card__title">Login</div>
+              <div class="auth-card__subtitle">Choose a login method</div>
+            </div>
+          </div>
         </q-card-section>
 
         <q-card-section class="auth-card__actions">
@@ -54,25 +104,53 @@
             no-caps
             icon="vpn_key"
             label="Login with Key (not recommended)"
-            class="auth-card__button"
+            class="auth-card__button auth-card__button--secondary"
             @click="openKeyLogin"
           />
+        </q-card-section>
 
-          <q-btn
-            flat
-            color="primary"
-            no-caps
-            label="Back"
-            class="auth-card__button"
-            @click="goBackToWelcome"
-          />
+        <q-card-section class="auth-card__footer">
+          <span>Made by the</span>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-logo-link"
+            aria-label="LNbits"
+          >
+            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+          </a>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-link"
+          >
+            LNbits
+          </a>
+          <span>team.</span>
         </q-card-section>
       </q-card>
 
       <q-card v-else-if="loginStep === 'key'" flat bordered class="auth-card auth-card--light">
         <q-card-section class="auth-card__header">
-          <div class="auth-card__title">Login with Key</div>
-          <div class="auth-card__subtitle">Enter your nsec or hex private key to continue</div>
+          <div class="auth-card__header-main">
+            <q-btn
+              flat
+              round
+              dense
+              icon="arrow_back"
+              color="primary"
+              class="auth-card__back-button"
+              aria-label="Back"
+              :disable="isKeyLoginInProgress"
+              @click="goBackToLoginOptions"
+            />
+            <div class="auth-card__header-text">
+              <div class="auth-card__title">Login with Key</div>
+              <div class="auth-card__subtitle">Enter your nsec or hex private key to continue</div>
+            </div>
+          </div>
         </q-card-section>
 
         <q-card-section class="auth-card__actions">
@@ -96,17 +174,7 @@
             @keydown.enter.prevent="handleKeyLogin"
           />
 
-          <div class="auth-card__button-row">
-            <q-btn
-              flat
-              color="primary"
-              no-caps
-              label="Back"
-              class="auth-card__button"
-              :disable="isKeyLoginInProgress"
-              @click="goBackToLoginOptions"
-            />
-
+          <div class="auth-card__button-row auth-card__button-row--single">
             <q-btn
               unelevated
               color="primary"
@@ -118,6 +186,28 @@
               @click="handleKeyLogin"
             />
           </div>
+        </q-card-section>
+
+        <q-card-section class="auth-card__footer">
+          <span>Made by the</span>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-logo-link"
+            aria-label="LNbits"
+          >
+            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+          </a>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-link"
+          >
+            LNbits
+          </a>
+          <span>team.</span>
         </q-card-section>
       </q-card>
 
@@ -313,23 +403,45 @@
               outline
               color="primary"
               no-caps
-              label="Skip for now"
-              class="auth-card__button"
-              data-testid="auth-onboarding-skip-button"
-              :loading="isOnboardingContinuing"
-              @click="continueFromOnboarding"
-            />
-            <q-btn
-              unelevated
-              color="primary"
-              no-caps
               label="Search again"
               class="auth-card__button"
               data-testid="auth-onboarding-search-again-button"
               :disable="!canSearchSelectedOnboardingRelays"
               @click="runProfileLookup(selectedOnboardingRelayUrls)"
             />
+            <q-btn
+              unelevated
+              color="primary"
+              no-caps
+              label="Continue"
+              class="auth-card__button"
+              data-testid="auth-onboarding-skip-button"
+              :loading="isOnboardingContinuing"
+              @click="continueFromOnboarding"
+            />
           </div>
+        </q-card-section>
+
+        <q-card-section class="auth-card__footer">
+          <span>Made by the</span>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-logo-link"
+            aria-label="LNbits"
+          >
+            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+          </a>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="auth-card__footer-link"
+          >
+            LNbits
+          </a>
+          <span>team.</span>
         </q-card-section>
       </q-card>
     </div>
@@ -490,6 +602,14 @@ function openKeyLogin(): void {
     loginStep.value = 'key';
   } catch (error) {
     reportUiError('Failed to open key login', error);
+  }
+}
+
+function goBackFromWelcome(): void {
+  try {
+    router.back();
+  } catch (error) {
+    reportUiError('Failed to go back from login', error);
   }
 }
 
@@ -756,6 +876,8 @@ async function goToRegister(): Promise<void> {
 }
 
 .auth-card {
+  --auth-card-chrome-height: 128px;
+  --auth-card-footer-height: calc(var(--auth-card-chrome-height) / 2);
   border-radius: 20px;
   border: 1px solid var(--nc-border);
   overflow: hidden;
@@ -773,7 +895,9 @@ async function goToRegister(): Promise<void> {
 }
 
 .auth-card__header {
+  height: var(--auth-card-chrome-height);
   padding: 22px 22px 10px;
+  box-sizing: border-box;
   background: var(--nc-panel-header-bg);
   border-bottom: 1px solid color-mix(in srgb, var(--nc-border) 90%, #8fa5c1 10%);
 }
@@ -781,6 +905,23 @@ async function goToRegister(): Promise<void> {
 .auth-card--light .auth-card__header {
   background: rgba(255, 255, 255, 0.82);
   border-bottom-color: rgba(208, 220, 235, 0.82);
+}
+
+.auth-card__header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.auth-card__header-text {
+  min-width: 0;
+}
+
+.auth-card__back-button {
+  flex: 0 0 auto;
+  margin-top: -2px;
+  color: #2563eb;
 }
 
 .auth-card__title {
@@ -809,6 +950,11 @@ async function goToRegister(): Promise<void> {
   border-radius: 999px;
 }
 
+.auth-card__button--secondary {
+  border: 1px solid rgba(37, 99, 235, 0.55);
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .auth-card__button-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -817,6 +963,47 @@ async function goToRegister(): Promise<void> {
 
 .auth-card__button-row--single {
   grid-template-columns: 1fr;
+}
+
+.auth-card__footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  height: var(--auth-card-footer-height);
+  padding: 10px 22px 14px;
+  box-sizing: border-box;
+  color: #64748b;
+  font-size: 13px;
+  border-top: 1px solid rgba(208, 220, 235, 0.72);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.auth-card__footer-logo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.auth-card__footer-logo {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.auth-card__footer-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.auth-card__footer-link:hover,
+.auth-card__footer-link:focus-visible {
+  text-decoration: underline;
 }
 
 .auth-warning {
