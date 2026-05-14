@@ -88,7 +88,7 @@
     <q-linear-progress
       indeterminate
       color="primary"
-      size="2px"
+      size="1px"
       class="startup-history-banner__progress"
       aria-hidden="true"
     />
@@ -361,7 +361,7 @@ watch(isDetailsVisible, (value) => {
 }
 
 .startup-history-banner__mini-progress {
-  height: 3px;
+  height: 2px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--nc-border) 70%, transparent);
 }

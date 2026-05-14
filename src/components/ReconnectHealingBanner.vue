@@ -11,7 +11,7 @@
     <q-linear-progress
       indeterminate
       color="primary"
-      size="2px"
+      size="1px"
       class="reconnect-healing-banner__progress"
       aria-hidden="true"
     />
