@@ -63,7 +63,8 @@
                 v-if="hasUpdateAvailable"
                 rounded
                 color="primary"
-                class="mobile-nav__badge mobile-nav__badge--dot"
+                class="mobile-nav__badge"
+                label="1"
               />
             </span>
             <span class="mobile-nav__label">Settings</span>
@@ -699,16 +700,6 @@ function goToSection(section: NavigationSection): void {
   top: -7px;
   left: calc(100% - 4px);
   z-index: 1;
-}
-
-.mobile-nav__badge--dot {
-  min-width: 10px;
-  width: 10px;
-  height: 10px;
-  padding: 0;
-  top: -3px;
-  left: calc(100% - 2px);
-  border: 2px solid color-mix(in srgb, var(--nc-panel-header-bg) 96%, rgba(255, 255, 255, 0.9) 4%);
 }
 
 .mobile-nav__content {

@@ -27,6 +27,7 @@
                   rounded
                   color="primary"
                   class="settings-sidebar__action-badge"
+                  label="1"
                 />
                 <AppTooltip>Force Refresh</AppTooltip>
               </q-btn>
@@ -120,7 +121,7 @@
     <AppDialog
       v-model="isForceRefreshDialogOpen"
       title="Force Refresh"
-      subtitle="This clears the cached app shell and reloads the app from the server. Local chats, contacts, relays, and settings stay on this device."
+      subtitle="A new version of the app is available. Force refresh will load the latest version from the server."
       :persistent="appUpdateStore.isForceRefreshing"
       :show-close="!appUpdateStore.isForceRefreshing"
       max-width="460px"
@@ -391,13 +392,18 @@ async function handleConfirmLogout(): Promise<void> {
 
 .settings-sidebar__action-badge {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  min-width: 10px;
-  width: 10px;
-  height: 10px;
-  padding: 0;
-  border: 2px solid var(--nc-panel-header-bg);
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  z-index: 1;
 }
 
 .settings-menu {
