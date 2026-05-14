@@ -35,6 +35,31 @@
       <q-card flat bordered class="developer-card">
         <q-card-section class="developer-card__header">
           <div>
+            <div class="text-h6">App Bundle</div>
+            <div class="text-caption text-grey-6">
+              Loaded web bundle metadata used for app-shell cache update checks.
+            </div>
+          </div>
+        </q-card-section>
+
+        <q-card-section class="developer-card__section">
+          <div class="developer-facts">
+            <div class="developer-facts__label">App version</div>
+            <div class="developer-facts__value developer-facts__value--mono">
+              {{ appUpdateStore.currentBuildInfo.appVersion }}
+            </div>
+
+            <div class="developer-facts__label">Bundle id</div>
+            <div class="developer-facts__value developer-facts__value--mono">
+              {{ appUpdateStore.currentBuildInfo.bundleId }}
+            </div>
+          </div>
+        </q-card-section>
+      </q-card>
+
+      <q-card flat bordered class="developer-card">
+        <q-card-section class="developer-card__header">
+          <div>
             <div class="text-h6">Actions</div>
             <div class="text-caption text-grey-6">
               Restart subscriptions, reconnect relays, and export the current diagnostic bundle.
@@ -797,6 +822,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import AppStatus from 'src/components/AppStatus.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
+import { useAppUpdateStore } from 'src/stores/appUpdateStore';
 import type {
   DeveloperDiagnosticsSnapshot,
   DeveloperGroupMessageSubscriptionSnapshot,
@@ -808,6 +834,7 @@ import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
 const $q = useQuasar();
+const appUpdateStore = useAppUpdateStore();
 const nostrStore = useNostrStore();
 
 type ExpandableDeveloperCardKey =

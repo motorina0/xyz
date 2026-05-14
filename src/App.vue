@@ -42,6 +42,7 @@ import {
   readForegroundMessageActivityDetail,
   type ForegroundMessageActivityDetail,
 } from 'src/services/foregroundMessageActivityService';
+import { useAppUpdateStore } from 'src/stores/appUpdateStore';
 import { installAppE2EBridge } from 'src/testing/e2eBridge';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { readDarkModePreference } from 'src/utils/themeStorage';
@@ -49,6 +50,7 @@ import { useRouter } from 'vue-router';
 
 const $q = useQuasar();
 const router = useRouter();
+const appUpdateStore = useAppUpdateStore();
 Notify.setDefaults({
   position: 'top',
   actions: [
@@ -131,6 +133,7 @@ async function openForegroundMessageBannerChat(): Promise<void> {
 
 onMounted(() => {
   window.addEventListener(FOREGROUND_MESSAGE_ACTIVITY_EVENT, handleForegroundMessageActivity);
+  void appUpdateStore.startRuntime();
 
   if (process.env.DEV) {
     installAppE2EBridge();
@@ -139,6 +142,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener(FOREGROUND_MESSAGE_ACTIVITY_EVENT, handleForegroundMessageActivity);
+  appUpdateStore.stopRuntime();
   clearForegroundMessageBannerTimeout();
 });
 </script>

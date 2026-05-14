@@ -59,6 +59,13 @@
           <span class="mobile-nav__content">
             <span class="mobile-nav__icon-shell">
               <q-icon name="settings" class="mobile-nav__icon" />
+              <q-badge
+                v-if="hasUpdateAvailable"
+                rounded
+                color="primary"
+                class="mobile-nav__badge"
+                label="1"
+              />
             </span>
             <span class="mobile-nav__label">Settings</span>
           </span>
@@ -84,6 +91,7 @@ import {
   startAndroidPushNotificationListeners
 } from 'src/services/androidPushNotificationService';
 import { inputSanitizerService } from 'src/services/inputSanitizerService';
+import { useAppUpdateStore } from 'src/stores/appUpdateStore';
 import { useChatStore } from 'src/stores/chatStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
@@ -93,6 +101,7 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
+const appUpdateStore = useAppUpdateStore();
 const chatStore = useChatStore();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
@@ -152,6 +161,7 @@ const routeLoaders: Record<NavigationSection, RouteLoader> = {
 };
 const unreadChatCount = computed(() => chatStore.unreadChatCount);
 const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadChatCount.value));
+const hasUpdateAvailable = computed(() => appUpdateStore.hasUpdateAvailable);
 
 function hasActivePubkeyParam(value: unknown): boolean {
   if (Array.isArray(value)) {

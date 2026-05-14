@@ -18,6 +18,13 @@
           class="nav-rail__badge"
           :label="unreadChatBadgeLabel"
         />
+        <q-badge
+          v-if="item.key === 'settings' && hasUpdateAvailable"
+          rounded
+          color="primary"
+          class="nav-rail__badge"
+          label="1"
+        />
       </span>
 
       <AppTooltip anchor="top middle" self="bottom middle" :offset="[0, 8]">
@@ -30,6 +37,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import AppTooltip from 'src/components/AppTooltip.vue';
+import { useAppUpdateStore } from 'src/stores/appUpdateStore';
 import { useChatStore } from 'src/stores/chatStore';
 import { formatUnreadChatBadgeLabel } from 'src/utils/unreadChatBadge';
 
@@ -40,6 +48,7 @@ const navItems = [
 ] as const;
 
 const chatStore = useChatStore();
+const appUpdateStore = useAppUpdateStore();
 
 defineProps<{
   active: 'chats' | 'contacts' | 'settings';
@@ -51,6 +60,7 @@ defineEmits<{
 
 const unreadChatCount = computed(() => chatStore.unreadChatCount);
 const unreadChatBadgeLabel = computed(() => formatUnreadChatBadgeLabel(unreadChatCount.value));
+const hasUpdateAvailable = computed(() => appUpdateStore.hasUpdateAvailable);
 </script>
 
 <style scoped>

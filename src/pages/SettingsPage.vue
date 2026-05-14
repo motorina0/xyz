@@ -10,6 +10,28 @@
         <div class="settings-sidebar__top">
           <div class="settings-sidebar__header">
             <div class="settings-sidebar__title">Settings</div>
+            <div class="settings-sidebar__actions">
+              <q-btn
+                flat
+                dense
+                round
+                icon="refresh"
+                aria-label="Force Refresh"
+                class="settings-sidebar__action"
+                data-testid="settings-force-refresh-button"
+                :loading="appUpdateStore.isForceRefreshing"
+                @click="openForceRefreshDialog"
+              >
+                <q-badge
+                  v-if="appUpdateStore.hasUpdateAvailable"
+                  rounded
+                  color="primary"
+                  class="settings-sidebar__action-badge"
+                  label="1"
+                />
+                <AppTooltip>Force Refresh</AppTooltip>
+              </q-btn>
+            </div>
           </div>
 
           <ReconnectHealingBanner />
@@ -95,24 +117,61 @@
         />
       </template>
     </AppDialog>
+
+    <AppDialog
+      v-model="isForceRefreshDialogOpen"
+      title="Force Refresh"
+      subtitle="A new version of the app is available. Force refresh will load the latest version from the server."
+      :persistent="appUpdateStore.isForceRefreshing"
+      :show-close="!appUpdateStore.isForceRefreshing"
+      max-width="460px"
+    >
+      <div class="settings-force-refresh-dialog__body">
+        Force refresh will only start after the app confirms the server is reachable.
+      </div>
+
+      <template #actions>
+        <q-btn
+          flat
+          no-caps
+          label="Cancel"
+          :disable="appUpdateStore.isForceRefreshing"
+          @click="isForceRefreshDialogOpen = false"
+        />
+        <q-btn
+          unelevated
+          no-caps
+          color="primary"
+          label="Force Refresh"
+          data-testid="settings-force-refresh-confirm"
+          :loading="appUpdateStore.isForceRefreshing"
+          @click="handleConfirmForceRefresh"
+        />
+      </template>
+    </AppDialog>
   </q-page>
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useQuasar } from 'quasar';
 import { useRoute, useRouter } from 'vue-router';
 import AppDialog from 'src/components/AppDialog.vue';
 import AppNavRail from 'src/components/AppNavRail.vue';
+import AppTooltip from 'src/components/AppTooltip.vue';
 import ReconnectHealingBanner from 'src/components/ReconnectHealingBanner.vue';
 import StartupHistoryBanner from 'src/components/StartupHistoryBanner.vue';
 import { useSectionShell } from 'src/composables/useSectionShell';
 import { unregisterAndroidPushNotifications } from 'src/services/androidPushNotificationService';
+import { useAppUpdateStore } from 'src/stores/appUpdateStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { schedulePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
+const $q = useQuasar();
 const route = useRoute();
 const router = useRouter();
+const appUpdateStore = useAppUpdateStore();
 const nostrStore = useNostrStore();
 
 const {
@@ -133,6 +192,7 @@ const {
 const isSettingsListView = computed(() => route.name === 'settings');
 const isLogoutDialogOpen = ref(false);
 const isLoggingOut = ref(false);
+const isForceRefreshDialogOpen = ref(false);
 
 type SettingsRouteName =
   | 'settings-profile'
@@ -185,6 +245,10 @@ watch(
   { immediate: true }
 );
 
+onMounted(() => {
+  void appUpdateStore.checkForUpdate({ force: true });
+});
+
 function goToSetting(routeName: SettingsRouteName): void {
   try {
     void router.push({ name: routeName });
@@ -201,6 +265,34 @@ function handleSettingsItemClick(item: SettingsItem): void {
 
   if (item.routeName) {
     goToSetting(item.routeName);
+  }
+}
+
+function openForceRefreshDialog(): void {
+  isForceRefreshDialogOpen.value = true;
+}
+
+async function handleConfirmForceRefresh(): Promise<void> {
+  const result = await appUpdateStore.forceRefresh();
+  if (result.ok === true) {
+    return;
+  }
+
+  if (result.reason === 'server-unreachable') {
+    $q.notify({
+      type: 'negative',
+      message: 'Server is not reachable. Force refresh was not started.',
+      position: 'top'
+    });
+    return;
+  }
+
+  if (result.reason === 'browser-unsupported') {
+    $q.notify({
+      type: 'negative',
+      message: 'Force refresh is not supported in this browser context.',
+      position: 'top'
+    });
   }
 }
 
@@ -288,6 +380,32 @@ async function handleConfirmLogout(): Promise<void> {
   line-height: 1.2;
 }
 
+.settings-sidebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-sidebar__action {
+  position: relative;
+}
+
+.settings-sidebar__action-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  z-index: 1;
+}
+
 .settings-menu {
   flex: 1;
   min-height: 0;
@@ -325,6 +443,12 @@ async function handleConfirmLogout(): Promise<void> {
 }
 
 .settings-logout-dialog__body {
+  font-size: 14px;
+  line-height: 1.5;
+  color: color-mix(in srgb, currentColor 78%, #64748b 22%);
+}
+
+.settings-force-refresh-dialog__body {
   font-size: 14px;
   line-height: 1.5;
   color: color-mix(in srgb, currentColor 78%, #64748b 22%);

@@ -10,6 +10,7 @@
     "dev:electron": "node ./scripts/quasar.cjs dev -m electron",
     "dev:android": "node ./scripts/quasar.cjs dev -m capacitor -T android",
     "build": "node ./scripts/quasar.cjs build",
+    "preview:spa": "node ./scripts/preview-spa.cjs",
     "build:android:sync": "node ./scripts/build-android-docker.cjs sync",
     "build:android:apk:debug": "node ./scripts/build-android-docker.cjs apk-debug",
     "build:android:apk:release": "node ./scripts/build-android-docker.cjs apk-release",
