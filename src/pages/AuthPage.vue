@@ -271,6 +271,41 @@
             {{ onboardingErrorMessage }}
           </q-banner>
 
+          <div v-else-if="onboardingStatus === 'profile-setup'" class="onboarding-profile-setup">
+            <q-input
+              v-model="onboardingProfileNameInput"
+              class="nc-input"
+              dense
+              outlined
+              rounded
+              label="Name (optional)"
+              data-testid="auth-onboarding-profile-name-input"
+              @keydown.enter.prevent="completeOnboardingProfileSetup"
+            />
+
+            <q-input
+              v-model="onboardingProfilePictureInput"
+              class="nc-input"
+              dense
+              outlined
+              rounded
+              label="Picture URL (optional)"
+              data-testid="auth-onboarding-profile-picture-input"
+              :error="Boolean(onboardingProfilePictureError)"
+              :error-message="onboardingProfilePictureError"
+              @keydown.enter.prevent="completeOnboardingProfileSetup"
+            />
+
+            <q-checkbox
+              v-if="hasSelectedOnboardingRelays"
+              v-model="shouldUpdateOnboardingRelays"
+              color="primary"
+              label="Use selected relays"
+              data-testid="auth-onboarding-update-relays-checkbox"
+              class="onboarding-profile-setup__checkbox"
+            />
+          </div>
+
           <div v-if="onboardingStatus === 'relay-setup'" class="onboarding-relays">
             <q-input
               v-model="onboardingRelayInput"
@@ -309,6 +344,7 @@
                     color="primary"
                     :model-value="relay.selected"
                     :aria-label="`Use ${relay.url} when searching for profile`"
+                    class="onboarding-relay-list__checkbox"
                     @update:model-value="
                       (value) => setOnboardingRelaySelected(relay.url, Boolean(value))
                     "
@@ -427,8 +463,24 @@
               label="Continue"
               class="auth-card__button"
               data-testid="auth-onboarding-skip-button"
+              @click="showOnboardingProfileSetup"
+            />
+          </div>
+
+          <div
+            v-else-if="onboardingStatus === 'profile-setup'"
+            class="auth-card__button-row auth-card__button-row--single"
+          >
+            <q-btn
+              unelevated
+              color="primary"
+              no-caps
+              label="Save and start using app"
+              class="auth-card__button"
+              data-testid="auth-onboarding-profile-start-button"
+              :disable="!canCompleteOnboardingProfileSetup"
               :loading="isOnboardingContinuing"
-              @click="continueFromOnboarding"
+              @click="completeOnboardingProfileSetup"
             />
           </div>
         </q-card-section>
@@ -473,6 +525,8 @@ import BrowserNotificationsLoginDialog from 'src/components/BrowserNotifications
 import CachedAvatar from 'src/components/CachedAvatar.vue';
 import { useBrowserNotificationsLoginPrompt } from 'src/composables/useBrowserNotificationsLoginPrompt';
 import { useNostrStore, type UserProfileLookupResult } from 'src/stores/nostrStore';
+import type { PublishUserMetadataInput } from 'src/stores/nostrStore';
+import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { buildAvatarText } from 'src/utils/avatarText';
 import { buildRelayLookupKey, uniqueRelayUrls } from 'src/utils/relayUrls';
@@ -481,6 +535,7 @@ import { reportUiError } from 'src/utils/uiErrorHandler';
 const router = useRouter();
 const nostrStore = useNostrStore();
 const relayStore = useRelayStore();
+const nip65RelayStore = useNip65RelayStore();
 const {
   isBrowserNotificationsLoginDialogOpen,
   handleBrowserNotificationsAfterLogin,
@@ -488,7 +543,14 @@ const {
   skipBrowserNotificationsLoginDialog
 } = useBrowserNotificationsLoginPrompt();
 type AuthStep = 'welcome' | 'methods' | 'key' | 'onboarding';
-type OnboardingStatus = 'idle' | 'checking' | 'found' | 'not-found' | 'error' | 'relay-setup';
+type OnboardingStatus =
+  | 'idle'
+  | 'checking'
+  | 'found'
+  | 'not-found'
+  | 'error'
+  | 'relay-setup'
+  | 'profile-setup';
 
 const loginStep = ref<AuthStep>('welcome');
 const privateKey = ref('');
@@ -500,9 +562,12 @@ const onboardingPubkey = ref('');
 const onboardingNpub = ref('');
 const onboardingError = ref('');
 const onboardingRelayInput = ref('');
+const onboardingProfileNameInput = ref('');
+const onboardingProfilePictureInput = ref('');
 const onboardingAttempt = ref(0);
 const selectedOnboardingRelayKeys = ref<Set<string>>(new Set());
 const hasSeenOnboardingRelaySetup = ref(false);
+const shouldUpdateOnboardingRelays = ref(true);
 const isOnboardingContinuing = ref(false);
 const PROFILE_LOOKUP_TIMEOUT_MS = 12_000;
 const privateKeyValidation = computed(() => nostrStore.validatePrivateKey(privateKey.value.trim()));
@@ -521,6 +586,10 @@ const onboardingTitle = computed(() => {
     return 'Add relays';
   }
 
+  if (onboardingStatus.value === 'profile-setup') {
+    return 'Set up profile';
+  }
+
   if (onboardingStatus.value === 'error') {
     return 'Profile check failed';
   }
@@ -534,6 +603,10 @@ const onboardingSubtitle = computed(() => {
 
   if (onboardingStatus.value === 'relay-setup') {
     return 'Add relays to search for your profile';
+  }
+
+  if (onboardingStatus.value === 'profile-setup') {
+    return 'This is the final step before entering the app';
   }
 
   if (onboardingStatus.value === 'not-found') {
@@ -578,6 +651,21 @@ const canAddOnboardingRelay = computed(() => {
   const value = onboardingRelayInput.value.trim();
   return value.length > 0 && onboardingRelayValidationError.value.length === 0;
 });
+const onboardingProfilePictureError = computed(() => {
+  const value = onboardingProfilePictureInput.value.trim();
+  if (!value) {
+    return '';
+  }
+
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? ''
+      : 'Picture URL must use http:// or https://';
+  } catch {
+    return 'Picture URL must be a valid URL';
+  }
+});
 const onboardingRelayRows = computed(() => {
   void nostrStore.relayStatusVersion;
   return relayStore.relays.map((url) => {
@@ -599,6 +687,10 @@ const selectedOnboardingRelayUrls = computed(() =>
 );
 const canSearchSelectedOnboardingRelays = computed(
   () => selectedOnboardingRelayUrls.value.length > 0
+);
+const hasSelectedOnboardingRelays = computed(() => selectedOnboardingRelayUrls.value.length > 0);
+const canCompleteOnboardingProfileSetup = computed(
+  () => onboardingProfilePictureError.value.length === 0 && !isOnboardingContinuing.value
 );
 
 function openLoginOptions(): void {
@@ -695,8 +787,11 @@ async function startProfileOnboarding(): Promise<void> {
   onboardingNpub.value = nostrStore.encodeNpub(publicKey) ?? '';
   onboardingProfile.value = null;
   onboardingError.value = '';
+  onboardingProfileNameInput.value = '';
+  onboardingProfilePictureInput.value = '';
   selectedOnboardingRelayKeys.value = new Set();
   hasSeenOnboardingRelaySetup.value = false;
+  shouldUpdateOnboardingRelays.value = true;
   loginStep.value = 'onboarding';
   await runProfileLookup();
 }
@@ -768,6 +863,11 @@ function showOnboardingRelaySetup(): void {
   onboardingStatus.value = 'relay-setup';
 }
 
+function showOnboardingProfileSetup(): void {
+  shouldUpdateOnboardingRelays.value = true;
+  onboardingStatus.value = 'profile-setup';
+}
+
 async function handleOnboardingAddRelay(): Promise<void> {
   try {
     const value = onboardingRelayInput.value.trim();
@@ -836,6 +936,56 @@ function keepOnlySelectedOnboardingRelays(): void {
     relayStore.relayEntries.filter((entry) => selectedRelayKeys.has(buildRelayLookupKey(entry.url)))
   );
   selectedOnboardingRelayKeys.value = new Set(relayStore.relays.map((url) => buildRelayLookupKey(url)));
+}
+
+function selectedOnboardingRelayEntries() {
+  const selectedRelayKeys = selectedOnboardingRelayKeys.value;
+  return relayStore.relayEntries.filter((entry) => selectedRelayKeys.has(buildRelayLookupKey(entry.url)));
+}
+
+function buildOnboardingProfileMetadata(): PublishUserMetadataInput {
+  const metadata: PublishUserMetadataInput = {};
+  const name = onboardingProfileNameInput.value.trim();
+  if (name) {
+    metadata.name = name;
+  }
+  const picture = onboardingProfilePictureInput.value.trim();
+  if (picture) {
+    metadata.picture = picture;
+  }
+  return metadata;
+}
+
+async function completeOnboardingProfileSetup(): Promise<void> {
+  if (!canCompleteOnboardingProfileSetup.value || isOnboardingContinuing.value) {
+    return;
+  }
+
+  isOnboardingContinuing.value = true;
+  try {
+    const selectedRelayEntries = selectedOnboardingRelayEntries();
+    const selectedRelayUrls = selectedRelayEntries.map((entry) => entry.url);
+
+    const profileMetadata = buildOnboardingProfileMetadata();
+    if (selectedRelayUrls.length > 0 && Object.keys(profileMetadata).length > 0) {
+      await nostrStore.publishUserMetadata(profileMetadata, selectedRelayUrls);
+    }
+
+    if (shouldUpdateOnboardingRelays.value && selectedRelayEntries.length > 0) {
+      nip65RelayStore.init();
+      nip65RelayStore.replaceRelayEntries(selectedRelayEntries);
+      await nostrStore.publishMyRelayList(selectedRelayEntries, selectedRelayUrls);
+      await nostrStore.updateLoggedInUserRelayList(selectedRelayEntries);
+    }
+
+    keepOnlySelectedOnboardingRelays();
+    await handleBrowserNotificationsAfterLogin();
+    await goToHome();
+  } catch (error) {
+    reportUiError('Failed to finish profile onboarding', error, 'Failed to finish onboarding.');
+  } finally {
+    isOnboardingContinuing.value = false;
+  }
 }
 
 function validateRelayUrlForOnboarding(value: string): string {
@@ -1175,6 +1325,27 @@ async function goToRegister(): Promise<void> {
 .onboarding-relays {
   display: grid;
   gap: 14px;
+}
+
+.onboarding-profile-setup {
+  display: grid;
+  gap: 14px;
+}
+
+.onboarding-profile-setup__checkbox {
+  color: #334155;
+}
+
+.onboarding-relay-list__checkbox :deep(.q-checkbox__bg),
+.onboarding-profile-setup__checkbox :deep(.q-checkbox__bg) {
+  background: #ffffff;
+  border: 2px solid #64748b;
+}
+
+.onboarding-relay-list__checkbox :deep(.q-checkbox__inner--truthy .q-checkbox__bg),
+.onboarding-profile-setup__checkbox :deep(.q-checkbox__inner--truthy .q-checkbox__bg) {
+  background: #2563eb;
+  border-color: #2563eb;
 }
 
 .onboarding-relay-list {

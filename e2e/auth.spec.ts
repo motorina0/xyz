@@ -55,17 +55,32 @@ test('generated key login opens profile onboarding before chats', async ({ brows
     await expect(secondRelayCheckbox).not.toBeChecked();
 
     await page.getByTestId('auth-onboarding-skip-button').click();
+    await expect(page.getByTestId('auth-onboarding-profile-name-input')).toBeVisible();
+    await expect(page.getByRole('checkbox', { name: 'Use selected relays' })).toBeChecked();
+    await expect(page.getByTestId('auth-onboarding-profile-start-button')).toBeEnabled();
+    await page.getByTestId('auth-onboarding-profile-start-button').click();
     await page
       .getByRole('button', { name: 'Not now', exact: true })
       .click({ timeout: 3_000 })
       .catch(() => undefined);
     await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
 
-    const storedRelays = await page.evaluate(() => {
-      const value = window.localStorage.getItem('relays');
-      return value ? (JSON.parse(value) as Array<{ url: string }>) : [];
+    const storedRelayLists = await page.evaluate(() => {
+      const appRelaysValue = window.localStorage.getItem('relays');
+      const nip65RelaysValue = window.localStorage.getItem('nip65_relays');
+      return {
+        appRelays: appRelaysValue ? (JSON.parse(appRelaysValue) as Array<{ url: string }>) : [],
+        nip65Relays: nip65RelaysValue
+          ? (JSON.parse(nip65RelaysValue) as Array<{ url: string }>)
+          : [],
+      };
     });
-    expect(storedRelays.map((relay) => relay.url)).toEqual([new URL(E2E_RELAY_URL).href]);
+    expect(storedRelayLists.appRelays.map((relay) => relay.url)).toEqual([
+      new URL(E2E_RELAY_URL).href,
+    ]);
+    expect(storedRelayLists.nip65Relays.map((relay) => relay.url)).toEqual([
+      new URL(E2E_RELAY_URL).href,
+    ]);
   } finally {
     await context.close();
   }
