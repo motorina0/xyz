@@ -42,6 +42,8 @@ test('generated key login opens profile onboarding before chats', async ({ brows
     await expect(page.getByTestId('auth-onboarding-relays-next-button')).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByTestId('auth-onboarding-logout-button')).toBeVisible();
+    await expect(page.getByTestId('auth-onboarding-relays-next-button')).toHaveText('Next');
     await expect(page).toHaveURL(/#\/register$/);
 
     const secondRelayCheckbox = page.getByRole('checkbox', {
@@ -53,7 +55,11 @@ test('generated key login opens profile onboarding before chats', async ({ brows
 
     await page.getByTestId('auth-onboarding-relays-next-button').click();
     await expect(page.getByTestId('auth-onboarding-profile-name-input')).toBeVisible();
-    await expect(page.getByRole('checkbox', { name: 'Use selected relays' })).toBeChecked();
+    await expect(page.getByTestId('auth-onboarding-profile-about-input')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Back' })).toBeVisible();
+    await expect(
+      page.getByRole('checkbox', { name: 'Use selected relays for my profile' })
+    ).toBeChecked();
     await expect(page.getByTestId('auth-onboarding-profile-start-button')).toBeEnabled();
     await page.getByTestId('auth-onboarding-profile-start-button').click();
     await page

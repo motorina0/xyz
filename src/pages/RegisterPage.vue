@@ -64,6 +64,28 @@
             />
           </template>
         </q-card-section>
+
+        <q-card-section class="register-card__footer">
+          <span>Made by the</span>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="register-card__footer-logo-link"
+            aria-label="LNbits"
+          >
+            <img src="/lnbits.svg" alt="" class="register-card__footer-logo" aria-hidden="true" />
+          </a>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="register-card__footer-link"
+          >
+            LNbits
+          </a>
+          <span>team.</span>
+        </q-card-section>
       </q-card>
     </div>
   </div>
@@ -231,6 +253,8 @@ async function handleLoginNow(): Promise<void> {
 }
 
 .register-card {
+  --register-card-chrome-height: 128px;
+  --register-card-footer-height: calc(var(--register-card-chrome-height) / 2);
   border-radius: 20px;
   border: 1px solid var(--nc-border);
   overflow: hidden;
@@ -248,7 +272,9 @@ async function handleLoginNow(): Promise<void> {
 }
 
 .register-card__header {
+  height: var(--register-card-chrome-height);
   padding: 22px 22px 10px;
+  box-sizing: border-box;
   background: var(--nc-panel-header-bg);
   border-bottom: 1px solid color-mix(in srgb, var(--nc-border) 90%, #8fa5c1 10%);
 }
@@ -296,5 +322,46 @@ async function handleLoginNow(): Promise<void> {
 .register-card__button {
   min-height: 44px;
   border-radius: 999px;
+}
+
+.register-card__footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  height: var(--register-card-footer-height);
+  padding: 10px 22px 14px;
+  box-sizing: border-box;
+  color: #64748b;
+  font-size: 13px;
+  border-top: 1px solid rgba(208, 220, 235, 0.72);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.register-card__footer-logo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.register-card__footer-logo {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.register-card__footer-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.register-card__footer-link:hover,
+.register-card__footer-link:focus-visible {
+  text-decoration: underline;
 }
 </style>

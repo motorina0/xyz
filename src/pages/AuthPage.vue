@@ -203,8 +203,24 @@
 
       <q-card v-else flat bordered class="auth-card auth-card--light auth-card--onboarding">
         <q-card-section class="auth-card__header">
-          <div class="auth-card__title">{{ onboardingTitle }}</div>
-          <div class="auth-card__subtitle">{{ onboardingSubtitle }}</div>
+          <div class="auth-card__header-main">
+            <q-btn
+              v-if="onboardingStatus === 'profile-setup'"
+              flat
+              round
+              dense
+              icon="arrow_back"
+              color="primary"
+              class="auth-card__back-button"
+              aria-label="Back"
+              :disable="isOnboardingContinuing"
+              @click="goBackToOnboardingRelays"
+            />
+            <div class="auth-card__header-text">
+              <div class="auth-card__title">{{ onboardingTitle }}</div>
+              <div class="auth-card__subtitle">{{ onboardingSubtitle }}</div>
+            </div>
+          </div>
         </q-card-section>
 
         <q-card-section class="auth-card__actions auth-onboarding">
@@ -274,23 +290,22 @@
             />
 
             <q-input
-              v-model="onboardingProfilePictureInput"
+              v-model="onboardingProfileAboutInput"
               class="nc-input"
               dense
               outlined
               rounded
-              label="Picture URL (optional)"
-              data-testid="auth-onboarding-profile-picture-input"
-              :error="Boolean(onboardingProfilePictureError)"
-              :error-message="onboardingProfilePictureError"
-              @keydown.enter.prevent="completeOnboardingProfileSetup"
+              type="textarea"
+              autogrow
+              label="About (optional)"
+              data-testid="auth-onboarding-profile-about-input"
             />
 
             <q-checkbox
               v-if="hasSelectedOnboardingRelays"
               v-model="shouldUpdateOnboardingRelays"
               color="primary"
-              label="Use selected relays"
+              label="Use selected relays for my profile"
               data-testid="auth-onboarding-update-relays-checkbox"
               class="onboarding-profile-setup__checkbox"
             />
@@ -448,13 +463,24 @@
 
           <div
             v-else-if="onboardingStatus === 'relay-setup'"
-            class="auth-card__button-row auth-card__button-row--single"
+            class="auth-card__button-row"
           >
+            <q-btn
+              outline
+              color="negative"
+              no-caps
+              icon="logout"
+              label="Logout"
+              class="auth-card__button"
+              data-testid="auth-onboarding-logout-button"
+              :disable="isOnboardingContinuing"
+              @click="nostrStore.logout"
+            />
             <q-btn
               unelevated
               color="primary"
               no-caps
-              label="Next: show profile"
+              label="Next"
               class="auth-card__button"
               data-testid="auth-onboarding-relays-next-button"
               :disable="!canSearchSelectedOnboardingRelays"
@@ -558,7 +584,7 @@ const onboardingNpub = ref('');
 const onboardingError = ref('');
 const onboardingRelayInput = ref('');
 const onboardingProfileNameInput = ref('');
-const onboardingProfilePictureInput = ref('');
+const onboardingProfileAboutInput = ref('');
 const onboardingAttempt = ref(0);
 const selectedOnboardingRelayKeys = ref<Set<string>>(new Set());
 const hasSeenOnboardingRelaySetup = ref(false);
@@ -646,21 +672,6 @@ const canAddOnboardingRelay = computed(() => {
   const value = onboardingRelayInput.value.trim();
   return value.length > 0 && onboardingRelayValidationError.value.length === 0;
 });
-const onboardingProfilePictureError = computed(() => {
-  const value = onboardingProfilePictureInput.value.trim();
-  if (!value) {
-    return '';
-  }
-
-  try {
-    const url = new URL(value);
-    return url.protocol === 'http:' || url.protocol === 'https:'
-      ? ''
-      : 'Picture URL must use http:// or https://';
-  } catch {
-    return 'Picture URL must be a valid URL';
-  }
-});
 const onboardingRelayRows = computed(() => {
   void nostrStore.relayStatusVersion;
   return relayStore.relays.map((url) => {
@@ -684,9 +695,7 @@ const canSearchSelectedOnboardingRelays = computed(
   () => selectedOnboardingRelayUrls.value.length > 0
 );
 const hasSelectedOnboardingRelays = computed(() => selectedOnboardingRelayUrls.value.length > 0);
-const canCompleteOnboardingProfileSetup = computed(
-  () => onboardingProfilePictureError.value.length === 0 && !isOnboardingContinuing.value
-);
+const canCompleteOnboardingProfileSetup = computed(() => !isOnboardingContinuing.value);
 
 function openLoginOptions(): void {
   try {
@@ -775,7 +784,7 @@ async function startProfileOnboarding(): Promise<void> {
   onboardingProfile.value = null;
   onboardingError.value = '';
   onboardingProfileNameInput.value = '';
-  onboardingProfilePictureInput.value = '';
+  onboardingProfileAboutInput.value = '';
   selectedOnboardingRelayKeys.value = new Set();
   hasSeenOnboardingRelaySetup.value = false;
   shouldUpdateOnboardingRelays.value = true;
@@ -866,11 +875,6 @@ async function showOnboardingRelaySetup(): Promise<void> {
   }
 }
 
-function showOnboardingProfileSetup(): void {
-  shouldUpdateOnboardingRelays.value = true;
-  onboardingStatus.value = 'profile-setup';
-}
-
 async function findProfileFromOnboardingRelays(): Promise<void> {
   if (!canSearchSelectedOnboardingRelays.value) {
     return;
@@ -952,6 +956,15 @@ function keepOnlySelectedOnboardingRelays(): void {
   selectedOnboardingRelayKeys.value = new Set(relayStore.relays.map((url) => buildRelayLookupKey(url)));
 }
 
+function goBackToOnboardingRelays(): void {
+  try {
+    onboardingError.value = '';
+    onboardingStatus.value = 'relay-setup';
+  } catch (error) {
+    reportUiError('Failed to go back to onboarding relays', error);
+  }
+}
+
 function selectedOnboardingRelayEntries() {
   const selectedRelayKeys = selectedOnboardingRelayKeys.value;
   return relayStore.relayEntries.filter((entry) => selectedRelayKeys.has(buildRelayLookupKey(entry.url)));
@@ -963,9 +976,9 @@ function buildOnboardingProfileMetadata(): PublishUserMetadataInput {
   if (name) {
     metadata.name = name;
   }
-  const picture = onboardingProfilePictureInput.value.trim();
-  if (picture) {
-    metadata.picture = picture;
+  const about = onboardingProfileAboutInput.value.trim();
+  if (about) {
+    metadata.about = about;
   }
   return metadata;
 }
