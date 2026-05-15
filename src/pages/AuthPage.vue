@@ -78,6 +78,7 @@
 
         <q-card-section class="auth-card__actions">
           <q-btn
+            v-if="showExtensionLoginOption"
             unelevated
             color="primary"
             no-caps
@@ -549,6 +550,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
+import { Capacitor } from '@capacitor/core';
 import { normalizeRelayUrl } from '@nostr-dev-kit/ndk';
 import BrowserNotificationsLoginDialog from 'src/components/BrowserNotificationsLoginDialog.vue';
 import CachedAvatar from 'src/components/CachedAvatar.vue';
@@ -613,6 +615,15 @@ const privateKeyError = computed(() =>
     : ''
 );
 const canLoginWithKey = computed(() => privateKeyValidation.value.isValid && !isKeyLoginInProgress.value);
+const isDesktopAppRuntime = computed(() =>
+  typeof window === 'undefined' ? false : Boolean(window.desktopRuntime?.isElectron)
+);
+const isAndroidAppRuntime = computed(
+  () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'
+);
+const showExtensionLoginOption = computed(
+  () => !isDesktopAppRuntime.value && !isAndroidAppRuntime.value
+);
 const onboardingTitle = computed(() => {
   if (onboardingStatus.value === 'found') {
     return 'Confirm profile';
