@@ -42,7 +42,7 @@
             class="auth-card__footer-logo-link"
             aria-label="LNbits"
           >
-            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+            <img src="lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
           </a>
           <a
             href="https://lnbits.com"
@@ -109,7 +109,7 @@
             class="auth-card__footer-logo-link"
             aria-label="LNbits"
           >
-            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+            <img src="lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
           </a>
           <a
             href="https://lnbits.com"
@@ -188,7 +188,7 @@
             class="auth-card__footer-logo-link"
             aria-label="LNbits"
           >
-            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+            <img src="lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
           </a>
           <a
             href="https://lnbits.com"
@@ -524,7 +524,7 @@
             class="auth-card__footer-logo-link"
             aria-label="LNbits"
           >
-            <img src="/lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
+            <img src="lnbits.svg" alt="" class="auth-card__footer-logo" aria-hidden="true" />
           </a>
           <a
             href="https://lnbits.com"
@@ -1378,7 +1378,7 @@ async function goToRegister(): Promise<void> {
 }
 
 .auth-card__footer-link {
-  color: #2563eb;
+  color: #ff1fe1;
   font-weight: 700;
   text-decoration: none;
 }
