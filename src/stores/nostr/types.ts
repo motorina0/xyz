@@ -48,6 +48,18 @@ export interface PublishUserMetadataInput {
   };
 }
 
+export interface UserProfileLookupResult {
+  publicKey: string;
+  name: string;
+  displayName: string;
+  about: string;
+  picture: string;
+  nip05: string;
+  relayUrls: string[];
+  eventCreatedAt: number | null;
+  eventId: string | null;
+}
+
 export interface RelayListMetadataEntry {
   url: string;
   read?: boolean;

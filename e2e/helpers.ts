@@ -696,11 +696,38 @@ export async function bootstrapExtensionUser(
   await page.goto('/#/login');
   await page.getByRole('button', { name: 'Login', exact: true }).click();
   await page.getByRole('button', { name: 'Login with Extension', exact: true }).click();
-  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
+  await page.waitForFunction(
+    () => Boolean(document.querySelector('[data-testid="auth-onboarding-relays-next-button"]')),
+    undefined,
+    { timeout: 30_000 }
+  );
+  await page.getByTestId('auth-onboarding-relays-next-button').click();
+
+  await page.waitForFunction(
+    () =>
+      Boolean(
+        document.querySelector('[data-testid="auth-onboarding-continue-button"]') ||
+          document.querySelector('[data-testid="auth-onboarding-profile-start-button"]') ||
+          document.querySelector('[data-testid="auth-onboarding-skip-button"]')
+      ),
+    undefined,
+    { timeout: 30_000 }
+  );
+
+  const continueButton = page.getByTestId('auth-onboarding-continue-button');
+  if (await continueButton.isVisible()) {
+    await continueButton.click();
+  } else if (await page.getByTestId('auth-onboarding-profile-start-button').isVisible()) {
+    await page.getByTestId('auth-onboarding-profile-start-button').click();
+  } else {
+    await page.getByTestId('auth-onboarding-skip-button').click();
+  }
 
   if (await page.getByText('Enable Browser Notifications', { exact: true }).isVisible()) {
     await page.getByRole('button', { name: 'Not now', exact: true }).click();
   }
+
+  await expect.poll(() => page.url(), { timeout: 30_000 }).toMatch(/#\/chats$/);
 
   await waitForChatsShell(page);
 
@@ -1551,6 +1578,7 @@ export async function openProfileRelaysSection(page: Page): Promise<void> {
 
 export async function openAppRelaysSettings(page: Page): Promise<void> {
   await page.goto('/#/settings/relays');
+  await expect(page.getByTestId('settings-relays-contacts-tab')).toHaveCount(0);
   await expect(page.getByTestId('settings-relays-app-tab')).toBeVisible();
   await page.getByTestId('settings-relays-app-tab').click();
   await expect(

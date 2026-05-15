@@ -1,14 +1,30 @@
 <template>
   <div class="register-page auth-entry-page">
-    <div class="register-shell">
-      <q-card flat bordered class="register-card register-card--light">
+    <div class="register-shell" :class="{ 'register-shell--wide': showProfileOnboarding }">
+      <AuthProfileOnboardingCard v-if="showProfileOnboarding" />
+
+      <q-card v-else flat bordered class="register-card register-card--light">
         <q-card-section class="register-card__header">
-          <div class="register-card__title">Create Account</div>
-          <div class="register-card__subtitle" v-if="isCreatingAccount">
-            Creating Account
-          </div>
-          <div class="register-card__subtitle" v-else>
-            A new Nostr keypair has been generated for this account. Download the secret before continuing.
+          <div class="register-card__header-main">
+            <q-btn
+              flat
+              round
+              dense
+              icon="arrow_back"
+              color="primary"
+              class="register-card__back-button"
+              aria-label="Back"
+              :disable="isLoggingIn"
+              @click="goBackToAuth"
+            />
+            <div class="register-card__header-text">
+              <div class="register-card__title">Create Account</div>
+              <div class="register-card__subtitle" v-if="isCreatingAccount">Creating Account</div>
+              <div class="register-card__subtitle" v-else>
+                A new Nostr keypair has been generated for this account. Download the secret before
+                continuing.
+              </div>
+            </div>
           </div>
         </q-card-section>
 
@@ -47,25 +63,31 @@
               @click="handleLoginNow"
             />
           </template>
+        </q-card-section>
 
-          <q-btn
-            flat
-            color="primary"
-            no-caps
-            label="Back"
-            class="register-card__button"
-            :disable="isLoggingIn"
-            @click="goBackToAuth"
-          />
+        <q-card-section class="register-card__footer">
+          <span>Made by the</span>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="register-card__footer-logo-link"
+            aria-label="LNbits"
+          >
+            <img src="/lnbits.svg" alt="" class="register-card__footer-logo" aria-hidden="true" />
+          </a>
+          <a
+            href="https://lnbits.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="register-card__footer-link"
+          >
+            LNbits
+          </a>
+          <span>team.</span>
         </q-card-section>
       </q-card>
     </div>
-
-    <BrowserNotificationsLoginDialog
-      v-model="isBrowserNotificationsLoginDialogOpen"
-      @enable="confirmBrowserNotificationsLoginDialog"
-      @skip="skipBrowserNotificationsLoginDialog"
-    />
   </div>
 </template>
 
@@ -73,8 +95,7 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { NDKPrivateKeySigner } from '@nostr-dev-kit/ndk';
-import BrowserNotificationsLoginDialog from 'src/components/BrowserNotificationsLoginDialog.vue';
-import { useBrowserNotificationsLoginPrompt } from 'src/composables/useBrowserNotificationsLoginPrompt';
+import AuthProfileOnboardingCard from 'src/components/AuthProfileOnboardingCard.vue';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
@@ -87,16 +108,11 @@ interface GeneratedAccount {
 
 const router = useRouter();
 const nostrStore = useNostrStore();
-const {
-  isBrowserNotificationsLoginDialogOpen,
-  handleBrowserNotificationsAfterLogin,
-  confirmBrowserNotificationsLoginDialog,
-  skipBrowserNotificationsLoginDialog
-} = useBrowserNotificationsLoginPrompt();
 const generatedAccount = ref<GeneratedAccount | null>(null);
 const isCreatingAccount = ref(true);
 const creationProgress = ref(0);
 const isLoggingIn = ref(false);
+const showProfileOnboarding = ref(false);
 const ACCOUNT_CREATION_DURATION_MS = 2000;
 let creationAnimationFrameId: number | null = null;
 let creationCompletionFrameId: number | null = null;
@@ -211,8 +227,7 @@ async function handleLoginNow(): Promise<void> {
       throw new Error('Failed to persist the generated account key.');
     }
 
-    await handleBrowserNotificationsAfterLogin();
-    await router.push({ name: 'chats' });
+    showProfileOnboarding.value = true;
   } catch (error) {
     reportUiError('Failed to log in with generated account', error, 'Failed to log in.');
   } finally {
@@ -233,7 +248,13 @@ async function handleLoginNow(): Promise<void> {
   width: min(100%, 460px);
 }
 
+.register-shell--wide {
+  width: min(100%, 560px);
+}
+
 .register-card {
+  --register-card-chrome-height: 128px;
+  --register-card-footer-height: calc(var(--register-card-chrome-height) / 2);
   border-radius: 20px;
   border: 1px solid var(--nc-border);
   overflow: hidden;
@@ -251,7 +272,9 @@ async function handleLoginNow(): Promise<void> {
 }
 
 .register-card__header {
+  height: var(--register-card-chrome-height);
   padding: 22px 22px 10px;
+  box-sizing: border-box;
   background: var(--nc-panel-header-bg);
   border-bottom: 1px solid color-mix(in srgb, var(--nc-border) 90%, #8fa5c1 10%);
 }
@@ -259,6 +282,23 @@ async function handleLoginNow(): Promise<void> {
 .register-card--light .register-card__header {
   background: rgba(255, 255, 255, 0.82);
   border-bottom-color: rgba(208, 220, 235, 0.82);
+}
+
+.register-card__header-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.register-card__header-text {
+  min-width: 0;
+}
+
+.register-card__back-button {
+  flex: 0 0 auto;
+  margin-top: -2px;
+  color: #2563eb;
 }
 
 .register-card__title {
@@ -282,5 +322,46 @@ async function handleLoginNow(): Promise<void> {
 .register-card__button {
   min-height: 44px;
   border-radius: 999px;
+}
+
+.register-card__footer {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  height: var(--register-card-footer-height);
+  padding: 10px 22px 14px;
+  box-sizing: border-box;
+  color: #64748b;
+  font-size: 13px;
+  border-top: 1px solid rgba(208, 220, 235, 0.72);
+  background: rgba(255, 255, 255, 0.48);
+}
+
+.register-card__footer-logo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+
+.register-card__footer-logo {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.register-card__footer-link {
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.register-card__footer-link:hover,
+.register-card__footer-link:focus-visible {
+  text-decoration: underline;
 }
 </style>

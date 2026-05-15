@@ -57,6 +57,13 @@ interface ContactRelayRuntimeDeps {
   updateStoredEventSinceFromCreatedAt: (value: unknown) => void;
 }
 
+interface ContactProfileFetchOptions {
+  relayEntries?: ContactRelay[];
+  seedRelayUrls?: string[];
+  ignoreStoredSince?: boolean;
+  onlyExplicitRelayEntries?: boolean;
+}
+
 export function createContactRelayRuntime({
   applyContactRelayListEventStateToMeta,
   bumpContactListVersion,
@@ -79,10 +86,7 @@ export function createContactRelayRuntime({
 }: ContactRelayRuntimeDeps) {
   async function fetchContactProfile(
     pubkeyHex: string,
-    options: {
-      relayEntries?: ContactRelay[];
-      seedRelayUrls?: string[];
-    } = {}
+    options: ContactProfileFetchOptions = {}
   ): Promise<{
     eventState: ContactProfileEventState | null;
     profile: NDKUserProfile | null;
@@ -99,6 +103,7 @@ export function createContactRelayRuntime({
     const existingContact = await contactsService.getContactByPublicKey(normalizedPubkey);
     const relayUrls = await resolveContactProfileReadRelayUrls(normalizedPubkey, {
       relayEntries: options.relayEntries,
+      onlyExplicitRelayEntries: options.onlyExplicitRelayEntries,
       seedRelayUrls: options.seedRelayUrls ?? [],
     });
     if (relayUrls.length === 0) {
@@ -110,7 +115,9 @@ export function createContactRelayRuntime({
 
     await ensureRelayConnections(relayUrls);
 
-    const since = readContactProfileEventSince(existingContact?.meta);
+    const since = options.ignoreStoredSince
+      ? null
+      : readContactProfileEventSince(existingContact?.meta);
     const relaySet = NDKRelaySet.fromRelayUrls(relayUrls, ndk, false);
     const profileEvent = await ndk.fetchEvent(
       {
@@ -393,14 +400,18 @@ export function createContactRelayRuntime({
 
   async function resolveContactProfileReadRelayUrls(
     pubkeyHex: string,
-    options: {
-      relayEntries?: ContactRelay[];
-      seedRelayUrls?: string[];
-    } = {}
+    options: ContactProfileFetchOptions = {}
   ): Promise<string[]> {
     const normalizedPubkey = inputSanitizerService.normalizeHexKey(pubkeyHex);
     if (!normalizedPubkey) {
       return [];
+    }
+
+    const explicitRelayUrls = inputSanitizerService.normalizeReadableRelayUrls(
+      options.relayEntries
+    );
+    if (options.onlyExplicitRelayEntries) {
+      return normalizeRelayStatusUrls(explicitRelayUrls);
     }
 
     await contactsService.init();
@@ -409,7 +420,7 @@ export function createContactRelayRuntime({
     return normalizeRelayStatusUrls([
       ...(await resolveLoggedInReadRelayUrls(options.seedRelayUrls ?? [])),
       ...inputSanitizerService.normalizeReadableRelayUrls(existingContact?.relays),
-      ...inputSanitizerService.normalizeReadableRelayUrls(options.relayEntries),
+      ...explicitRelayUrls,
     ]);
   }
 

@@ -4,9 +4,17 @@ export const STARTUP_STEP_DEFINITIONS = [
   { id: 'outbound-message-replay', order: 3, label: 'Start outbound message replay' },
   { id: 'private-preferences', order: 4, label: 'Restore encrypted private preferences' },
   { id: 'private-contact-list-restore', order: 5, label: 'Restore encrypted private contact list' },
-  { id: 'group-identity-secrets', order: 6, label: 'Restore group identity secrets' },
+  {
+    id: 'group-identity-secrets',
+    order: 6,
+    label: 'Restore encrypted group identity secrets',
+  },
   { id: 'group-relay-lists-refresh', order: 7, label: 'Refresh group relay lists' },
-  { id: 'contact-cursor-state', order: 8, label: 'Restore per-contact cursor state' },
+  {
+    id: 'contact-cursor-state',
+    order: 8,
+    label: 'Restore per-contact encrypted cursor state',
+  },
   { id: 'logged-in-contact-profile', order: 9, label: 'Sync logged-in contact profile' },
   { id: 'recent-chat-contacts-sync', order: 10, label: 'Sync recent chat contacts' },
   {
@@ -25,6 +33,20 @@ export const STARTUP_STEP_DEFINITIONS = [
 ] as const;
 
 export type StartupStepId = (typeof STARTUP_STEP_DEFINITIONS)[number]['id'];
+
+export const STARTUP_LOCKED_STEP_IDS = [
+  'private-preferences',
+  'private-contact-list-restore',
+  'group-identity-secrets',
+  'contact-cursor-state',
+] as const satisfies readonly StartupStepId[];
+
+const STARTUP_LOCKED_STEP_ID_SET = new Set<string>(STARTUP_LOCKED_STEP_IDS);
+
+export function isStartupLockedStepIdValue(stepId: string): boolean {
+  return STARTUP_LOCKED_STEP_ID_SET.has(stepId);
+}
+
 export const STARTUP_INTERNAL_TASK_DEFINITIONS = [
   {
     id: 'my-relay-list',

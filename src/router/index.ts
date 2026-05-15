@@ -36,15 +36,18 @@ export default route(() => {
       await finalizePendingLogoutCleanup();
     }
 
-    if (to.name === 'auth' || to.name === 'register') {
-      return true;
-    }
-
     if (process.env.SERVER) {
       return true;
     }
 
-    if (hasStoredPublicKey()) {
+    const isAuthRoute = to.name === 'auth' || to.name === 'register';
+    const hasLoggedInUser = hasStoredPublicKey();
+
+    if (isAuthRoute) {
+      return hasLoggedInUser ? { name: 'chats' } : true;
+    }
+
+    if (hasLoggedInUser) {
       return true;
     }
 

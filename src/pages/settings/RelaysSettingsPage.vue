@@ -21,12 +21,6 @@
           class="relays-tab"
           data-testid="settings-relays-app-tab"
         />
-        <q-tab
-          name="contacts"
-          label="Contacts Relays"
-          class="relays-tab"
-          data-testid="settings-relays-contacts-tab"
-        />
       </q-tabs>
 
       <q-tab-panels v-model="activeTab" animated class="relays-panels">
@@ -90,29 +84,6 @@
           />
         </q-tab-panel>
 
-        <q-tab-panel name="contacts" class="relays-panel">
-          <div v-if="isTabLoading('contacts')" class="relays-tab-state">Loading relays...</div>
-
-          <div
-            v-else-if="tabError('contacts')"
-            class="relays-tab-state relays-tab-state--error"
-          >
-            <span>{{ tabError('contacts') }}</span>
-            <q-btn
-              flat
-              dense
-              no-caps
-              color="negative"
-              label="Retry"
-              @click="reloadTab('contacts')"
-            />
-          </div>
-
-          <div v-else-if="contactsRelays.length === 0" class="relays-tab-state">
-            No contact relays found yet.
-          </div>
-
-        </q-tab-panel>
       </q-tab-panels>
     </div>
   </SettingsDetailLayout>
@@ -125,14 +96,13 @@ import { useRelayDecorations } from 'src/composables/useRelayDecorations';
 import RelayEditorPanel from 'src/components/RelayEditorPanel.vue';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import { DEFAULT_RELAYS } from 'src/constants/relays';
-import { relaysService } from 'src/services/relaysService';
 import { useNip65RelayStore } from 'src/stores/nip65RelayStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 import { useRelayStore } from 'src/stores/relayStore';
 import { uniqueRelayUrls } from 'src/utils/relayUrls';
 import { reportUiError } from 'src/utils/uiErrorHandler';
 
-type RelayTab = 'my' | 'app' | 'contacts';
+type RelayTab = 'my' | 'app';
 interface RelayTogglePayload {
   index: number;
   value: boolean;
@@ -144,10 +114,6 @@ const nostrStore = useNostrStore();
 const activeTab = ref<RelayTab>('my');
 const appNewRelay = ref('');
 const myNewRelay = ref('');
-const contactsRelays = ref<string[]>([]);
-const isLoadingContactsRelays = ref(false);
-const contactsRelaysError = ref('');
-const hasLoadedContactsRelays = ref(false);
 let myRelaysSyncPromise: Promise<void> | null = null;
 let hasPendingMyRelaysSync = false;
 const {
@@ -194,7 +160,7 @@ const canUseDefaultMyRelays = computed(() => {
   return nip65RelayStore.relayEntries.some((entry) => entry.read !== true || entry.write !== true);
 });
 const allKnownRelays = computed(() =>
-  uniqueRelayUrls([...relayStore.relays, ...nip65RelayStore.relays, ...contactsRelays.value])
+  uniqueRelayUrls([...relayStore.relays, ...nip65RelayStore.relays])
 );
 
 relayStore.init();
@@ -208,79 +174,6 @@ watch(
   },
   { immediate: true }
 );
-
-watch(
-  activeTab,
-  (tab) => {
-    if (tab === 'contacts') {
-      void loadContactsRelays();
-    }
-  },
-  { immediate: true }
-);
-
-watch(
-  () => nostrStore.contactListVersion,
-  () => {
-    const shouldReloadContactsRelays =
-      activeTab.value === 'contacts' || hasLoadedContactsRelays.value;
-    if (!shouldReloadContactsRelays) {
-      return;
-    }
-
-    hasLoadedContactsRelays.value = false;
-    void loadContactsRelays(true);
-  }
-);
-
-async function loadContactsRelays(force = false): Promise<void> {
-  if (isLoadingContactsRelays.value || (!force && hasLoadedContactsRelays.value)) {
-    return;
-  }
-
-  isLoadingContactsRelays.value = true;
-  contactsRelaysError.value = '';
-
-  try {
-    await relaysService.init();
-    const relays = await relaysService.listAllRelays();
-    contactsRelays.value = relays;
-    hasLoadedContactsRelays.value = true;
-  } catch (error) {
-    contactsRelays.value = [];
-    contactsRelaysError.value =
-      error instanceof Error ? error.message : 'Failed to load contacts relays.';
-  } finally {
-    isLoadingContactsRelays.value = false;
-  }
-}
-
-function isTabLoading(tab: RelayTab): boolean {
-  if (tab === 'contacts') {
-    return isLoadingContactsRelays.value;
-  }
-
-  return false;
-}
-
-function tabError(tab: RelayTab): string {
-  if (tab === 'contacts') {
-    return contactsRelaysError.value;
-  }
-
-  return '';
-}
-
-function reloadTab(tab: RelayTab): void {
-  try {
-    if (tab === 'contacts') {
-      hasLoadedContactsRelays.value = false;
-      void loadContactsRelays(true);
-    }
-  } catch (error) {
-    reportUiError('Failed to reload relay tab', error);
-  }
-}
 
 function handleRelayExpand(relay: string): void {
   try {
@@ -502,17 +395,4 @@ function queueMyRelaysSync(): void {
   padding: 0;
 }
 
-.relays-tab-state {
-  min-height: 48px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: #64748b;
-  font-size: 14px;
-}
-
-.relays-tab-state--error {
-  color: #ef4444;
-}
 </style>

@@ -40,7 +40,16 @@
               size="14px"
             />
             <div class="startup-history-banner__copy">
-              <div class="startup-history-banner__label">{{ step.label }}</div>
+              <div class="startup-history-banner__label">
+                <q-icon
+                  v-if="isStartupLockedStepIdValue(step.id)"
+                  name="lock"
+                  size="12px"
+                  class="startup-history-banner__lock-icon"
+                  aria-hidden="true"
+                />
+                <span>{{ step.label }}</span>
+              </div>
               <div class="startup-history-banner__meta">{{ startupStepMeta(step) }}</div>
             </div>
             <div class="startup-history-banner__duration">
@@ -108,6 +117,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
+import { isStartupLockedStepIdValue } from 'src/stores/nostr/startupState';
 import type { StartupStepStatus, StartupTimedSnapshot } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 
@@ -378,9 +388,23 @@ watch(isDetailsVisible, (value) => {
 }
 
 .startup-history-banner__label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 11px;
   font-weight: 700;
   line-height: 1.25;
+}
+
+.startup-history-banner__label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.startup-history-banner__lock-icon {
+  flex: 0 0 auto;
+  color: var(--nc-text-secondary);
 }
 
 .startup-history-banner__task-label {

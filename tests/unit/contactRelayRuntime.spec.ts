@@ -187,6 +187,78 @@ describe('contactRelayRuntime', () => {
     );
   });
 
+  it('can ignore the stored profile event timestamp for a full relay lookup', async () => {
+    const { deps, ndk } = createDeps();
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(
+      makeContact(USER_PUBKEY, {
+        meta: {
+          profile_event_created_at: 321,
+        },
+      })
+    );
+    ndk.fetchEvent.mockResolvedValue(
+      new NDKEvent({} as never, {
+        content: JSON.stringify({
+          name: 'Alice',
+        }),
+        created_at: 400,
+        id: PROFILE_EVENT_ID,
+        kind: NDKKind.Metadata,
+        pubkey: USER_PUBKEY,
+      })
+    );
+
+    const runtime = createContactRelayRuntime(deps);
+
+    await runtime.fetchContactProfile(USER_PUBKEY, {
+      ignoreStoredSince: true,
+    });
+
+    expect(ndk.fetchEvent).toHaveBeenCalledTimes(1);
+    expect(ndk.fetchEvent.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        authors: [USER_PUBKEY],
+        kinds: [NDKKind.Metadata],
+      })
+    );
+    expect(ndk.fetchEvent.mock.calls[0][0]).not.toHaveProperty('since');
+  });
+
+  it('can restrict a profile lookup to explicit relay entries', async () => {
+    const { deps, ndk } = createDeps();
+    const explicitRelay = makeRelay('wss://explicit.example/');
+    serviceMocks.contactsService.getContactByPublicKey.mockResolvedValue(
+      makeContact(USER_PUBKEY, {
+        relays: [makeRelay('wss://stored.example/')],
+      })
+    );
+    ndk.fetchEvent.mockResolvedValue(
+      new NDKEvent({} as never, {
+        content: JSON.stringify({
+          name: 'Alice',
+        }),
+        created_at: 400,
+        id: PROFILE_EVENT_ID,
+        kind: NDKKind.Metadata,
+        pubkey: USER_PUBKEY,
+      })
+    );
+
+    const runtime = createContactRelayRuntime(deps);
+
+    await runtime.fetchContactProfile(USER_PUBKEY, {
+      onlyExplicitRelayEntries: true,
+      relayEntries: [explicitRelay],
+    });
+
+    expect(deps.ensureRelayConnections).toHaveBeenCalledWith(['wss://explicit.example/']);
+    expect(NDKRelaySet.fromRelayUrls).toHaveBeenCalledWith(
+      ['wss://explicit.example/'],
+      deps.ndk,
+      false
+    );
+  });
+
   it('persists relay-list event timestamps even when the relay entries stay the same', async () => {
     const { deps, ndk } = createDeps();
     const existingContact = makeContact(USER_PUBKEY, {

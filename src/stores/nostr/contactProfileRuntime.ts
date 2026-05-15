@@ -7,6 +7,7 @@ import type {
   ContactProfileEventState,
   ContactRefreshLifecycle,
   ContactRelayListFetchResult,
+  UserProfileLookupResult,
 } from 'src/stores/nostr/types';
 import type { ContactMetadata, ContactRecord, ContactRelay } from 'src/types/contact';
 
@@ -58,6 +59,8 @@ interface ContactProfileRuntimeDeps {
   fetchContactProfile: (
     pubkeyHex: string,
     options?: {
+      ignoreStoredSince?: boolean;
+      onlyExplicitRelayEntries?: boolean;
       relayEntries?: ContactRelay[];
       seedRelayUrls?: string[];
     }
@@ -549,6 +552,47 @@ export function createContactProfileRuntime({
     };
   }
 
+  async function fetchUserProfileFromRelays(
+    targetPubkeyHex: string,
+    relayUrls: string[]
+  ): Promise<UserProfileLookupResult | null> {
+    const normalizedTargetPubkey = inputSanitizerService.normalizeHexKey(targetPubkeyHex);
+    if (!normalizedTargetPubkey) {
+      return null;
+    }
+
+    const relayEntries = inputSanitizerService.normalizeRelayEntriesFromUrls(relayUrls);
+    if (relayEntries.length === 0) {
+      return null;
+    }
+
+    const { eventState, profile } = await fetchContactProfile(normalizedTargetPubkey, {
+      ignoreStoredSince: true,
+      onlyExplicitRelayEntries: true,
+      relayEntries,
+    });
+    if (!profile) {
+      return null;
+    }
+
+    const meta = buildUpdatedContactMeta({}, profile, null, null);
+    const displayName = meta.display_name?.trim() ?? '';
+    const name = meta.name?.trim() ?? '';
+    const fallbackName = normalizedTargetPubkey.slice(0, 16);
+
+    return {
+      publicKey: normalizedTargetPubkey,
+      name: displayName || name || fallbackName,
+      displayName,
+      about: meta.about?.trim() ?? '',
+      picture: meta.picture?.trim() ?? '',
+      nip05: meta.nip05?.trim() ?? '',
+      relayUrls: inputSanitizerService.normalizeReadableRelayUrls(relayEntries),
+      eventCreatedAt: eventState?.createdAt ?? null,
+      eventId: eventState?.eventId?.trim() || null,
+    };
+  }
+
   async function ensureRespondedPubkeyIsContact(
     targetPubkeyHex: string,
     fallbackName = ''
@@ -602,6 +646,7 @@ export function createContactProfileRuntime({
     ensureContactStoredAsGroup,
     ensureRespondedPubkeyIsContact,
     fetchContactPreviewByPublicKey,
+    fetchUserProfileFromRelays,
     queueBackgroundGroupContactRefresh,
     refreshContactByPublicKey,
     refreshGroupContactByPublicKey,

@@ -135,6 +135,7 @@ export type {
   RelayConnectionState,
   RelaySaveStatus,
   RotateGroupEpochResult,
+  UserProfileLookupResult,
 } from 'src/stores/nostr/types';
 
 export type NostrNpubValidationResult = NpubValidationResult;
@@ -921,6 +922,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     fetchRelayNip11Info,
     getOrCreateSigner: getOrCreateSignerImpl,
     getRelayConnectionState,
+    isRelayConnectionPending,
   } = createRelayConnectionRuntime({
     authenticatedRelayUrls,
     buildRelaySnapshot,
@@ -1488,6 +1490,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     ensureContactStoredAsGroup,
     ensureRespondedPubkeyIsContact,
     fetchContactPreviewByPublicKey,
+    fetchUserProfileFromRelays,
     queueBackgroundGroupContactRefresh,
     refreshContactByPublicKey,
     refreshGroupContactByPublicKey,
@@ -2019,6 +2022,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     refreshPrivateMessages,
     refreshPrivateMessagesLiveSubscriptionForReconnect,
     getRelayConnectionState,
+    isRelayConnectionPending,
     isAppForeground,
     isReconnectHealing,
     isRestoringStartupState,
@@ -2039,6 +2043,7 @@ export const useNostrStore = defineStore('nostrStore', () => {
     rotateGroupEpochAndSendTickets,
     ensureRespondedPubkeyIsContact,
     fetchContactPreviewByPublicKey,
+    fetchUserProfileFromRelays,
     refreshContactByPublicKey,
     refreshGroupMembershipRoster,
     restoreContactCursorState,

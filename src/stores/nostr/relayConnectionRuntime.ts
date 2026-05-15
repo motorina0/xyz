@@ -453,6 +453,21 @@ export function createRelayConnectionRuntime({
     return relay.connected ? 'connected' : 'issue';
   }
 
+  function isRelayConnectionPending(relayUrl: string): boolean {
+    const normalizedRelayUrl = normalizeRelayUrl(relayUrl);
+    if (relayConnectPromises.has(normalizedRelayUrl)) {
+      return true;
+    }
+
+    const relay = ndk.pool.relays.get(normalizedRelayUrl);
+    return (
+      relay?.status === NDKRelayStatus.RECONNECTING ||
+      relay?.status === NDKRelayStatus.CONNECTING ||
+      relay?.status === NDKRelayStatus.AUTH_REQUESTED ||
+      relay?.status === NDKRelayStatus.AUTHENTICATING
+    );
+  }
+
   async function fetchRelayNip11Info(
     relayUrl: string,
     force = false
@@ -467,5 +482,6 @@ export function createRelayConnectionRuntime({
     fetchRelayNip11Info,
     getOrCreateSigner,
     getRelayConnectionState,
+    isRelayConnectionPending,
   };
 }

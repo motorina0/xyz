@@ -5,12 +5,9 @@ prompt
 do not have multiple subscriptions for the same events
 
 
-
-do not show login page if the user is logged in. Just go back to chats
-
+drop login with extension
 
 App init:
- - if no relays ask the user if it wants the app relays on its profile
  - always use app relays to listen for messages
 
 - login and secrets on mobile
@@ -20,6 +17,9 @@ App init:
 My Relays (NIP-65)
 some contacts have weird relays, we should not listen there
 
+dektop app -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
+cop to clipboard button does not work on mobile apps
+
 
 
 only listen to my relays and app relays
@@ -27,6 +27,7 @@ post to user write relays
 
 
 confety emoji
+update npm libs and vultrbilities
 
 
 ### Groups
@@ -57,10 +58,7 @@ chat with contact from group
 No relays found for this contact -> if this is the case do a refresh profile beforehand
  - keep last profile refresh in mind
 
- dektop ap -> in group click on memeber -> should redirect to chat to this member (nothing happens now)
-
-
-cop to clipboard button does not work on mobile apps
+ 
 
 Priority	Number	Scenario	Why it matters
 P0	9	New current group epoch / rotation	Group push notifications can silently stop after an epoch rotation because Android push still watches the old epoch pubkey.

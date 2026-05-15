@@ -46,7 +46,16 @@
                       size="16px"
                     />
                     <div class="app-status__history-copy">
-                      <div class="app-status__history-label">{{ step.label }}</div>
+                      <div class="app-status__history-label">
+                        <q-icon
+                          v-if="isStartupLockedStepIdValue(step.id)"
+                          name="lock"
+                          size="14px"
+                          class="app-status__lock-icon"
+                          aria-hidden="true"
+                        />
+                        <span>{{ step.label }}</span>
+                      </div>
                       <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
                     </div>
                     <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
@@ -104,7 +113,16 @@
                     size="16px"
                   />
                   <div class="app-status__history-copy">
-                    <div class="app-status__history-label">{{ step.label }}</div>
+                    <div class="app-status__history-label">
+                      <q-icon
+                        v-if="isStartupLockedStepIdValue(step.id)"
+                        name="lock"
+                        size="14px"
+                        class="app-status__lock-icon"
+                        aria-hidden="true"
+                      />
+                      <span>{{ step.label }}</span>
+                    </div>
                     <div class="app-status__history-meta">{{ startupStepMeta(step) }}</div>
                   </div>
                   <div class="app-status__history-duration">{{ startupStepDuration(step) }}</div>
@@ -120,6 +138,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { isStartupLockedStepIdValue } from 'src/stores/nostr/startupState';
 import type { StartupStepStatus, StartupTimedSnapshot } from 'src/stores/nostrStore';
 import { useNostrStore } from 'src/stores/nostrStore';
 
@@ -391,9 +410,23 @@ function startupStepDuration(step: StartupTimedSnapshot): string {
 }
 
 .app-status__history-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.35;
+}
+
+.app-status__history-label span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app-status__lock-icon {
+  flex: 0 0 auto;
+  color: var(--nc-text-secondary);
 }
 
 .app-status__history-meta,

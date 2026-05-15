@@ -285,6 +285,61 @@ describe('contactProfileRuntime group refresh', () => {
     );
   });
 
+  it('fetches an onboarding profile from the explicit relay set', async () => {
+    const { deps } = createDeps();
+    deps.fetchContactProfile.mockResolvedValue({
+      eventState: {
+        createdAt: 55,
+        eventId: 'profile-event',
+      },
+      profile: {
+        name: 'Alice',
+      },
+    });
+    deps.buildUpdatedContactMeta.mockReturnValue({
+      name: 'alice',
+      display_name: 'Alice',
+      about: 'Profile from relay',
+      picture: 'https://example.com/alice.png',
+      nip05: 'alice@example.com',
+    });
+
+    const runtime = createContactProfileRuntime(deps);
+
+    const result = await runtime.fetchUserProfileFromRelays(USER_PUBKEY, [' wss://relay.example ']);
+
+    expect(deps.fetchContactProfile).toHaveBeenCalledWith(USER_PUBKEY, {
+      ignoreStoredSince: true,
+      onlyExplicitRelayEntries: true,
+      relayEntries: [{ url: 'wss://relay.example', read: true, write: true }],
+    });
+    expect(result).toEqual({
+      publicKey: USER_PUBKEY,
+      name: 'Alice',
+      displayName: 'Alice',
+      about: 'Profile from relay',
+      picture: 'https://example.com/alice.png',
+      nip05: 'alice@example.com',
+      relayUrls: ['wss://relay.example/'],
+      eventCreatedAt: 55,
+      eventId: 'profile-event',
+    });
+  });
+
+  it('returns null when onboarding relays do not have a profile event', async () => {
+    const { deps } = createDeps();
+    deps.fetchContactProfile.mockResolvedValue({
+      eventState: null,
+      profile: null,
+    });
+
+    const runtime = createContactProfileRuntime(deps);
+
+    await expect(
+      runtime.fetchUserProfileFromRelays(USER_PUBKEY, ['wss://relay.example'])
+    ).resolves.toBeNull();
+  });
+
   it('forwards seed relay urls through group contact refreshes', async () => {
     const { deps, setUser } = createDeps();
     setUser(GROUP_PUBKEY);

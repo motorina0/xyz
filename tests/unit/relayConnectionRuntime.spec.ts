@@ -148,6 +148,7 @@ function createRuntimeHarness(
     queueOutboundMessageReplay,
     rawConnect,
     relay,
+    relayConnectPromises,
     runtime,
   };
 }
@@ -213,6 +214,28 @@ describe('relayConnectionRuntime', () => {
 
     expect(ndk.addExplicitRelay).toHaveBeenCalledWith('wss://relay.example/', undefined, false);
     expect(rawConnect).toHaveBeenCalledWith(3000, false);
+  });
+
+  it('reports pending relay connection checks while a relay is connecting or authenticating', () => {
+    const { connectivity, relayConnectPromises, runtime } = createRuntimeHarness();
+
+    expect(runtime.isRelayConnectionPending('wss://relay.example')).toBe(false);
+
+    relayConnectPromises.set('wss://relay.example/', Promise.resolve());
+    expect(runtime.isRelayConnectionPending('wss://relay.example')).toBe(true);
+
+    relayConnectPromises.clear();
+    connectivity._status = NDKRelayStatus.CONNECTING;
+    expect(runtime.isRelayConnectionPending('wss://relay.example')).toBe(true);
+
+    connectivity._status = NDKRelayStatus.RECONNECTING;
+    expect(runtime.isRelayConnectionPending('wss://relay.example')).toBe(true);
+
+    connectivity._status = NDKRelayStatus.AUTHENTICATING;
+    expect(runtime.isRelayConnectionPending('wss://relay.example')).toBe(true);
+
+    connectivity._status = NDKRelayStatus.CONNECTED;
+    expect(runtime.isRelayConnectionPending('wss://relay.example')).toBe(false);
   });
 
   it('queues only the watchdog when a tracked private-message relay connects', async () => {
