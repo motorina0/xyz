@@ -5,10 +5,10 @@ services:
       context: ./docker/android-build
       dockerfile: Dockerfile
       args:
-        NODE_IMAGE: ${ANDROID_DOCKER_NODE_IMAGE:-node:24-bookworm}
+        NODE_IMAGE: ${ANDROID_DOCKER_NODE_IMAGE:-node:24-trixie}
         ANDROID_CMDLINE_TOOLS_ZIP: ${ANDROID_CMDLINE_TOOLS_ZIP:-commandlinetools-linux-14742923_latest.zip}
-        ANDROID_BUILD_TOOLS: ${ANDROID_BUILD_TOOLS:-34.0.0}
-        ANDROID_PLATFORM: ${ANDROID_PLATFORM:-android-34}
+        ANDROID_BUILD_TOOLS: ${ANDROID_BUILD_TOOLS:-35.0.0}
+        ANDROID_PLATFORM: ${ANDROID_PLATFORM:-android-36}
     working_dir: /workspace
     environment:
       ANDROID_HOME: /opt/android-sdk

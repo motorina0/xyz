@@ -66,7 +66,7 @@ if (resolvedJavaHome && !env.JAVA_HOME) {
   env.JAVA_HOME = resolvedJavaHome;
 }
 
-ensureJava17(env);
+ensureJava21(env);
 fs.mkdirSync(gradleUserHome, { recursive: true });
 
 console.log(`Android: ${command.description}`);
@@ -126,7 +126,7 @@ function findJavaHome() {
   return candidates.find(candidate => fs.existsSync(candidate)) || null;
 }
 
-function ensureJava17(env) {
+function ensureJava21(env) {
   const javaBin = env.JAVA_HOME
     ? path.join(env.JAVA_HOME, 'bin', process.platform === 'win32' ? 'java.exe' : 'java')
     : 'java';
@@ -137,7 +137,7 @@ function ensureJava17(env) {
   });
 
   if (result.error) {
-    console.error('Java was not found. Install JDK 17+ or set JAVA_HOME before running Android builds.');
+    console.error('Java was not found. Install JDK 21+ or set JAVA_HOME before running Android builds.');
     process.exit(1);
   }
 
@@ -151,8 +151,8 @@ function ensureJava17(env) {
   }
 
   const majorVersion = Number(match[1].replace('1.', ''));
-  if (majorVersion < 17) {
-    console.error(`Android builds require JDK 17+. Current Java: ${firstLine}`);
+  if (majorVersion < 21) {
+    console.error(`Android builds require JDK 21+. Current Java: ${firstLine}`);
     process.exit(1);
   }
 }

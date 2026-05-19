@@ -195,7 +195,7 @@ Android notes:
 
 - The native project lives in `src-capacitor/android`.
 - `build:android:*` builds inside Docker, so the host machine does not need a local JDK or Android SDK.
-- The Docker image uses the official Node Docker image plus OpenJDK 17 and Android command-line tools.
+- The Docker image uses the official Node Docker image plus OpenJDK 21 and Android command-line tools.
 - Docker builds default to `linux/amd64` for better Android SDK compatibility. Override with `ANDROID_DOCKER_PLATFORM` if you need a different target.
 - The helper scripts keep Gradle caches inside the repo via `.gradle-android/`, so builds do not depend on `~/.gradle`.
 - Linux container dependencies are isolated in Docker volumes instead of using your host `node_modules`.

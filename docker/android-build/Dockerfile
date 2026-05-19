@@ -1,9 +1,9 @@
-ARG NODE_IMAGE=node:24-bookworm
+ARG NODE_IMAGE=node:24-trixie
 FROM ${NODE_IMAGE}
 
 ARG ANDROID_CMDLINE_TOOLS_ZIP=commandlinetools-linux-14742923_latest.zip
-ARG ANDROID_BUILD_TOOLS=34.0.0
-ARG ANDROID_PLATFORM=android-34
+ARG ANDROID_BUILD_TOOLS=35.0.0
+ARG ANDROID_PLATFORM=android-36
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV ANDROID_HOME=/opt/android-sdk
@@ -17,7 +17,7 @@ RUN apt-get update \
     git \
     libc6-i386 \
     lib32stdc++6 \
-    openjdk-17-jdk \
+    openjdk-21-jdk \
     unzip \
     wget \
   && rm -rf /var/lib/apt/lists/*
