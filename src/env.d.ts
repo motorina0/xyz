@@ -1,8 +1,8 @@
 /// <reference types="@quasar/app-vite" />
 /// <reference types="vite/client" />
 
-import type { ComputedRef } from 'vue';
 import type { LocaleCode, TranslationParams } from 'src/i18n';
+import type { ComputedRef } from 'vue';
 
 declare module '@vue/runtime-core' {
   interface ComponentCustomProperties {

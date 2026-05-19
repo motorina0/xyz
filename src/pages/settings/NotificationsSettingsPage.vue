@@ -19,13 +19,38 @@
             @update:model-value="handleNotificationsToggle"
           />
         </div>
+
+        <div v-if="showPushGatewaySettings" class="notifications-card__gateway">
+          <q-input
+            v-model="pushGatewayUrlInput"
+            outlined
+            dense
+            :label="$t('notifications.android.pushGatewayUrl')"
+            :error="pushGatewayUrlValidationError.length > 0"
+            :error-message="pushGatewayUrlValidationError"
+            :disable="isPushGatewayUrlSaving"
+            data-testid="notifications-push-gateway-url-input"
+          />
+
+          <q-btn
+            unelevated
+            no-caps
+            color="primary"
+            icon="save"
+            :label="$t('notifications.android.savePushGatewayUrl')"
+            :disable="!canSavePushGatewayUrl"
+            :loading="isPushGatewayUrlSaving"
+            data-testid="notifications-push-gateway-url-save"
+            @click="savePushGatewayUrl"
+          />
+        </div>
       </q-card-section>
     </q-card>
   </SettingsDetailLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useQuasar } from 'quasar';
 import SettingsDetailLayout from 'src/components/SettingsDetailLayout.vue';
 import {
@@ -34,11 +59,17 @@ import {
   isAndroidPushNotificationConfigured,
   isAndroidPushNotificationSupported,
   readAndroidPushNotificationsPreference,
+  refreshAndroidPushRegistration,
   requestAndroidPushNotificationsAfterLogin,
   saveAndroidPushNotificationsPreference,
   unregisterAndroidPushNotifications,
   type AndroidPushPermissionState
 } from 'src/services/androidPushNotificationService';
+import {
+  readPushGatewayBaseUrl,
+  savePushGatewayBaseUrl,
+  validatePushGatewayBaseUrl
+} from 'src/services/pushGatewayClient';
 import {
   getBrowserNotificationPermission,
   isBrowserNotificationSupported,
@@ -73,6 +104,8 @@ const notificationsEnabled = ref(
         (notificationPermission.value === 'granted' || notificationPermission.value === 'native')
 );
 const isPermissionRequestInFlight = ref(false);
+const isPushGatewayUrlSaving = ref(false);
+const pushGatewayUrlInput = ref(readPushGatewayBaseUrl());
 const isDesktopRuntime =
   typeof window !== 'undefined' && Boolean(window.desktopRuntime?.isElectron);
 
@@ -92,6 +125,12 @@ onMounted(() => {
   void refreshAndroidPermissionState();
 });
 
+watch(notificationsEnabled, (isEnabled) => {
+  if (isAndroidRuntime && isEnabled) {
+    pushGatewayUrlInput.value = readPushGatewayBaseUrl();
+  }
+});
+
 const notificationsTitle = computed(() => {
   if (isAndroidRuntime) {
     return t('notifications.showAndroidPushNotifications');
@@ -99,6 +138,32 @@ const notificationsTitle = computed(() => {
 
   return isDesktopRuntime ? t('notifications.showDesktopNotifications') : t('notifications.showBrowserNotifications');
 });
+
+const showPushGatewaySettings = computed(() => isAndroidRuntime && notificationsEnabled.value);
+
+const pushGatewayUrlValidation = computed(() =>
+  validatePushGatewayBaseUrl(pushGatewayUrlInput.value)
+);
+
+const pushGatewayUrlValidationError = computed(() => {
+  switch (pushGatewayUrlValidation.value.reason) {
+    case 'empty':
+      return t('notifications.android.pushGatewayUrlRequired');
+    case 'invalid':
+      return t('notifications.android.pushGatewayUrlInvalid');
+    case 'protocol':
+      return t('notifications.android.pushGatewayUrlProtocol');
+    default:
+      return '';
+  }
+});
+
+const canSavePushGatewayUrl = computed(
+  () =>
+    showPushGatewaySettings.value &&
+    pushGatewayUrlValidation.value.isValid &&
+    !isPushGatewayUrlSaving.value
+);
 
 const notificationCaption = computed(() => {
   if (!notificationsSupported) {
@@ -143,6 +208,39 @@ async function refreshAndroidPermissionState(): Promise<void> {
   if (readAndroidPushNotificationsPreference() && notificationPermission.value !== 'granted') {
     saveAndroidPushNotificationsPreference(false);
     notificationsEnabled.value = false;
+  }
+}
+
+async function savePushGatewayUrl(): Promise<void> {
+  if (!pushGatewayUrlValidation.value.isValid || !pushGatewayUrlValidation.value.normalizedUrl) {
+    $q.notify({
+      type: 'warning',
+      message: pushGatewayUrlValidationError.value,
+      position: 'top',
+      timeout: 3200
+    });
+    return;
+  }
+
+  isPushGatewayUrlSaving.value = true;
+  try {
+    const savedUrl = savePushGatewayBaseUrl(pushGatewayUrlInput.value);
+    pushGatewayUrlInput.value = savedUrl;
+    await refreshAndroidPushRegistration();
+    $q.notify({
+      type: 'positive',
+      message: t('notifications.android.pushGatewayUrlSaved'),
+      position: 'top',
+      timeout: 2400
+    });
+  } catch (error) {
+    reportUiError(
+      'Failed to update Android push gateway URL',
+      error,
+      t('errors.failedUpdatePushGatewayUrl')
+    );
+  } finally {
+    isPushGatewayUrlSaving.value = false;
   }
 }
 
@@ -251,6 +349,9 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
     const permission = await requestAndroidPushNotificationsAfterLogin();
     notificationPermission.value = permission;
     notificationsEnabled.value = permission === 'granted';
+    if (permission === 'granted') {
+      pushGatewayUrlInput.value = readPushGatewayBaseUrl();
+    }
 
     if (permission !== 'granted') {
       clearAndroidPushNotificationsPreference();
@@ -294,5 +395,18 @@ async function handleAndroidPushNotificationsToggle(nextValue: boolean): Promise
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.notifications-card__gateway {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+}
+
+@media (max-width: 599px) {
+  .notifications-card__gateway {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

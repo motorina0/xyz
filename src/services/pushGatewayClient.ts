@@ -30,10 +30,119 @@ export interface PushGatewaySigner {
   signHttpAuthHeader(input: { url: string; method: string; body?: string }): Promise<string>;
 }
 
-const DEFAULT_PUSH_GATEWAY_BASE_URL = 'https://push.lnbits.link';
+export type PushGatewayBaseUrlValidationReason = 'empty' | 'invalid' | 'protocol';
+
+export interface PushGatewayBaseUrlValidation {
+  isValid: boolean;
+  normalizedUrl: string | null;
+  reason: PushGatewayBaseUrlValidationReason | null;
+}
+
+export const DEFAULT_PUSH_GATEWAY_BASE_URL = 'https://push.lnbits.link';
+
+const PUSH_GATEWAY_BASE_URL_STORAGE_KEY = 'push-gateway-base-url';
+
+function canUseStorage(): boolean {
+  return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
+}
+
+export function validatePushGatewayBaseUrl(value: string): PushGatewayBaseUrlValidation {
+  const trimmedValue = value.trim();
+  if (!trimmedValue) {
+    return {
+      isValid: false,
+      normalizedUrl: null,
+      reason: 'empty',
+    };
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(trimmedValue);
+  } catch {
+    return {
+      isValid: false,
+      normalizedUrl: null,
+      reason: 'invalid',
+    };
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return {
+      isValid: false,
+      normalizedUrl: null,
+      reason: 'protocol',
+    };
+  }
+
+  if (!parsedUrl.hostname) {
+    return {
+      isValid: false,
+      normalizedUrl: null,
+      reason: 'invalid',
+    };
+  }
+
+  parsedUrl.hash = '';
+  parsedUrl.search = '';
+
+  return {
+    isValid: true,
+    normalizedUrl: parsedUrl.toString().replace(/\/+$/, ''),
+    reason: null,
+  };
+}
+
+function normalizePushGatewayBaseUrl(value: string | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const validation = validatePushGatewayBaseUrl(value);
+  return validation.normalizedUrl;
+}
+
+export function readStoredPushGatewayBaseUrl(): string | null {
+  if (!canUseStorage()) {
+    return null;
+  }
+
+  try {
+    return normalizePushGatewayBaseUrl(
+      window.localStorage.getItem(PUSH_GATEWAY_BASE_URL_STORAGE_KEY) ?? undefined
+    );
+  } catch (error) {
+    console.error('Failed to read saved push gateway URL.', error);
+  }
+
+  return null;
+}
+
+export function savePushGatewayBaseUrl(value: string): string {
+  const validation = validatePushGatewayBaseUrl(value);
+  if (!validation.isValid || !validation.normalizedUrl) {
+    throw new Error('Push gateway URL must use http:// or https://.');
+  }
+
+  if (canUseStorage()) {
+    try {
+      window.localStorage.setItem(PUSH_GATEWAY_BASE_URL_STORAGE_KEY, validation.normalizedUrl);
+    } catch (error) {
+      console.error('Failed to persist push gateway URL.', error);
+    }
+  }
+
+  return validation.normalizedUrl;
+}
 
 export function readPushGatewayBaseUrl(): string {
-  const processEnv = process.env as Record<string, string | undefined>;
+  const storedUrl = readStoredPushGatewayBaseUrl();
+  if (storedUrl) {
+    return storedUrl;
+  }
+
+  const processEnv =
+    typeof process !== 'undefined' ? (process.env as Record<string, string | undefined>) : {};
   const viteEnv = import.meta.env as Record<string, string | undefined>;
   const configured = [
     processEnv.PUSH_GATEWAY_URL,
@@ -41,8 +150,10 @@ export function readPushGatewayBaseUrl(): string {
     viteEnv.PUSH_GATEWAY_URL,
     viteEnv.VITE_PUSH_GATEWAY_URL,
     DEFAULT_PUSH_GATEWAY_BASE_URL,
-  ].find((value) => typeof value === 'string' && value.trim().length > 0);
-  return configured.trim().replace(/\/+$/, '');
+  ]
+    .map(normalizePushGatewayBaseUrl)
+    .find((value): value is string => typeof value === 'string' && value.length > 0);
+  return configured ?? DEFAULT_PUSH_GATEWAY_BASE_URL;
 }
 
 export function isPushGatewayConfigured(): boolean {
