@@ -29,6 +29,11 @@ interface ChatActivitySnapshot {
   lastOutgoingMessageAt: string;
 }
 
+interface ChatReadCursor {
+  at: string;
+  eventId: string | null;
+}
+
 const LAST_SEEN_RECEIVED_ACTIVITY_AT_META_KEY = 'last_seen_received_activity_at';
 const CHAT_INBOX_STATE_META_KEY = 'inbox_state';
 const CHAT_ACCEPTED_AT_META_KEY = 'accepted_at';
@@ -50,6 +55,15 @@ function sortByLatest(chats: Chat[]): Chat[] {
 }
 
 function normalizeChatIdentifier(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  return normalizedValue || null;
+}
+
+function normalizeEventId(value: string | null | undefined): string | null {
   if (typeof value !== 'string') {
     return null;
   }
@@ -284,27 +298,50 @@ function countUnreadMessagesAfter(
   }, 0);
 }
 
-function findLatestIncomingMessageAt(
+function findLatestIncomingMessageActivity(
   messageRows: Awaited<ReturnType<typeof chatDataService.listMessages>>,
   loggedInPublicKey: string | null
-): string {
+): ChatReadCursor | null {
   if (!loggedInPublicKey) {
-    return '';
+    return null;
   }
 
-  let latestIncomingMessageAt = '';
+  let latestIncomingActivity: ChatReadCursor | null = null;
+  let latestIncomingTimestamp = 0;
+  let latestIncomingRowId = 0;
   for (const row of messageRows) {
     const authorPublicKey = normalizeChatIdentifier(row.author_public_key);
     if (!authorPublicKey || authorPublicKey === loggedInPublicKey) {
       continue;
     }
 
-    if (toComparableTimestamp(row.created_at) > toComparableTimestamp(latestIncomingMessageAt)) {
-      latestIncomingMessageAt = row.created_at;
+    const messageTimestamp = toComparableTimestamp(row.created_at);
+    if (messageTimestamp <= 0) {
+      continue;
+    }
+
+    const messageRowId = Number(row.id ?? 0);
+    if (
+      messageTimestamp > latestIncomingTimestamp ||
+      (messageTimestamp === latestIncomingTimestamp && messageRowId > latestIncomingRowId)
+    ) {
+      latestIncomingTimestamp = messageTimestamp;
+      latestIncomingRowId = messageRowId;
+      latestIncomingActivity = {
+        at: row.created_at,
+        eventId: normalizeEventId(row.event_id),
+      };
     }
   }
 
-  return latestIncomingMessageAt;
+  return latestIncomingActivity;
+}
+
+function findLatestIncomingMessageAt(
+  messageRows: Awaited<ReturnType<typeof chatDataService.listMessages>>,
+  loggedInPublicKey: string | null
+): string {
+  return findLatestIncomingMessageActivity(messageRows, loggedInPublicKey)?.at ?? '';
 }
 
 function resolveEffectiveLastSeenReceivedActivityAt(
@@ -562,6 +599,7 @@ export const __chatStoreTestUtils = {
   chatMatchesSearch,
   countUnreadMessagesAfter,
   findLatestIncomingMessageAt,
+  findLatestIncomingMessageActivity,
   mapChatRowToChat,
   resolveChatCategory,
   resolveDefaultSelectedChatId,
@@ -936,10 +974,10 @@ export const useChatStore = defineStore('chatStore', () => {
     }
   }
 
-  async function markAsRead(chatId: string): Promise<void> {
+  async function markAsRead(chatId: string): Promise<ChatReadCursor | null> {
     const normalizedChatId = normalizeChatIdentifier(chatId);
     if (!normalizedChatId) {
-      return;
+      return null;
     }
 
     const existingChat = chats.value.find((chat) => chat.id === normalizedChatId) ?? null;
@@ -969,10 +1007,11 @@ export const useChatStore = defineStore('chatStore', () => {
       currentMeta,
       CHAT_LAST_INCOMING_MESSAGE_AT_META_KEY
     );
-    const latestIncomingMessageAt = findLatestIncomingMessageAt(
+    const latestIncomingActivity = findLatestIncomingMessageActivity(
       await chatDataService.listMessages(normalizedChatId),
       getLoggedInPublicKey()
     );
+    const latestIncomingMessageAt = latestIncomingActivity?.at ?? '';
     const nextLastSeenReceivedActivityAt = resolveMarkAsReadBoundaryAt(
       currentLastSeenReceivedActivityAt,
       lastIncomingMessageAt,
@@ -984,6 +1023,16 @@ export const useChatStore = defineStore('chatStore', () => {
     }
 
     await setUnreadCount(normalizedChatId, 0);
+    const cursorAt =
+      nextLastSeenReceivedActivityAt ||
+      currentLastSeenReceivedActivityAt ||
+      latestIncomingMessageAt;
+    return cursorAt
+      ? {
+          at: cursorAt,
+          eventId: latestIncomingActivity?.eventId ?? null,
+        }
+      : null;
   }
 
   async function muteChat(chatId: string): Promise<void> {

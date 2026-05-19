@@ -950,7 +950,10 @@ async function handleMuteChat(chatId: string): Promise<void> {
 
 async function handleMarkChatAsRead(chatId: string): Promise<void> {
   try {
-    await chatStore.markAsRead(chatId);
+    const readCursor = await chatStore.markAsRead(chatId);
+    if (readCursor) {
+      nostrStore.scheduleContactCursorPublish(chatId, readCursor);
+    }
   } catch (error) {
     reportUiError('Failed to mark chat as read', error);
   }

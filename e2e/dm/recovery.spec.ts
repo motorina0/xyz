@@ -96,6 +96,7 @@ test('accepted DM restores thread history and keeps working after both users res
     await waitForThreadMessage(bob.page, beforeRestartMessage, {
       chatId: alice.session.publicKey,
     });
+    await waitForNoChatUnreadBadge(bob.page, TEST_ACCOUNTS.dmRestartAlice.displayName);
 
     await disposeUsers(alice, bob);
     alice = await bootstrapUser(browser, TEST_ACCOUNTS.dmRestartAlice);
@@ -105,6 +106,7 @@ test('accepted DM restores thread history and keeps working after both users res
     await waitForThreadMessage(bob.page, beforeRestartMessage, {
       chatId: alice.session.publicKey,
     });
+    await waitForNoChatUnreadBadge(bob.page, TEST_ACCOUNTS.dmRestartAlice.displayName);
     await sendMessage(bob.page, afterRestartReply, {
       chatId: alice.session.publicKey,
     });

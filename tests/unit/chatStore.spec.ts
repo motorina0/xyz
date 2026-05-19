@@ -10,6 +10,7 @@ const {
   chatMatchesSearch,
   countUnreadMessagesAfter,
   findLatestIncomingMessageAt,
+  findLatestIncomingMessageActivity,
   mapChatRowToChat,
   resolveChatCategory,
   resolveDefaultSelectedChatId,
@@ -106,24 +107,33 @@ describe('chatStore logic', () => {
   });
 
   it('resolves the durable mark-as-read boundary from the newest incoming message', () => {
-    const latestIncomingMessageAt = findLatestIncomingMessageAt(
-      [
-        {
-          author_public_key: 'me',
-          created_at: '2026-01-01T00:00:00.000Z',
-        },
-        {
-          author_public_key: 'them',
-          created_at: '2026-01-02T00:00:00.000Z',
-        },
-        {
-          author_public_key: 'them',
-          created_at: '2026-01-03T00:00:00.000Z',
-        },
-      ] as never,
-      'me'
-    );
+    const rows = [
+      {
+        id: 1,
+        author_public_key: 'me',
+        created_at: '2026-01-01T00:00:00.000Z',
+        event_id: 'own-event',
+      },
+      {
+        id: 2,
+        author_public_key: 'them',
+        created_at: '2026-01-02T00:00:00.000Z',
+        event_id: 'older-event',
+      },
+      {
+        id: 3,
+        author_public_key: 'them',
+        created_at: '2026-01-03T00:00:00.000Z',
+        event_id: 'latest-event',
+      },
+    ] as never;
+    const latestIncomingActivity = findLatestIncomingMessageActivity(rows, 'me');
+    const latestIncomingMessageAt = findLatestIncomingMessageAt(rows, 'me');
 
+    expect(latestIncomingActivity).toEqual({
+      at: '2026-01-03T00:00:00.000Z',
+      eventId: 'latest-event',
+    });
     expect(latestIncomingMessageAt).toBe('2026-01-03T00:00:00.000Z');
     expect(
       resolveMarkAsReadBoundaryAt(

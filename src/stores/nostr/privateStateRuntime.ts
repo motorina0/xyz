@@ -2156,23 +2156,27 @@ export function createPrivateStateRuntime({
       at: normalizedCursorAt,
       eventId: normalizeEventId(cursor.eventId),
     };
-    const pendingCursor = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
-    if (pendingCursor && compareContactCursorState(pendingCursor, nextCursorState) >= 0) {
+    const existingTimer = pendingContactCursorPublishTimers.get(normalizedContactPublicKey);
+    if (existingTimer) {
+      const pendingCursor = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
+      if (pendingCursor && compareContactCursorState(pendingCursor, nextCursorState) >= 0) {
+        return;
+      }
+
+      pendingContactCursorPublishStates.set(normalizedContactPublicKey, nextCursorState);
       return;
     }
 
     pendingContactCursorPublishStates.set(normalizedContactPublicKey, nextCursorState);
-
-    const existingTimer = pendingContactCursorPublishTimers.get(normalizedContactPublicKey);
-    if (existingTimer) {
-      globalThis.clearTimeout(existingTimer);
-    }
+    void publishContactCursor(normalizedContactPublicKey, nextCursorState).catch((error) => {
+      console.error('Failed to publish contact cursor event', normalizedContactPublicKey, error);
+    });
 
     const nextTimer = globalThis.setTimeout(() => {
       pendingContactCursorPublishTimers.delete(normalizedContactPublicKey);
       const cursorToPublish = pendingContactCursorPublishStates.get(normalizedContactPublicKey);
       pendingContactCursorPublishStates.delete(normalizedContactPublicKey);
-      if (!cursorToPublish) {
+      if (!cursorToPublish || compareContactCursorState(cursorToPublish, nextCursorState) <= 0) {
         return;
       }
 

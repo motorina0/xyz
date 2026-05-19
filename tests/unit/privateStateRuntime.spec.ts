@@ -154,6 +154,15 @@ function makeRelayStatus(overrides: Partial<MessageRelayStatus> = {}): MessageRe
   };
 }
 
+async function flushPromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+}
+
 function createDeps(overrides: Record<string, unknown> = {}) {
   const restoreState = {
     restoreContactCursorStatePromise: null,
@@ -345,6 +354,55 @@ describe('privateStateRuntime', () => {
         }
       )
     ).toBeLessThan(0);
+  });
+
+  it('publishes the first contact cursor immediately and coalesces trailing updates', async () => {
+    vi.useFakeTimers();
+    const deps = createDeps({
+      encryptContactCursorContent: vi.fn(async (cursor) => `cursor:${cursor.at}:${cursor.eventId}`),
+    });
+    const runtime = createPrivateStateRuntime(deps);
+    const contactPublicKey = 'a'.repeat(64);
+
+    runtime.scheduleContactCursorPublish(contactPublicKey, {
+      at: '2026-01-01T00:00:00.000Z',
+      eventId: 'first-event',
+    });
+
+    await flushPromises();
+
+    expect(ndkMocks.publishReplaceable).toHaveBeenCalledTimes(1);
+    expect(deps.pendingContactCursorPublishStates.get(contactPublicKey)).toEqual({
+      at: '2026-01-01T00:00:00.000Z',
+      eventId: 'first-event',
+    });
+    expect(deps.encryptContactCursorContent).toHaveBeenLastCalledWith({
+      at: '2026-01-01T00:00:00.000Z',
+      eventId: 'first-event',
+    });
+
+    runtime.scheduleContactCursorPublish(contactPublicKey, {
+      at: '2026-01-02T00:00:00.000Z',
+      eventId: 'second-event',
+    });
+
+    await flushPromises();
+
+    expect(ndkMocks.publishReplaceable).toHaveBeenCalledTimes(1);
+    expect(deps.pendingContactCursorPublishStates.get(contactPublicKey)).toEqual({
+      at: '2026-01-02T00:00:00.000Z',
+      eventId: 'second-event',
+    });
+
+    await vi.runOnlyPendingTimersAsync();
+    await flushPromises();
+
+    expect(ndkMocks.publishReplaceable).toHaveBeenCalledTimes(2);
+    expect(deps.encryptContactCursorContent).toHaveBeenLastCalledWith({
+      at: '2026-01-02T00:00:00.000Z',
+      eventId: 'second-event',
+    });
+    expect(deps.pendingContactCursorPublishStates.has(contactPublicKey)).toBe(false);
   });
 
   it('restores and persists decrypted private preferences from relays', async () => {
