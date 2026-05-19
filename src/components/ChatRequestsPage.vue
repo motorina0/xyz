@@ -8,21 +8,21 @@
           dense
           round
           icon="arrow_back"
-          :aria-label="$t('Back to chats')"
+          :aria-label="$t('chat.backChats')"
           class="requests-page__back"
           @click="$emit('back')"
         />
 
         <div class="requests-page__copy">
-          <div class="requests-page__eyebrow">{{ $t('Inbox Review') }}</div>
-          <h1 class="requests-page__title">{{ $t('Requests') }}</h1>
+          <div class="requests-page__eyebrow">{{ $t('chat.inboxReview') }}</div>
+          <h1 class="requests-page__title">{{ $t('chat.requests') }}</h1>
           <p class="requests-page__subtitle">
-            {{ $t('First-contact chats stay here until you reply or accept them.') }}
+            {{ $t('contacts.firstContactChatsStay') }}
           </p>
         </div>
       </div>
 
-      <div class="requests-page__summary" :aria-label="$t('Pending requests')">
+      <div class="requests-page__summary" :aria-label="$t('chat.pendingRequests.label')">
         <div class="requests-page__summary-count">{{ requestCount }}</div>
         <div class="requests-page__summary-label">{{ requestCountLabel }}</div>
       </div>
@@ -32,8 +32,8 @@
       <div class="requests-page__empty-icon" aria-hidden="true">
         <q-icon name="mark_email_unread" size="30px" />
       </div>
-      <div class="requests-page__empty-title">{{ $t('No pending requests') }}</div>
-      <div class="requests-page__empty-copy">{{ $t('Unknown inbound chats will appear here.') }}</div>
+      <div class="requests-page__empty-title">{{ $t('chat.pendingRequests.empty') }}</div>
+      <div class="requests-page__empty-copy">{{ $t('chat.unknownInboundChatsAppear') }}</div>
     </div>
 
     <q-scroll-area v-else class="requests-page__scroll">
@@ -75,7 +75,7 @@ const emit = defineEmits<{
 
 const requestCount = computed(() => props.requests.length);
 const requestCountLabel = computed(() => {
-  return requestCount.value === 1 ? t('Pending chat') : t('Pending chats');
+  return requestCount.value === 1 ? t('chat.pendingChat') : t('chat.pendingChats');
 });
 </script>
 

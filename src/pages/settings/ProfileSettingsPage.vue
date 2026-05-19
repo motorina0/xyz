@@ -1,5 +1,5 @@
 <template>
-  <SettingsDetailLayout :title="$t('Profile')" icon="face">
+  <SettingsDetailLayout :title="$t('profile.profile')" icon="face">
     <ContactProfile
       v-model="profileMetadata"
       v-model:pubkey="profilePubkey"
@@ -56,11 +56,11 @@ async function handlePublish(nextProfile: typeof profileMetadata.value): Promise
     await nostrStore.publishUserMetadata(buildContactProfilePublishPayload(nextProfile), relayStore.relays);
     $q.notify({
       type: 'positive',
-      message: t('Profile metadata published.'),
+      message: t('profile.profileMetadataPublished'),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to publish profile metadata', error, t('Failed to publish profile metadata.'));
+    reportUiError('Failed to publish profile metadata', error, t('errors.failedPublishProfileMetadata'));
   } finally {
     isPublishing.value = false;
   }

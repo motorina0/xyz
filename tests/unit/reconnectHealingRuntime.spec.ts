@@ -156,13 +156,13 @@ describe('reconnectHealingRuntime', () => {
 
     expect(healingState.value).toBe(false);
     expectStatusLabels(statusLabelUpdates, [
-      'Preparing sync',
-      'Checking session and network',
-      'Refreshing direct messages',
-      'Checking message relays',
-      'Retrying unsent messages',
-      'Applying pending message updates',
-      'Finishing sync',
+      'sync.preparing',
+      'sync.checkingSessionNetwork',
+      'sync.refreshingDirectMessages',
+      'sync.checkingMessageRelays',
+      'sync.retryingUnsentMessages',
+      'sync.applyingPendingMessageUpdates',
+      'sync.finishing',
       null,
     ]);
     expectStatusLabelsWereVisibleForMinimumDuration(statusLabelUpdates);
@@ -259,7 +259,7 @@ describe('reconnectHealingRuntime', () => {
     } = createRuntime();
 
     runtime.notifyRelayListChanged();
-    expectStatusLabels(statusLabelUpdates, ['Sync started: relay list changed']);
+    expectStatusLabels(statusLabelUpdates, ['sync.started:sync.reason.relayListChanged']);
 
     setIsRestoringStartupState(true);
     await vi.advanceTimersByTimeAsync(1500);
@@ -267,7 +267,7 @@ describe('reconnectHealingRuntime', () => {
 
     expect(refreshDirectMessages).not.toHaveBeenCalled();
     expect(refreshDeveloperPendingQueues).not.toHaveBeenCalled();
-    expectStatusLabels(statusLabelUpdates, ['Sync started: relay list changed', null]);
+    expectStatusLabels(statusLabelUpdates, ['sync.started:sync.reason.relayListChanged', null]);
     expect(statusLabelUpdates.map((entry) => entry.value)).not.toContain(
       'Checking session and network'
     );
@@ -287,15 +287,15 @@ describe('reconnectHealingRuntime', () => {
     expect(refreshDirectMessages).toHaveBeenCalledTimes(1);
     expect(refreshDeveloperPendingQueues).toHaveBeenCalledTimes(1);
     expect(statusLabelUpdates.map((entry) => entry.value)).toEqual([
-      'Sync started: relay list changed',
+      'sync.started:sync.reason.relayListChanged',
       null,
-      'Preparing sync',
-      'Checking session and network',
-      'Refreshing direct messages',
-      'Checking message relays',
-      'Retrying unsent messages',
-      'Applying pending message updates',
-      'Finishing sync',
+      'sync.preparing',
+      'sync.checkingSessionNetwork',
+      'sync.refreshingDirectMessages',
+      'sync.checkingMessageRelays',
+      'sync.retryingUnsentMessages',
+      'sync.applyingPendingMessageUpdates',
+      'sync.finishing',
       null,
     ]);
 
@@ -380,7 +380,7 @@ describe('reconnectHealingRuntime', () => {
     runtime.notifyWindowBlur();
     await vi.advanceTimersByTimeAsync(3000);
     runtime.notifyWindowFocus();
-    expectStatusLabels(statusLabelUpdates, ['Sync started: window focus']);
+    expectStatusLabels(statusLabelUpdates, ['sync.started:sync.reason.windowFocus']);
     await vi.advanceTimersByTimeAsync(750);
     await runQueuedTimersForStatusSteps(10);
     runtime.resetReconnectHealingRuntimeState();

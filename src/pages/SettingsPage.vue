@@ -9,14 +9,14 @@
       <aside v-if="!isMobile || isSettingsListView" class="settings-sidebar">
         <div class="settings-sidebar__top">
           <div class="settings-sidebar__header">
-            <div class="settings-sidebar__title">{{ $t('Settings') }}</div>
+            <div class="settings-sidebar__title">{{ $t('settings.settings') }}</div>
             <div class="settings-sidebar__actions">
               <q-btn
                 flat
                 dense
                 round
                 icon="refresh"
-                :aria-label="$t('Force Refresh')"
+                :aria-label="$t('settings.forceRefresh')"
                 class="settings-sidebar__action"
                 data-testid="settings-force-refresh-button"
                 :loading="appUpdateStore.isForceRefreshing"
@@ -29,7 +29,7 @@
                   class="settings-sidebar__action-badge"
                   label="1"
                 />
-                <AppTooltip>{{ $t('Force Refresh') }}</AppTooltip>
+                <AppTooltip>{{ $t('settings.forceRefresh') }}</AppTooltip>
               </q-btn>
             </div>
           </div>
@@ -71,7 +71,7 @@
         v-if="!isMobile"
         class="app-shell__resize-handle"
         role="separator"
-        :aria-label="$t('Resize left panel')"
+        :aria-label="$t('common.resizeLeftPanel')"
         aria-orientation="vertical"
         :aria-valuemin="minSidebarWidth"
         :aria-valuemax="maxSidebarWidth"
@@ -88,21 +88,21 @@
 
     <AppDialog
       v-model="isLogoutDialogOpen"
-      :title="$t('Log Out')"
-      :subtitle="$t('This will remove your saved key, chats, contacts, relays, caches, and other local app data from this device.')"
+      :title="$t('settings.logOut')"
+      :subtitle="$t('settings.logout.confirmation')"
       :persistent="isLoggingOut"
       :show-close="!isLoggingOut"
       max-width="460px"
     >
       <div class="settings-logout-dialog__body">
-        {{ $t('You will be redirected to the login page.') }}
+        {{ $t('settings.logout.redirectNotice') }}
       </div>
 
       <template #actions>
         <q-btn
           flat
           no-caps
-          :label="$t('Cancel')"
+          :label="$t('common.cancel')"
           :disable="isLoggingOut"
           @click="isLogoutDialogOpen = false"
         />
@@ -110,7 +110,7 @@
           unelevated
           no-caps
           color="negative"
-          :label="$t('Log Out')"
+          :label="$t('settings.logOut')"
           data-testid="settings-logout-confirm"
           :loading="isLoggingOut"
           @click="handleConfirmLogout"
@@ -120,21 +120,21 @@
 
     <AppDialog
       v-model="isForceRefreshDialogOpen"
-      :title="$t('Force Refresh')"
-      :subtitle="$t('A new version of the app is available. Force refresh will load the latest version from the server.')"
+      :title="$t('settings.forceRefresh')"
+      :subtitle="$t('settings.forceRefresh.newVersionNotice')"
       :persistent="appUpdateStore.isForceRefreshing"
       :show-close="!appUpdateStore.isForceRefreshing"
       max-width="460px"
     >
       <div class="settings-force-refresh-dialog__body">
-        {{ $t('Force refresh will only start after the app confirms the server is reachable.') }}
+        {{ $t('settings.forceRefreshOnlyStart') }}
       </div>
 
       <template #actions>
         <q-btn
           flat
           no-caps
-          :label="$t('Cancel')"
+          :label="$t('common.cancel')"
           :disable="appUpdateStore.isForceRefreshing"
           @click="isForceRefreshDialogOpen = false"
         />
@@ -142,7 +142,7 @@
           unelevated
           no-caps
           color="primary"
-          :label="$t('Force Refresh')"
+          :label="$t('settings.forceRefresh')"
           data-testid="settings-force-refresh-confirm"
           :loading="appUpdateStore.isForceRefreshing"
           @click="handleConfirmForceRefresh"
@@ -212,23 +212,23 @@ interface SettingsItem {
 }
 
 const settingsItems: SettingsItem[] = [
-  { key: 'profile', labelKey: 'Profile', icon: 'face', routeName: 'settings-profile' },
-  { key: 'relays', labelKey: 'Relays', icon: 'satellite_alt', routeName: 'settings-relays' },
-  { key: 'theme', labelKey: 'Theme', icon: 'wallpaper', routeName: 'settings-theme' },
-  { key: 'language', labelKey: 'Languages', icon: 'language', routeName: 'settings-language' },
+  { key: 'profile', labelKey: 'profile.profile', icon: 'face', routeName: 'settings-profile' },
+  { key: 'relays', labelKey: 'relays.title', icon: 'satellite_alt', routeName: 'settings-relays' },
+  { key: 'theme', labelKey: 'settings.theme', icon: 'wallpaper', routeName: 'settings-theme' },
+  { key: 'language', labelKey: 'settings.language.titlePlural', icon: 'language', routeName: 'settings-language' },
   {
     key: 'notifications',
-    labelKey: 'Notifications',
+    labelKey: 'notifications.notifications',
     icon: 'notifications',
     routeName: 'settings-notifications'
   },
   {
     key: 'developer',
-    labelKey: 'Developer',
+    labelKey: 'developer.developer',
     icon: 'terminal',
     routeName: 'settings-developer'
   },
-  { key: 'logout', labelKey: 'Log Out', icon: 'logout', action: 'logout' }
+  { key: 'logout', labelKey: 'settings.logOut', icon: 'logout', action: 'logout' }
 ];
 
 const activeSettingKey = computed(() => {
@@ -282,7 +282,7 @@ async function handleConfirmForceRefresh(): Promise<void> {
   if (result.reason === 'server-unreachable') {
     $q.notify({
       type: 'negative',
-      message: t('Server is not reachable. Force refresh was not started.'),
+      message: t('settings.serverReachableForceRefresh'),
       position: 'top'
     });
     return;
@@ -291,7 +291,7 @@ async function handleConfirmForceRefresh(): Promise<void> {
   if (result.reason === 'browser-unsupported') {
     $q.notify({
       type: 'negative',
-      message: t('Force refresh is not supported in this browser context.'),
+      message: t('settings.forceRefreshSupportedBrowser'),
       position: 'top'
     });
   }
@@ -314,7 +314,7 @@ async function handleConfirmLogout(): Promise<void> {
     window.location.reload();
   } catch (error) {
     isLoggingOut.value = false;
-    reportUiError('Failed to log out', error, t('Failed to log out.'));
+    reportUiError('Failed to log out', error, t('errors.failedLogOut'));
   }
 }
 </script>

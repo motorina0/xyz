@@ -1,12 +1,12 @@
 <template>
-  <SettingsDetailLayout :title="$t('Developer')" icon="terminal">
+  <SettingsDetailLayout :title="$t('developer.developer')" icon="terminal">
     <template #actions>
       <q-btn
         flat
         dense
         no-caps
         icon="refresh"
-        :label="$t('Refresh')"
+        :label="$t('common.refresh')"
         :loading="isRefreshingDiagnostics"
         @click="refreshDiagnostics"
       />
@@ -16,9 +16,9 @@
       <q-card flat bordered class="developer-card developer-card--recent-trace">
         <q-card-section class="developer-card__row">
           <div>
-            <div class="text-body1">{{ $t('Debug logging') }}</div>
+            <div class="text-body1">{{ $t('common.debugLogging') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Store relay and ingest traces in IndexedDB for developer diagnostics.') }}
+              {{ $t('developer.debugLogging.description') }}
             </div>
           </div>
 
@@ -35,21 +35,21 @@
       <q-card flat bordered class="developer-card">
         <q-card-section class="developer-card__header">
           <div>
-            <div class="text-h6">{{ $t('App Bundle') }}</div>
+            <div class="text-h6">{{ $t('developer.appBundle') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Loaded web bundle metadata used for app-shell cache update checks.') }}
+              {{ $t('developer.appBundle.description') }}
             </div>
           </div>
         </q-card-section>
 
         <q-card-section class="developer-card__section">
           <div class="developer-facts">
-            <div class="developer-facts__label">{{ $t('App version') }}</div>
+            <div class="developer-facts__label">{{ $t('common.appVersion') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
               {{ appUpdateStore.currentBuildInfo.appVersion }}
             </div>
 
-            <div class="developer-facts__label">{{ $t('Bundle id') }}</div>
+            <div class="developer-facts__label">{{ $t('developer.bundleId') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
               {{ appUpdateStore.currentBuildInfo.bundleId }}
             </div>
@@ -60,9 +60,9 @@
       <q-card flat bordered class="developer-card">
         <q-card-section class="developer-card__header">
           <div>
-            <div class="text-h6">{{ $t('Actions') }}</div>
+            <div class="text-h6">{{ $t('common.actions') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Restart subscriptions, reconnect relays, and export the current diagnostic bundle.') }}
+              {{ $t('developer.actions.description') }}
             </div>
           </div>
         </q-card-section>
@@ -74,7 +74,7 @@
               no-caps
               color="primary"
               icon="restart_alt"
-              :label="$t('Restart DM Subscription')"
+              :label="$t('developer.restartDmSubscription')"
               :loading="isRestartingSubscription"
               @click="handleRestartSubscription"
             />
@@ -82,7 +82,7 @@
               flat
               no-caps
               icon="sync"
-              :label="$t('Reconnect All Relays')"
+              :label="$t('relays.reconnectAllRelays')"
               :loading="isReconnectingAllRelays"
               @click="handleReconnectAllRelays"
             />
@@ -90,14 +90,14 @@
               flat
               no-caps
               icon="content_copy"
-              :label="$t('Copy JSON')"
+              :label="$t('common.copyJson')"
               @click="handleCopyDiagnostics"
             />
             <q-btn
               flat
               no-caps
               icon="download"
-              :label="$t('Download JSON')"
+              :label="$t('common.downloadJson')"
               @click="handleDownloadDiagnostics"
             />
             <q-btn
@@ -105,7 +105,7 @@
               no-caps
               color="negative"
               icon="delete_sweep"
-              :label="$t('Clear Trace')"
+              :label="$t('developer.clearTrace')"
               @click="handleClearTrace"
             />
           </div>
@@ -117,14 +117,14 @@
               dense
               type="number"
               min="1"
-              :label="$t('Replay lookback (minutes)')"
+              :label="$t('common.replayLookbackMinutes')"
               class="developer-actions__replay-input"
             />
             <q-btn
               outline
               no-caps
               icon="history"
-              :label="$t('Reload From Lookback')"
+              :label="$t('common.reloadLookback')"
               :loading="isReloadingFromLookback"
               @click="handleReloadFromLookback"
             />
@@ -142,9 +142,9 @@
           @keydown.space.prevent="toggleExpandableCard('relayStatus')"
         >
           <div class="developer-card__header-main">
-            <div class="text-h6">{{ $t('Relay Status') }}</div>
+            <div class="text-h6">{{ $t('relays.relayStatus') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Effective relay set with connection state, roles, and quick reconnect actions.') }}
+              {{ $t('developer.relayStatus.description') }}
             </div>
           </div>
 
@@ -161,18 +161,18 @@
           <div v-show="expandedCards.relayStatus">
             <q-card-section v-if="diagnostics" class="developer-card__section developer-card__section--flush">
               <div v-if="diagnostics.relayRows.length === 0" class="developer-empty-state">
-                {{ $t('No relay diagnostics available yet.') }}
+                {{ $t('developer.relayDiagnosticsAvailableYet') }}
               </div>
 
               <q-markup-table v-else flat class="developer-table">
                 <thead>
                   <tr>
-                    <th class="text-left">{{ $t('Relay') }}</th>
-                    <th class="text-left">{{ $t('Roles') }}</th>
-                    <th class="text-left">{{ $t('Status') }}</th>
-                    <th class="text-left">{{ $t('Attempts') }}</th>
-                    <th class="text-left">{{ $t('Connected at') }}</th>
-                    <th class="text-right">{{ $t('Action') }}</th>
+                    <th class="text-left">{{ $t('relays.relay') }}</th>
+                    <th class="text-left">{{ $t('common.roles') }}</th>
+                    <th class="text-left">{{ $t('common.status') }}</th>
+                    <th class="text-left">{{ $t('common.attempts') }}</th>
+                    <th class="text-left">{{ $t('developer.connectedAt') }}</th>
+                    <th class="text-right">{{ $t('common.action') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -184,9 +184,9 @@
                         {{ relayStatusName(relay) }}
                       </q-badge>
                     </td>
-                    <td>{{ relay.attempts ?? $t('n/a') }}</td>
+                    <td>{{ relay.attempts ?? $t('common.n') }}</td>
                     <td class="developer-table__mono">
-                      {{ relay.connectedAt ? formatUnixTimestamp(relay.connectedAt) : $t('n/a') }}
+                      {{ relay.connectedAt ? formatUnixTimestamp(relay.connectedAt) : $t('common.n') }}
                     </td>
                     <td class="text-right">
                       <q-btn
@@ -194,7 +194,7 @@
                         dense
                         no-caps
                         icon="sync"
-                        :label="$t('Reconnect')"
+                        :label="$t('common.reconnect')"
                         :loading="Boolean(reconnectingRelayUrls[relay.url])"
                         @click="handleReconnectRelay(relay.url)"
                       />
@@ -217,9 +217,9 @@
           @keydown.space.prevent="toggleExpandableCard('groupMessagesSubscription')"
         >
           <div class="developer-card__header-main">
-            <div class="text-h6">{{ $t('Group Messages Subscription') }}</div>
+            <div class="text-h6">{{ $t('developer.groupMessagesSubscription') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Group epoch inboxes currently included in the app message subscription.') }}
+              {{ $t('developer.groupSubscription.description') }}
             </div>
           </div>
 
@@ -242,18 +242,18 @@
                 v-if="diagnostics.groupMessagesSubscription.length === 0"
                 class="developer-empty-state"
               >
-                {{ $t('No group subscriptions are active.') }}
+                {{ $t('developer.groupSubscriptionsActive') }}
               </div>
 
               <q-markup-table v-else flat class="developer-table">
                 <thead>
                   <tr>
-                    <th class="text-left">{{ $t('Name') }}</th>
-                    <th class="text-left">{{ $t('Pubkey') }}</th>
-                    <th class="text-left">{{ $t('Epoch Pubkey') }}</th>
-                    <th class="text-left">{{ $t('Epoch Number') }}</th>
-                    <th class="text-left">{{ $t('Subscription') }}</th>
-                    <th class="text-left">{{ $t('Details') }}</th>
+                    <th class="text-left">{{ $t('common.name') }}</th>
+                    <th class="text-left">{{ $t('contacts.pubkey.label') }}</th>
+                    <th class="text-left">{{ $t('group.epochPubkey') }}</th>
+                    <th class="text-left">{{ $t('group.epochNumber') }}</th>
+                    <th class="text-left">{{ $t('developer.subscription') }}</th>
+                    <th class="text-left">{{ $t('common.details') }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -264,7 +264,7 @@
                     <td>{{ entry.name }}</td>
                     <td class="developer-table__mono">{{ entry.pubkey }}</td>
                     <td class="developer-table__mono">{{ entry.epochPubkey }}</td>
-                    <td>{{ entry.epochNumber ?? $t('n/a') }}</td>
+                    <td>{{ entry.epochNumber ?? $t('common.n') }}</td>
                     <td class="developer-subscription-table__details-cell">
                       <q-expansion-item
                         dense
@@ -272,7 +272,7 @@
                         expand-icon="keyboard_arrow_right"
                         expanded-icon="keyboard_arrow_down"
                         class="developer-expansion"
-                        :label="$t('JSON')"
+                        :label="$t('common.json')"
                       >
                         <pre class="developer-json developer-json--table">{{
                           formatJson(buildGroupSubscriptionPayload(entry))
@@ -286,7 +286,7 @@
                         expand-icon="keyboard_arrow_right"
                         expanded-icon="keyboard_arrow_down"
                         class="developer-expansion"
-                        :label="$t('JSON')"
+                        :label="$t('common.json')"
                       >
                         <pre class="developer-json developer-json--table">{{ formatJson(entry.details) }}</pre>
                       </q-expansion-item>
@@ -309,9 +309,9 @@
           @keydown.space.prevent="toggleExpandableCard('nostrSession')"
         >
           <div class="developer-card__header-main">
-            <div class="text-h6">{{ $t('Nostr Session') }}</div>
+            <div class="text-h6">{{ $t('common.nostrSession') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Current login, relay resolution, and cursor state used by the app.') }}
+              {{ $t('developer.nostrSession.description') }}
             </div>
           </div>
 
@@ -328,49 +328,49 @@
           <div v-show="expandedCards.nostrSession">
             <q-card-section v-if="diagnostics" class="developer-card__section">
           <div class="developer-facts">
-            <div class="developer-facts__label">{{ $t('Auth method') }}</div>
-            <div class="developer-facts__value">{{ diagnostics.session.authMethod ?? $t('none') }}</div>
+            <div class="developer-facts__label">{{ $t('common.authMethod') }}</div>
+            <div class="developer-facts__value">{{ diagnostics.session.authMethod ?? $t('common.none') }}</div>
 
-            <div class="developer-facts__label">{{ $t('Logged in pubkey') }}</div>
+            <div class="developer-facts__label">{{ $t('contacts.loggedPubkey') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.session.loggedInPubkey ?? $t('Not logged in') }}
+              {{ diagnostics.session.loggedInPubkey ?? $t('common.logged') }}
             </div>
 
-            <div class="developer-facts__label">{{ $t('Event cursor') }}</div>
+            <div class="developer-facts__label">{{ $t('common.eventCursor') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
               {{ diagnostics.session.eventSince }}<span v-if="diagnostics.session.eventSinceIso"> · {{ diagnostics.session.eventSinceIso }}</span>
             </div>
 
-            <div class="developer-facts__label">{{ $t('Filter since') }}</div>
+            <div class="developer-facts__label">{{ $t('common.filterSince') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
               {{ diagnostics.session.filterSince }}<span v-if="diagnostics.session.filterSinceIso"> · {{ diagnostics.session.filterSinceIso }}</span>
             </div>
 
-            <div class="developer-facts__label">{{ $t('Startup restore') }}</div>
+            <div class="developer-facts__label">{{ $t('startup.startupRestore') }}</div>
             <div class="developer-facts__value">
-              {{ diagnostics.session.isRestoringStartupState ? $t('running') : $t('idle') }}
+              {{ diagnostics.session.isRestoringStartupState ? $t('common.running') : $t('common.idle') }}
             </div>
 
-            <div class="developer-facts__label">{{ $t('NIP-07 extension') }}</div>
+            <div class="developer-facts__label">{{ $t('auth.nip07Extension') }}</div>
             <div class="developer-facts__value">
-              {{ diagnostics.session.hasNip07Extension ? $t('available') : $t('not detected') }}
+              {{ diagnostics.session.hasNip07Extension ? $t('common.available') : $t('common.detected') }}
             </div>
 
             <template v-if="diagnostics.session.authMethod === 'nip46'">
-              <div class="developer-facts__label">{{ $t('NIP-46 signer') }}</div>
+              <div class="developer-facts__label">{{ $t('auth.nip46Signer') }}</div>
               <div class="developer-facts__value developer-facts__value--mono">
-                {{ diagnostics.session.nip46SignerPubkey ?? $t('unknown') }}
+                {{ diagnostics.session.nip46SignerPubkey ?? $t('common.unknown') }}
               </div>
 
-              <div class="developer-facts__label">{{ $t('NIP-46 relays') }}</div>
+              <div class="developer-facts__label">{{ $t('auth.nip46Relays') }}</div>
               <div class="developer-facts__value developer-facts__value--mono">
-                {{ diagnostics.session.nip46RelayUrls.join(', ') || $t('none') }}
+                {{ diagnostics.session.nip46RelayUrls.join(', ') || $t('common.none') }}
               </div>
             </template>
           </div>
 
           <div class="developer-chip-group">
-            <div class="developer-chip-group__label">{{ $t('App relays') }}</div>
+            <div class="developer-chip-group__label">{{ $t('relays.appRelays.label') }}</div>
             <div class="developer-chip-group__items">
               <q-chip
                 v-for="relayUrl in diagnostics.session.appRelayUrls"
@@ -381,13 +381,13 @@
                 {{ relayUrl }}
               </q-chip>
               <div v-if="diagnostics.session.appRelayUrls.length === 0" class="developer-empty-inline">
-                {{ $t('No app relays configured.') }}
+                {{ $t('relays.appRelaysConfigured') }}
               </div>
             </div>
           </div>
 
           <div class="developer-chip-group">
-            <div class="developer-chip-group__label">{{ $t('My relays (NIP-65)') }}</div>
+            <div class="developer-chip-group__label">{{ $t('relays.nip65.mineLabel') }}</div>
             <div class="developer-chip-group__items">
               <q-chip
                 v-for="relay in diagnostics.session.myRelayEntries"
@@ -401,13 +401,13 @@
                 </span>
               </q-chip>
               <div v-if="diagnostics.session.myRelayEntries.length === 0" class="developer-empty-inline">
-                {{ $t('No NIP-65 relays found.') }}
+                {{ $t('relays.nip65RelaysFound') }}
               </div>
             </div>
           </div>
 
           <div class="developer-chip-group">
-            <div class="developer-chip-group__label">{{ $t('Effective read relays') }}</div>
+            <div class="developer-chip-group__label">{{ $t('relays.effectiveReadRelays') }}</div>
             <div class="developer-chip-group__items">
               <q-chip
                 v-for="relayUrl in diagnostics.session.effectiveReadRelayUrls"
@@ -418,13 +418,13 @@
                 {{ relayUrl }}
               </q-chip>
               <div v-if="diagnostics.session.effectiveReadRelayUrls.length === 0" class="developer-empty-inline">
-                {{ $t('No read relays resolved.') }}
+                {{ $t('relays.readRelaysResolved') }}
               </div>
             </div>
           </div>
 
           <div class="developer-chip-group">
-            <div class="developer-chip-group__label">{{ $t('Effective publish relays') }}</div>
+            <div class="developer-chip-group__label">{{ $t('relays.effectivePublishRelays') }}</div>
             <div class="developer-chip-group__items">
               <q-chip
                 v-for="relayUrl in diagnostics.session.effectivePublishRelayUrls"
@@ -435,7 +435,7 @@
                 {{ relayUrl }}
               </q-chip>
               <div v-if="diagnostics.session.effectivePublishRelayUrls.length === 0" class="developer-empty-inline">
-                {{ $t('No publish relays resolved.') }}
+                {{ $t('relays.publishRelaysResolved') }}
               </div>
             </div>
           </div>
@@ -454,15 +454,15 @@
           @keydown.space.prevent="toggleExpandableCard('privateMessagesSubscription')"
         >
           <div class="developer-card__header-main">
-            <div class="text-h6">{{ $t('Private Messages Subscription') }}</div>
+            <div class="text-h6">{{ $t('developer.privateMessagesSubscription') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Active DM subscription details, last event seen, and current relay set.') }}
+              {{ $t('developer.dmSubscription.description') }}
             </div>
           </div>
 
           <div class="developer-card__header-side">
             <q-badge :color="subscriptionBadgeColor" outline>
-              {{ diagnostics?.privateMessagesSubscription.active ? $t('active') : $t('inactive') }}
+              {{ diagnostics?.privateMessagesSubscription.active ? $t('common.active') : $t('common.inactive') }}
             </q-badge>
             <q-icon
               :name="expandedCards.privateMessagesSubscription ? 'expand_less' : 'expand_more'"
@@ -476,55 +476,55 @@
           <div v-show="expandedCards.privateMessagesSubscription">
             <q-card-section v-if="diagnostics" class="developer-card__section">
           <div class="developer-facts">
-            <div class="developer-facts__label">{{ $t('Signature') }}</div>
+            <div class="developer-facts__label">{{ $t('common.signature') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.privateMessagesSubscription.signature ?? $t('none') }}
+              {{ diagnostics.privateMessagesSubscription.signature ?? $t('common.none') }}
             </div>
 
-            <div class="developer-facts__label">{{ $t('Since') }}</div>
+            <div class="developer-facts__label">{{ $t('common.since') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.privateMessagesSubscription.since ?? $t('n/a') }}
+              {{ diagnostics.privateMessagesSubscription.since ?? $t('common.n') }}
               <span v-if="diagnostics.privateMessagesSubscription.sinceIso">
                 · {{ diagnostics.privateMessagesSubscription.sinceIso }}
               </span>
             </div>
 
-            <div class="developer-facts__label">{{ $t('Restore throttle') }}</div>
+            <div class="developer-facts__label">{{ $t('startup.restoreThrottle') }}</div>
             <div class="developer-facts__value">
               {{ diagnostics.privateMessagesSubscription.restoreThrottleMs }} ms
             </div>
 
-            <div class="developer-facts__label">{{ $t('Started') }}</div>
+            <div class="developer-facts__label">{{ $t('common.started') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.privateMessagesSubscription.startedAt ?? $t('n/a') }}
+              {{ diagnostics.privateMessagesSubscription.startedAt ?? $t('common.n') }}
             </div>
 
-            <div class="developer-facts__label">{{ $t('Last event seen') }}</div>
+            <div class="developer-facts__label">{{ $t('common.lastEventSeen') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.privateMessagesSubscription.lastEventSeenAt ?? $t('n/a') }}
+              {{ diagnostics.privateMessagesSubscription.lastEventSeenAt ?? $t('common.n') }}
             </div>
 
-            <div class="developer-facts__label">{{ $t('Last event id') }}</div>
+            <div class="developer-facts__label">{{ $t('message.lastEventId') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.privateMessagesSubscription.lastEventId ?? $t('n/a') }}
+              {{ diagnostics.privateMessagesSubscription.lastEventId ?? $t('common.n') }}
             </div>
 
-            <div class="developer-facts__label">{{ $t('Last event created_at') }}</div>
+            <div class="developer-facts__label">{{ $t('common.lastEventCreated') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.privateMessagesSubscription.lastEventCreatedAt ?? $t('n/a') }}
+              {{ diagnostics.privateMessagesSubscription.lastEventCreatedAt ?? $t('common.n') }}
               <span v-if="diagnostics.privateMessagesSubscription.lastEventCreatedAtIso">
                 · {{ diagnostics.privateMessagesSubscription.lastEventCreatedAtIso }}
               </span>
             </div>
 
-            <div class="developer-facts__label">{{ $t('Last EOSE') }}</div>
+            <div class="developer-facts__label">{{ $t('common.lastEose') }}</div>
             <div class="developer-facts__value developer-facts__value--mono">
-              {{ diagnostics.privateMessagesSubscription.lastEoseAt ?? $t('n/a') }}
+              {{ diagnostics.privateMessagesSubscription.lastEoseAt ?? $t('common.n') }}
             </div>
           </div>
 
           <div class="developer-chip-group">
-            <div class="developer-chip-group__label">{{ $t('Subscription relays') }}</div>
+            <div class="developer-chip-group__label">{{ $t('developer.subscriptionRelays') }}</div>
             <div class="developer-chip-group__items">
               <q-chip
                 v-for="relayUrl in diagnostics.privateMessagesSubscription.relayUrls"
@@ -538,7 +538,7 @@
                 v-if="diagnostics.privateMessagesSubscription.relayUrls.length === 0"
                 class="developer-empty-inline"
               >
-                {{ $t('No active DM subscription relays.') }}
+                {{ $t('developer.activeDmSubscriptionRelays') }}
               </div>
             </div>
           </div>
@@ -557,9 +557,9 @@
           @keydown.space.prevent="toggleExpandableCard('pendingQueues')"
         >
           <div class="developer-card__header-main">
-            <div class="text-h6">{{ $t('Pending Queues') }}</div>
+            <div class="text-h6">{{ $t('developer.pendingQueues') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Incoming reactions and deletions waiting on their target messages or events.') }}
+              {{ $t('developer.pendingQueues.description') }}
             </div>
           </div>
 
@@ -569,7 +569,7 @@
               dense
               no-caps
               icon="refresh"
-              :label="$t('Refresh')"
+              :label="$t('common.refresh')"
               class="developer-card__refresh-button"
               :loading="isRefreshingPendingQueues"
               @click.stop="handleRefreshPendingQueues"
@@ -587,18 +587,18 @@
             <q-card-section v-if="diagnostics" class="developer-card__section">
           <div class="developer-queue-summary">
             <q-badge color="primary" outline>
-              {{ $t('Reactions: {count}', { count: totalPendingReactions }) }}
+              {{ $t('message.reactions', { count: totalPendingReactions }) }}
             </q-badge>
             <q-badge color="secondary" outline>
-              {{ $t('Deletions: {count}', { count: totalPendingDeletions }) }}
+              {{ $t('common.deletions', { count: totalPendingDeletions }) }}
             </q-badge>
           </div>
 
           <div class="developer-queues">
             <div class="developer-queue">
-              <div class="developer-queue__title">{{ $t('Pending reactions') }}</div>
+              <div class="developer-queue__title">{{ $t('message.pendingReactions.title') }}</div>
               <div v-if="diagnostics.pendingReactions.length === 0" class="developer-empty-inline">
-                {{ $t('No pending reactions.') }}
+                {{ $t('message.pendingReactions.empty') }}
               </div>
               <q-expansion-item
                 v-for="entry in diagnostics.pendingReactions"
@@ -615,9 +615,9 @@
             </div>
 
             <div class="developer-queue">
-              <div class="developer-queue__title">{{ $t('Pending deletions') }}</div>
+              <div class="developer-queue__title">{{ $t('developer.pendingDeletions.title') }}</div>
               <div v-if="diagnostics.pendingDeletions.length === 0" class="developer-empty-inline">
-                {{ $t('No pending deletions.') }}
+                {{ $t('developer.pendingDeletions.empty') }}
               </div>
               <q-expansion-item
                 v-for="entry in diagnostics.pendingDeletions"
@@ -648,9 +648,9 @@
           @keydown.space.prevent="toggleExpandableCard('recentTrace')"
         >
           <div class="developer-card__header-main">
-            <div class="text-h6">{{ $t('Recent Trace') }}</div>
+            <div class="text-h6">{{ $t('developer.recentTrace') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Most recent relay, subscription, and ingest diagnostics captured in-app.') }}
+              {{ $t('developer.recentTrace.description') }}
             </div>
           </div>
 
@@ -663,7 +663,7 @@
               class="developer-card__refresh-button"
               @click.stop="handleRefreshRecentTrace"
             >
-              <span>{{ $t('Refresh') }}</span>
+              <span>{{ $t('common.refresh') }}</span>
               <q-badge
                 v-if="newTraceEntryCount > 0"
                 color="primary"
@@ -685,7 +685,7 @@
           <div v-show="expandedCards.recentTrace">
             <q-card-section class="developer-card__section">
               <div v-if="displayedTraceEntries.length === 0" class="developer-empty-state">
-                {{ $t('No trace entries captured yet.') }}
+                {{ $t('developer.traceEntriesCapturedYet') }}
               </div>
 
               <div v-else class="developer-trace-table-shell">
@@ -697,7 +697,7 @@
                     clearable
                     options-dense
                     :options="traceLevelOptions"
-                    :label="$t('Level')"
+                    :label="$t('common.level')"
                     class="developer-trace-filters__field"
                   />
 
@@ -708,7 +708,7 @@
                     clearable
                     options-dense
                     :options="traceScopeOptions"
-                    :label="$t('Scope')"
+                    :label="$t('common.scope')"
                     class="developer-trace-filters__field"
                   />
 
@@ -719,23 +719,23 @@
                     clearable
                     options-dense
                     :options="tracePhaseOptions"
-                    :label="$t('Phase')"
+                    :label="$t('common.phase')"
                     class="developer-trace-filters__field"
                   />
                 </div>
 
                 <div v-if="filteredTraceEntries.length === 0" class="developer-empty-state">
-                  {{ $t('No trace entries match the current filters.') }}
+                  {{ $t('developer.traceEntriesMatchCurrent') }}
                 </div>
 
                 <q-markup-table v-else flat class="developer-table developer-trace-table">
                   <thead>
                     <tr>
-                      <th class="text-left">{{ $t('Timestamp') }}</th>
-                      <th class="text-left">{{ $t('Level') }}</th>
-                      <th class="text-left">{{ $t('Scope') }}</th>
-                      <th class="text-left">{{ $t('Phase') }}</th>
-                      <th class="text-left">{{ $t('Details') }}</th>
+                      <th class="text-left">{{ $t('common.timestamp') }}</th>
+                      <th class="text-left">{{ $t('common.level') }}</th>
+                      <th class="text-left">{{ $t('common.scope') }}</th>
+                      <th class="text-left">{{ $t('common.phase') }}</th>
+                      <th class="text-left">{{ $t('common.details') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -802,9 +802,9 @@
           @keydown.space.prevent="toggleExpandableCard('startupHistory')"
         >
           <div class="developer-card__header-main">
-            <div class="text-h6">{{ $t('Startup History') }}</div>
+            <div class="text-h6">{{ $t('startup.startupHistory') }}</div>
             <div class="text-caption text-grey-6">
-              {{ $t('Restore steps captured during login and startup state recovery.') }}
+              {{ $t('developer.startupHistory.description') }}
             </div>
           </div>
 
@@ -967,7 +967,7 @@ watch(
     traceRefreshDebounceId = globalThis.setTimeout(() => {
       traceRefreshDebounceId = null;
       void refreshLatestTraceEntries().catch((error) => {
-        reportUiError('Failed to refresh latest trace data', error, t('Failed to refresh recent trace.'));
+        reportUiError('Failed to refresh latest trace data', error, t('errors.failedRefreshRecentTrace'));
       });
     }, 120);
   }
@@ -991,7 +991,7 @@ onBeforeUnmount(() => {
 });
 
 void refreshRecentTraceEntries().catch((error) => {
-  reportUiError('Failed to load recent trace data', error, t('Failed to load recent trace.'));
+  reportUiError('Failed to load recent trace data', error, t('errors.failedLoadRecentTrace'));
 });
 
 async function refreshDiagnostics(): Promise<void> {
@@ -1006,7 +1006,7 @@ async function refreshDiagnostics(): Promise<void> {
 
     diagnostics.value = snapshot;
   } catch (error) {
-    reportUiError('Failed to refresh developer diagnostics', error, t('Failed to refresh developer diagnostics.'));
+    reportUiError('Failed to refresh developer diagnostics', error, t('errors.failedRefreshDeveloperDiagnostics'));
   } finally {
     if (requestId === refreshRequestId) {
       isRefreshingDiagnostics.value = false;
@@ -1032,11 +1032,11 @@ async function handleRestartSubscription(): Promise<void> {
     await nostrStore.restartPrivateMessagesDiagnosticsSubscription();
     $q.notify({
       type: 'positive',
-      message: t('Private messages subscription restarted.'),
+      message: t('developer.privateMessagesSubscriptionRestarted'),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to restart private messages subscription', error, t('Failed to restart DM subscription.'));
+    reportUiError('Failed to restart private messages subscription', error, t('errors.failedRestartDmSubscription'));
   } finally {
     isRestartingSubscription.value = false;
   }
@@ -1052,11 +1052,11 @@ async function handleReconnectAllRelays(): Promise<void> {
     await nostrStore.reconnectAllDeveloperRelays();
     $q.notify({
       type: 'positive',
-      message: t('Reconnect attempt started for all relays.'),
+      message: t('developer.reconnectAll.started'),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to reconnect all relays', error, t('Failed to reconnect relays.'));
+    reportUiError('Failed to reconnect all relays', error, t('errors.failedReconnectRelays'));
   } finally {
     isReconnectingAllRelays.value = false;
   }
@@ -1072,11 +1072,11 @@ async function handleReconnectRelay(relayUrl: string): Promise<void> {
     await nostrStore.reconnectDeveloperRelay(relayUrl);
     $q.notify({
       type: 'positive',
-      message: t('Reconnect attempt started for {relay}.', { relay: relayUrl }),
+      message: t('developer.reconnectRelay.started', { relay: relayUrl }),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to reconnect relay', error, t('Failed to reconnect relay.'));
+    reportUiError('Failed to reconnect relay', error, t('errors.failedReconnectRelay'));
   } finally {
     reconnectingRelayUrls.value = {
       ...reconnectingRelayUrls.value,
@@ -1097,13 +1097,13 @@ async function handleReloadFromLookback(): Promise<void> {
     });
     $q.notify({
       type: 'positive',
-      message: t('DM reload started from the last {count} minutes.', {
+      message: t('common.dmReloadStartedLast', {
         count: Math.max(1, Math.floor(replayLookbackMinutes.value || 0))
       }),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to replay private messages from lookback', error, t('Failed to reload messages from lookback.'));
+    reportUiError('Failed to replay private messages from lookback', error, t('errors.failedReloadMessagesLookback'));
   } finally {
     isReloadingFromLookback.value = false;
   }
@@ -1122,27 +1122,27 @@ async function handleRefreshPendingQueues(): Promise<void> {
     if (summary.initialEntryCount === 0) {
       $q.notify({
         type: 'info',
-        message: t('No pending queue items to refresh.'),
+        message: t('developer.pendingQueueItemsRefresh'),
         position: 'top'
       });
       return;
     }
 
     const clearedEntryCount = Math.max(0, summary.initialEntryCount - summary.remainingEntryCount);
-    const clearedEntryLabel = clearedEntryCount === 1 ? t('item') : t('items');
+    const clearedEntryLabel = clearedEntryCount === 1 ? t('common.item') : t('common.items');
     const checkedTargetLabel =
-      summary.initialTargetCount === 1 ? t('pending target') : t('pending targets');
-    const pendingEntryLabel = summary.remainingEntryCount === 1 ? t('item') : t('items');
+      summary.initialTargetCount === 1 ? t('common.pendingTarget') : t('common.pendingTargets');
+    const pendingEntryLabel = summary.remainingEntryCount === 1 ? t('common.item') : t('common.items');
 
     $q.notify({
       type: summary.remainingEntryCount === 0 ? 'positive' : 'info',
       message:
         summary.remainingEntryCount === 0
-          ? t('Pending queues refreshed. Cleared {count} {itemLabel}.', {
+          ? t('developer.pendingQueuesRefreshedCleared', {
               count: clearedEntryCount,
               itemLabel: clearedEntryLabel
             })
-          : t('Pending queues refreshed. Checked {targetCount} {targetLabel}; {entryCount} {entryLabel} still pending.', {
+          : t('developer.pendingQueuesRefreshedChecked', {
               targetCount: summary.initialTargetCount,
               targetLabel: checkedTargetLabel,
               entryCount: summary.remainingEntryCount,
@@ -1151,7 +1151,7 @@ async function handleRefreshPendingQueues(): Promise<void> {
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to refresh pending queues', error, t('Failed to refresh pending queues.'));
+    reportUiError('Failed to refresh pending queues', error, t('errors.failedRefreshPendingQueues'));
   } finally {
     isRefreshingPendingQueues.value = false;
   }
@@ -1162,7 +1162,7 @@ async function handleClearTrace(): Promise<void> {
     await nostrStore.clearDeveloperTraceEntries();
     await refreshRecentTraceEntries();
   } catch (error) {
-    reportUiError('Failed to clear developer trace', error, t('Failed to clear developer trace.'));
+    reportUiError('Failed to clear developer trace', error, t('errors.failedClearDeveloperTrace'));
   }
 }
 
@@ -1182,7 +1182,7 @@ async function handleRefreshRecentTrace(): Promise<void> {
   try {
     await refreshRecentTraceEntries();
   } catch (error) {
-    reportUiError('Failed to refresh recent trace', error, t('Failed to refresh recent trace.'));
+    reportUiError('Failed to refresh recent trace', error, t('errors.failedRefreshRecentTrace'));
   }
 }
 
@@ -1197,17 +1197,17 @@ async function handleCopyDiagnostics(): Promise<void> {
   try {
     const payload = await buildDiagnosticsExport();
     if (!navigator.clipboard?.writeText) {
-      throw new Error(t('Clipboard API is not available.'));
+      throw new Error(t('common.clipboardApiAvailable'));
     }
 
     await navigator.clipboard.writeText(payload);
     $q.notify({
       type: 'positive',
-      message: t('Developer diagnostics copied to the clipboard.'),
+      message: t('developer.developerDiagnosticsCopiedClipboard'),
       position: 'top'
     });
   } catch (error) {
-    reportUiError('Failed to copy developer diagnostics', error, t('Failed to copy developer diagnostics.'));
+    reportUiError('Failed to copy developer diagnostics', error, t('errors.failedCopyDeveloperDiagnostics'));
   }
 }
 
@@ -1224,7 +1224,7 @@ async function handleDownloadDiagnostics(): Promise<void> {
     document.body.removeChild(link);
     URL.revokeObjectURL(objectUrl);
   } catch (error) {
-    reportUiError('Failed to download developer diagnostics', error, t('Failed to download developer diagnostics.'));
+    reportUiError('Failed to download developer diagnostics', error, t('errors.failedDownloadDeveloperDiagnostics'));
   }
 }
 
@@ -1246,22 +1246,22 @@ function relayRoles(relay: DeveloperRelayRow): string {
   const roles: string[] = [];
 
   if (relay.inReadSet) {
-    roles.push(t('read'));
+    roles.push(t('common.read'));
   }
 
   if (relay.inPublishSet) {
-    roles.push(t('publish'));
+    roles.push(t('common.publish'));
   }
 
   if (relay.inPrivateMessagesSubscription) {
-    roles.push(t('dm-sub'));
+    roles.push(t('common.dmSub'));
   }
 
   if (relay.isConfigured) {
-    roles.push(t('configured'));
+    roles.push(t('common.configured'));
   }
 
-  return roles.length > 0 ? roles.join(', ') : t('n/a');
+  return roles.length > 0 ? roles.join(', ') : t('common.n');
 }
 
 function relayStatusName(relay: DeveloperRelayRow): string {
@@ -1269,7 +1269,7 @@ function relayStatusName(relay: DeveloperRelayRow): string {
     return relay.statusName;
   }
 
-  return relay.connected ? t('Connected') : t('Missing');
+  return relay.connected ? t('common.connected') : t('common.missing');
 }
 
 function traceLevelColor(level: DeveloperTraceLevel): string {

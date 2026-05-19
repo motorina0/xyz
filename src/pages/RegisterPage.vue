@@ -13,19 +13,19 @@
               icon="arrow_back"
               color="primary"
               class="register-card__back-button"
-              :aria-label="$t('Back')"
+              :aria-label="$t('common.back')"
               :disable="isLoggingIn"
               @click="goBackToAuth"
             />
             <div class="register-card__header-text">
-              <div class="register-card__title">{{ $t('Create Account') }}</div>
+              <div class="register-card__title">{{ $t('common.createAccount') }}</div>
               <div class="register-card__subtitle" v-if="isCreatingAccount">
-                {{ $t('Creating Account') }}
+                {{ $t('common.creatingAccount') }}
               </div>
               <div class="register-card__subtitle" v-else>
                 {{
                   $t(
-                    'A new Nostr keypair has been generated for this account. Download the secret before continuing.'
+                    'auth.generatedKeypairSecretNotice'
                   )
                 }}
               </div>
@@ -50,7 +50,7 @@
               color="primary"
               no-caps
               icon="download"
-              :label="$t('Download Account Secret')"
+              :label="$t('auth.downloadAccountSecret')"
               class="register-card__button"
               :disable="!generatedAccount"
               @click="handleDownloadSecret"
@@ -61,7 +61,7 @@
               color="primary"
               no-caps
               icon="login"
-              :label="$t('Login Now')"
+              :label="$t('auth.loginNow')"
               class="register-card__button"
               :disable="!generatedAccount"
               :loading="isLoggingIn"
@@ -71,7 +71,7 @@
         </q-card-section>
 
         <q-card-section class="register-card__footer">
-          <span>{{ $t('Made by the') }}</span>
+          <span>{{ $t('common.made') }}</span>
           <a
             href="https://lnbits.com"
             target="_blank"
@@ -89,7 +89,7 @@
           >
             LNbits
           </a>
-          <span>{{ $t('team.') }}</span>
+          <span>{{ $t('common.team') }}</span>
         </q-card-section>
       </q-card>
     </div>
@@ -186,7 +186,7 @@ function generateAccountKeys(): void {
       nsec: signer.nsec
     };
   } catch (error) {
-    reportUiError('Failed to generate account keys', error, t('Failed to create account keys.'));
+    reportUiError('Failed to generate account keys', error, t('errors.failedCreateAccountKeys'));
   }
 }
 
@@ -209,7 +209,7 @@ function handleDownloadSecret(): void {
     document.body.removeChild(link);
     URL.revokeObjectURL(objectUrl);
   } catch (error) {
-    reportUiError('Failed to download account secret', error, t('Failed to download account secret.'));
+    reportUiError('Failed to download account secret', error, t('errors.failedDownloadAccountSecret'));
   }
 }
 
@@ -235,7 +235,7 @@ async function handleLoginNow(): Promise<void> {
 
     showProfileOnboarding.value = true;
   } catch (error) {
-    reportUiError('Failed to log in with generated account', error, t('Failed to log in.'));
+    reportUiError('Failed to log in with generated account', error, t('errors.failedLog'));
   } finally {
     isLoggingIn.value = false;
   }

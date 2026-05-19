@@ -3,17 +3,17 @@
     <section class="app-status__card">
       <div v-if="!embedded" class="app-status__card-header">
         <div class="app-status__card-copy">
-          <div class="app-status__card-title">{{ $t('Startup History') }}</div>
+          <div class="app-status__card-title">{{ $t('startup.startupHistory') }}</div>
           <div class="app-status__card-subtitle">{{ cardSubtitle }}</div>
         </div>
         <span v-if="hasHeaderActivity" class="app-status__badge app-status__badge--busy">
-          {{ $t('Syncing') }}
+          {{ $t('startup.syncing') }}
         </span>
       </div>
 
       <div class="app-status__content">
         <div v-if="startupHistory.length === 0" class="app-status__details-copy">
-          {{ $t('No startup steps recorded yet.') }}
+          {{ $t('startup.startupStepsRecordedYet') }}
         </div>
 
         <div v-else class="app-status__history-scroll">
@@ -191,7 +191,7 @@ const cardSubtitle = computed(() => {
     return t(displayedStartupStep.value.label);
   }
 
-  return t('Recent startup and sync activity.');
+  return t('startup.recentActivity');
 });
 
 function startupStatusIcon(status: StartupStepStatus | null): string {
@@ -229,11 +229,11 @@ function startupStatusClass(status: StartupStepStatus | null): string {
 function startupStepMeta(step: StartupTimedSnapshot & { showProgress?: boolean }): string {
   const eventCountMeta = startupStepEventCountMeta(step);
   if (step.status === 'error') {
-    return [step.errorMessage?.trim() || t('Failed'), eventCountMeta].filter(Boolean).join(' - ');
+    return [step.errorMessage?.trim() || t('common.failed'), eventCountMeta].filter(Boolean).join(' - ');
   }
 
   if (step.status === 'success') {
-    return [t('Completed in {duration}', { duration: startupStepDuration(step) }), eventCountMeta]
+    return [t('common.completed', { duration: startupStepDuration(step) }), eventCountMeta]
       .filter(Boolean)
       .join(' - ');
   }
@@ -241,12 +241,12 @@ function startupStepMeta(step: StartupTimedSnapshot & { showProgress?: boolean }
   if (step.status === 'in_progress') {
     const statusMeta =
       'showProgress' in step && step.showProgress === true
-        ? t('Fetching from relays...')
-        : t('In progress');
+        ? t('relays.fetchingRelays')
+        : t('common.progress');
     return [statusMeta, eventCountMeta].filter(Boolean).join(' - ');
   }
 
-  return [t('Pending'), eventCountMeta].filter(Boolean).join(' - ');
+  return [t('common.pending'), eventCountMeta].filter(Boolean).join(' - ');
 }
 
 function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
@@ -255,12 +255,12 @@ function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
   }
 
   const eventCount = Math.max(0, Math.floor(step.eventCount));
-  return eventCount === 1 ? t('{count} event', { count: eventCount }) : t('{count} events', { count: eventCount });
+  return eventCount === 1 ? t('common.eventCount.one', { count: eventCount }) : t('common.eventCount.many', { count: eventCount });
 }
 
 function startupStepDuration(step: StartupTimedSnapshot): string {
   if (typeof step.durationMs !== 'number' || !Number.isFinite(step.durationMs)) {
-    return step.status === 'in_progress' ? t('Running') : t('Pending');
+    return step.status === 'in_progress' ? t('common.runningLabel') : t('common.pending');
   }
 
   if (step.durationMs < 1000) {

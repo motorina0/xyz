@@ -7,7 +7,7 @@
         dense
         round
         icon="arrow_back"
-        :aria-label="$t('Back to settings')"
+        :aria-label="$t('settings.backSettings')"
         class="settings-detail-layout__back"
         @click="goBack"
       />

@@ -16,7 +16,7 @@
       autofocus
       clearable
       clear-icon="close"
-      :label="$t('Identifier or Public key')"
+      :label="$t('contacts.identifierPublicKey')"
       :error="Boolean(identifierError)"
       :error-message="identifierError"
       @update:model-value="handleIdentifierInput"
@@ -53,14 +53,14 @@
               <q-item-label caption>{{ contactSubtitle(contact) }}</q-item-label>
             </q-item-section>
             <q-item-section side v-if="contact.type === 'group'">
-              <q-badge rounded color="primary" :label="$t('Group')" />
+              <q-badge rounded color="primary" :label="$t('group.group')" />
             </q-item-section>
           </q-item>
           <div v-if="filteredContacts.length === 0" class="contact-lookup-dialog__empty-state">
             {{
               identifierInput.trim()
-                ? $t('No matching contacts. Enter a valid identifier to add one.')
-                : $t('No contacts available yet.')
+                ? $t('contacts.matchingContactsEnterValid')
+                : $t('contacts.contactsAvailableYet')
             }}
           </div>
         </q-list>
@@ -75,7 +75,7 @@
       dense
       outlined
       rounded
-      :label="$t('Given Name')"
+      :label="$t('common.givenName')"
       @keydown.enter.prevent="handleSubmit"
     />
 
@@ -84,7 +84,7 @@
         outline
         color="primary"
         no-caps
-        :label="$t('Cancel')"
+        :label="$t('common.cancel')"
         :disable="isSubmitting"
         @click="closeDialog"
       />
@@ -159,18 +159,18 @@ const showSuggestions = computed(() => {
 const canSubmit = computed(() => {
   return Boolean(selectedExistingContact.value || identifierInput.value.trim());
 });
-const dialogTitle = computed(() => (props.purpose === 'chat' ? t('New Chat') : t('Add Contact')));
+const dialogTitle = computed(() => (props.purpose === 'chat' ? t('chat.newChat') : t('contacts.addContact')));
 const dialogSubtitle = computed(() => {
   return props.purpose === 'chat'
-    ? t('Search your contacts or enter a valid identifier to start chatting.')
-    : t('Search your contacts or enter a valid identifier to add someone new.');
+    ? t('contacts.search.chatPrompt')
+    : t('contacts.search.addPrompt');
 });
 const submitLabel = computed(() => {
   if (selectedExistingContact.value) {
-    return props.purpose === 'chat' ? t('Open Chat') : t('Open');
+    return props.purpose === 'chat' ? t('chat.openChat') : t('common.open');
   }
 
-  return props.purpose === 'chat' ? t('Add and Chat') : t('Add Contact');
+  return props.purpose === 'chat' ? t('chat.addChat') : t('contacts.addContact');
 });
 
 watch(
@@ -258,8 +258,8 @@ function canUseContact(contact: ContactRecord): boolean {
 
 function unsupportedContactMessage(): string {
   return props.purpose === 'chat'
-    ? t('New Chat only supports direct contacts. Open the group from Chats instead.')
-    : t('This contact cannot be used here.');
+    ? t('group.newChatOnlySupports')
+    : t('contacts.contactCannotUsedHere');
 }
 
 function findContactByPubkey(pubkey: string | null | undefined): ContactRecord | null {
@@ -286,11 +286,11 @@ function newContactIdentifierErrorMessage(resolution: {
 }): string {
   if (resolution.identifierType === 'nip05') {
     return resolution.error === 'nip05_unresolved'
-      ? t('NIP-05 could not be resolved. Please verify the identifier.')
-      : t('Enter a valid NIP-05 identifier (name@domain).');
+      ? t('contacts.nip05CouldResolvedPlease')
+      : t('contacts.enterValidNip05Identifier');
   }
 
-  return t('Enter a valid hex pubkey, npub, or NIP-05 email.');
+  return t('contacts.validation.hexPubkeyNpubNip05');
 }
 
 function closeDialog(): void {
@@ -344,7 +344,7 @@ async function finalizeResolvedContact(contact: ContactRecord): Promise<void> {
     reportUiError(
       props.purpose === 'chat' ? 'Failed to open chat contact' : 'Failed to add contact',
       error,
-      props.purpose === 'chat' ? t('Failed to continue to chat.') : t('Failed to add contact.')
+      props.purpose === 'chat' ? t('errors.failedContinueChat') : t('errors.failedAddContact')
     );
   } finally {
     isSubmitting.value = false;
@@ -384,7 +384,7 @@ async function ensureContactInPrivateContactList(contact: ContactRecord): Promis
     reportUiError(
       'Failed to publish private contact list after selecting contact',
       error,
-      t('Contact saved, but contact list sync failed.')
+      t('contacts.contactSavedContactList')
     );
   }
 
@@ -446,7 +446,7 @@ async function createContactFromIdentifier(identifier: string): Promise<ContactR
     reportUiError(
       'Failed to refresh contact profile after create',
       error,
-      t('Contact added, but profile refresh failed.')
+      t('contacts.contactAddedProfileRefresh')
     );
   }
 
@@ -461,7 +461,7 @@ async function createContactFromIdentifier(identifier: string): Promise<ContactR
     reportUiError(
       'Failed to publish private contact list after adding contact',
       error,
-      t('Contact added, but contact list sync failed.')
+      t('contacts.contactAddedContactList')
     );
   }
 
@@ -491,7 +491,7 @@ async function handleSubmit(): Promise<void> {
   const selectedContact =
     selectedExistingContact.value ?? resolveExistingContactFromInput(identifierInput.value);
   if (!selectedContact && !identifierInput.value.trim()) {
-    identifierError.value = t('Enter a valid hex pubkey, npub, or NIP-05 email.');
+    identifierError.value = t('contacts.validation.hexPubkeyNpubNip05');
     return;
   }
 
@@ -512,7 +512,7 @@ async function handleSubmit(): Promise<void> {
     reportUiError(
       props.purpose === 'chat' ? 'Failed to open chat contact' : 'Failed to add contact',
       error,
-      props.purpose === 'chat' ? t('Failed to continue to chat.') : t('Failed to add contact.')
+      props.purpose === 'chat' ? t('errors.failedContinueChat') : t('errors.failedAddContact')
     );
   } finally {
     isSubmitting.value = false;

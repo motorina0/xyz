@@ -47,10 +47,10 @@ const hasStartupActivity = computed(() =>
 );
 const isVisible = computed(() => nostrStore.isReconnectHealing && !hasStartupActivity.value);
 const statusLabel = computed(() =>
-  formatReconnectHealingStatusLabel(nostrStore.reconnectHealingStatusLabel ?? 'Preparing sync')
+  formatReconnectHealingStatusLabel(nostrStore.reconnectHealingStatusLabel ?? 'sync.preparing')
 );
 const detailsButtonLabel = computed(() =>
-  isDetailsVisible.value ? t('Hide sync details') : t('Show sync details')
+  isDetailsVisible.value ? t('startup.hideSyncDetails') : t('startup.showSyncDetails')
 );
 
 function toggleDetails(): void {
@@ -74,9 +74,9 @@ function writeStoredDetailsVisibility(value: boolean): void {
 }
 
 function formatReconnectHealingStatusLabel(value: string): string {
-  const syncStartedPrefix = 'Sync started: ';
+  const syncStartedPrefix = 'sync.started:';
   if (value.startsWith(syncStartedPrefix)) {
-    return t('Sync started: {reason}', {
+    return t('sync.started', {
       reason: t(value.slice(syncStartedPrefix.length))
     });
   }

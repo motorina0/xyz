@@ -7,7 +7,7 @@
   >
     <div v-if="isDetailsVisible" class="startup-history-banner__details">
       <div class="startup-history-banner__header">
-        <span class="startup-history-banner__title">{{ $t('Startup History') }}</span>
+        <span class="startup-history-banner__title">{{ $t('startup.startupHistory') }}</span>
         <span class="startup-history-banner__summary">{{ summaryLabel }}</span>
       </div>
 
@@ -159,17 +159,17 @@ const isVisible = computed(() => {
 
 const summaryLabel = computed(() => {
   if (!activeStep.value) {
-    return t('Preparing startup restore');
+    return t('startup.preparingStartupRestore');
   }
 
   const activeIndex = startupHistory.value.findIndex((step) => step.id === activeStep.value?.id);
   const counter =
-    activeIndex >= 0 ? `${activeIndex + 1}/${startupHistory.value.length}` : t('Startup');
+    activeIndex >= 0 ? `${activeIndex + 1}/${startupHistory.value.length}` : t('startup.startup');
   return `${counter} ${t(activeStep.value.label)}`;
 });
 
 const detailsButtonLabel = computed(() =>
-  isDetailsVisible.value ? t('Hide startup history') : t('Show startup history')
+  isDetailsVisible.value ? t('startup.hideStartupHistory') : t('startup.showStartupHistory')
 );
 
 function toggleDetails(): void {
@@ -227,20 +227,20 @@ function startupStatusClass(status: StartupStepStatus | null): string {
 function startupStepMeta(step: StartupTimedSnapshot): string {
   const eventCountMeta = startupStepEventCountMeta(step);
   if (step.status === 'error') {
-    return [step.errorMessage?.trim() || t('Failed'), eventCountMeta].filter(Boolean).join(' - ');
+    return [step.errorMessage?.trim() || t('common.failed'), eventCountMeta].filter(Boolean).join(' - ');
   }
 
   if (step.status === 'success') {
-    return [t('Completed in {duration}', { duration: startupStepDuration(step) }), eventCountMeta]
+    return [t('common.completed', { duration: startupStepDuration(step) }), eventCountMeta]
       .filter(Boolean)
       .join(' - ');
   }
 
   if (step.status === 'in_progress') {
-    return [t('In progress'), eventCountMeta].filter(Boolean).join(' - ');
+    return [t('common.progress'), eventCountMeta].filter(Boolean).join(' - ');
   }
 
-  return [t('Pending'), eventCountMeta].filter(Boolean).join(' - ');
+  return [t('common.pending'), eventCountMeta].filter(Boolean).join(' - ');
 }
 
 function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
@@ -249,12 +249,12 @@ function startupStepEventCountMeta(step: StartupTimedSnapshot): string | null {
   }
 
   const eventCount = Math.max(0, Math.floor(step.eventCount));
-  return eventCount === 1 ? t('{count} event', { count: eventCount }) : t('{count} events', { count: eventCount });
+  return eventCount === 1 ? t('common.eventCount.one', { count: eventCount }) : t('common.eventCount.many', { count: eventCount });
 }
 
 function startupStepDuration(step: StartupTimedSnapshot): string {
   if (typeof step.durationMs !== 'number' || !Number.isFinite(step.durationMs)) {
-    return step.status === 'in_progress' ? t('Running') : t('Pending');
+    return step.status === 'in_progress' ? t('common.runningLabel') : t('common.pending');
   }
 
   if (step.durationMs < 1000) {

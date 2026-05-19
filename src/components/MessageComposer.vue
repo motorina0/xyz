@@ -4,7 +4,7 @@
       v-if="isEmojiAutocompleteVisible"
       class="composer__emoji-autocomplete"
       role="listbox"
-      :aria-label="$t('Emoji suggestions')"
+      :aria-label="$t('message.emojiSuggestions')"
     >
       <button
         v-for="(entry, index) in emojiAutocompleteEntries"
@@ -21,14 +21,14 @@
       </button>
 
       <div v-if="emojiAutocompleteEntries.length === 0" class="composer__emoji-empty">
-        {{ $t('No emoji found.') }}
+        {{ $t('message.emojiFound') }}
       </div>
     </div>
 
     <div v-if="replyTo" class="composer__reply">
       <div class="composer__reply-accent" aria-hidden="true" />
       <div class="composer__reply-copy">
-        <div class="composer__reply-title">{{ $t('Reply to {name}', { name: replyTo.authorName }) }}</div>
+        <div class="composer__reply-title">{{ $t('message.reply.toName', { name: replyTo.authorName }) }}</div>
         <div class="composer__reply-text">{{ replyTo.text }}</div>
       </div>
       <q-btn
@@ -36,7 +36,7 @@
         dense
         round
         icon="close"
-        :aria-label="$t('Cancel reply')"
+        :aria-label="$t('message.cancelReply')"
         class="composer__reply-close"
         @click="$emit('cancel-reply')"
       />
@@ -52,7 +52,7 @@
         outlined
         rounded
         autogrow
-        :placeholder="$t('Write a message')"
+        :placeholder="$t('relays.writeMessage')"
         @update:model-value="handleDraftUpdate"
         @focus="rememberSelection"
         @click="rememberSelection"
@@ -69,7 +69,7 @@
             flat
             dense
             icon="sentiment_satisfied"
-            :aria-label="$t('Add emoji')"
+            :aria-label="$t('message.addEmoji')"
            
             @click="rememberSelection"
           >
@@ -100,7 +100,7 @@
         :icon="sendButtonIcon"
         class="composer__send"
         data-testid="message-composer-send"
-        :aria-label="$t('Send message')"
+        :aria-label="$t('message.sendMessage')"
         @touchstart.prevent.stop="handleSendTouchStart"
         @click="handleSendClick"
       />

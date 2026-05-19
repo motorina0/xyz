@@ -8,12 +8,12 @@
     max-width="440px"
   >
     <div class="browser-notifications-login-dialog__body">
-      {{ $t('You can also manage this later from Settings under Notifications.') }}
+      {{ $t('notifications.manageLaterHint') }}
     </div>
 
     <template #actions>
-      <q-btn flat no-caps :label="$t('Not now')" @click="handleSkip" />
-      <q-btn unelevated no-caps color="primary" :label="$t('Enable')" @click="handleEnable" />
+      <q-btn flat no-caps :label="$t('common.now')" @click="handleSkip" />
+      <q-btn unelevated no-caps color="primary" :label="$t('common.enable')" @click="handleEnable" />
     </template>
   </AppDialog>
 </template>
@@ -45,19 +45,19 @@ const isDesktopRuntime = computed(
 const isAndroidRuntime = computed(() => isAndroidPushNotificationSupported());
 const dialogTitle = computed(() => {
   if (isAndroidRuntime.value || isDesktopRuntime.value) {
-    return t('Enable Notifications');
+    return t('notifications.enableNotifications');
   }
 
-  return t('Enable Browser Notifications');
+  return t('notifications.enableBrowserNotifications');
 });
 const dialogSubtitle = computed(() => {
   if (isAndroidRuntime.value) {
-    return t('Get notified when new messages arrive. If you continue, Android will ask for notification permission.');
+    return t('notifications.android.enablePrompt');
   }
 
   return isDesktopRuntime.value
-    ? t('Get notified when new messages arrive. If you continue, desktop notifications will be enabled for this app.')
-    : t('Get notified when new messages arrive. If you continue, your browser will ask for permission next.');
+    ? t('notifications.desktop.enablePrompt')
+    : t('notifications.browser.enablePrompt');
 });
 
 function handleEnable(): void {

@@ -22,7 +22,7 @@
         dense
         round
         icon="chat_bubble"
-        :aria-label="$t('Open Chat')"
+        :aria-label="$t('chat.openChat')"
         class="profile-header__action"
         :disable="!normalizedHeaderPubkey"
         @click="handleOpenChat"
@@ -40,11 +40,11 @@
           indicator-color="primary"
           class="profile-tabs"
         >
-          <q-tab name="profile" :label="$t('Profile')" no-caps class="profile-tab" />
+          <q-tab name="profile" :label="$t('profile.profile')" no-caps class="profile-tab" />
           <q-tab
             v-if="isGroupContact"
             name="members"
-            :label="$t('Members')"
+            :label="$t('group.members')"
             no-caps
             class="profile-tab"
             data-testid="contact-profile-members-tab"
@@ -52,7 +52,7 @@
           <q-tab
             v-if="isOwnedGroupContact"
             name="relays"
-            :label="$t('Relays')"
+            :label="$t('relays.title')"
             no-caps
             class="profile-tab"
             data-testid="contact-profile-relays-tab"
@@ -60,7 +60,7 @@
           <q-tab
             v-if="isGroupContact"
             name="epochs"
-            :label="$t('Epochs')"
+            :label="$t('group.epochs')"
             no-caps
             class="profile-tab"
             data-testid="contact-profile-epochs-tab"
@@ -80,7 +80,7 @@
                 no-caps
                 outline
                 color="primary"
-                :label="$t('Refresh')"
+                :label="$t('common.refresh')"
                 class="profile-tab-actions__button"
                 data-testid="contact-profile-refresh-button"
                 :disable="!normalizedHeaderPubkey || isRefreshingContact"
@@ -92,7 +92,7 @@
                 no-caps
                 outline
                 color="primary"
-                :label="$t('Share')"
+                :label="$t('common.share')"
                 class="profile-tab-actions__button"
                 data-testid="contact-profile-share-button"
                 :disable="!shareNostrAddress"
@@ -103,7 +103,7 @@
                 no-caps
                 unelevated
                 color="primary"
-                :label="$t('Publish')"
+                :label="$t('common.publishAction')"
                 class="profile-tab-actions__button"
                 data-testid="contact-profile-publish-button"
                 :disable="!normalizedHeaderPubkey"
@@ -150,11 +150,11 @@
                     round
                     icon="content_copy"
                     color="primary"
-                    :aria-label="$t('Copy {label}', { label: displayedPubkeyCopyLabel })"
+                    :aria-label="$t('common.copyLabel', { label: displayedPubkeyCopyLabel })"
                     :disable="!displayedPubkeyValue.trim()"
                     @click.stop="handleCopyProfileValue(displayedPubkeyValue, displayedPubkeyCopyLabel)"
                   >
-                    <AppTooltip>{{ $t('Copy {label}', { label: displayedPubkeyCopyLabel }) }}</AppTooltip>
+                    <AppTooltip>{{ $t('common.copyLabel', { label: displayedPubkeyCopyLabel }) }}</AppTooltip>
                   </q-btn>
                 </template>
               </q-input>
@@ -170,7 +170,7 @@
               <template #avatar>
                 <q-icon name="warning_amber" color="warning" />
               </template>
-              {{ $t('This identity is treated as a group, but its published profile is not marked as group.') }}
+              {{ $t('group.identityTreatedGroupPublished') }}
             </q-banner>
 
             <q-list bordered separator class="profile-sections q-mt-md">
@@ -184,7 +184,7 @@
               >
                 <template #header>
                   <q-item-section>
-                    <q-item-label class="profile-card__title">{{ $t('User Metadata (NIP-01)') }}</q-item-label>
+                    <q-item-label class="profile-card__title">{{ $t('profile.userMetadataNip01') }}</q-item-label>
                   </q-item-section>
                 </template>
 
@@ -196,8 +196,8 @@
                     dense
                     rounded
                     :readonly="readOnly"
-                    :label="$t('Name')"
-                    :placeholder="$t('Your profile name')"
+                    :label="$t('common.name')"
+                    :placeholder="$t('profile.profileName')"
                   />
 
                   <q-input
@@ -209,8 +209,8 @@
                     type="textarea"
                     autogrow
                     :readonly="readOnly"
-                    :label="$t('About')"
-                    :placeholder="$t('Short bio')"
+                    :label="$t('common.about')"
+                    :placeholder="$t('profile.shortBio')"
                   />
 
                   <q-input
@@ -220,7 +220,7 @@
                     dense
                     rounded
                     :readonly="readOnly"
-                    :label="$t('Picture URL')"
+                    :label="$t('profile.pictureUrl')"
                     placeholder="https://example.com/avatar.png"
                   />
 
@@ -242,7 +242,7 @@
                     dense
                     rounded
                     :readonly="readOnly"
-                    :label="$t('Lightning Address')"
+                    :label="$t('common.lightningAddress')"
                     placeholder="name@domain.com"
                   />
 
@@ -269,7 +269,7 @@
               >
                 <template #header>
                   <q-item-section>
-                    <q-item-label class="profile-card__title">{{ $t('Extra Metadata Fields (NIP-24)') }}</q-item-label>
+                    <q-item-label class="profile-card__title">{{ $t('profile.extraMetadataFieldsNip24') }}</q-item-label>
                   </q-item-section>
                 </template>
 
@@ -281,8 +281,8 @@
                     dense
                     rounded
                     :readonly="readOnly"
-                    :label="$t('Display Name')"
-                    :placeholder="$t('Alternative display name')"
+                    :label="$t('profile.displayName')"
+                    :placeholder="$t('profile.alternativeDisplayName')"
                   />
 
                   <q-input
@@ -292,7 +292,7 @@
                     dense
                     rounded
                     :readonly="readOnly"
-                    :label="$t('Website')"
+                    :label="$t('profile.website')"
                     placeholder="https://example.com"
                   />
 
@@ -303,15 +303,15 @@
                     dense
                     rounded
                     :readonly="readOnly"
-                    :label="$t('Banner URL')"
+                    :label="$t('profile.bannerUrl')"
                     placeholder="https://example.com/banner.png"
                   />
 
                   <div class="profile-card__bot-row q-mt-sm">
                     <div>
-                      <div class="text-body2">{{ $t('Bot') }}</div>
+                      <div class="text-body2">{{ $t('profile.bot') }}</div>
                       <div class="text-caption text-grey-6">
-                        {{ $t('Content is partially or fully automated.') }}
+                        {{ $t('common.contentPartiallyFullyAutomated') }}
                       </div>
                     </div>
 
@@ -326,9 +326,9 @@
 
                   <div class="profile-card__bot-row q-mt-sm">
                     <div>
-                      <div class="text-body2">{{ $t('Group') }}</div>
+                      <div class="text-body2">{{ $t('group.group') }}</div>
                       <div class="text-caption text-grey-6">
-                        {{ $t('Profile represents a group identity.') }}
+                        {{ $t('group.profileRepresentsGroupIdentity') }}
                       </div>
                     </div>
 
@@ -341,7 +341,7 @@
                     />
                   </div>
 
-                  <div class="profile-card__subtitle q-mt-md">{{ $t('Birthday') }}</div>
+                  <div class="profile-card__subtitle q-mt-md">{{ $t('profile.birthday') }}</div>
                   <div class="profile-card__birthday-grid q-mt-sm">
                     <q-input
                       v-model.number="localProfile.birthday.year"
@@ -351,7 +351,7 @@
                       rounded
                       type="number"
                       :readonly="readOnly"
-                      :label="$t('Year')"
+                      :label="$t('common.year')"
                       placeholder="1990"
                     />
 
@@ -363,7 +363,7 @@
                       rounded
                       type="number"
                       :readonly="readOnly"
-                      :label="$t('Month')"
+                      :label="$t('common.month')"
                       placeholder="1-12"
                       min="1"
                       max="12"
@@ -377,7 +377,7 @@
                       rounded
                       type="number"
                       :readonly="readOnly"
-                      :label="$t('Day')"
+                      :label="$t('common.day')"
                       placeholder="1-31"
                       min="1"
                       max="31"
@@ -396,7 +396,7 @@
                 <template #header>
                   <q-item-section>
                     <div class="profile-card__title-row">
-                      <div class="profile-card__title">{{ $t('Relays (NIP-65)') }}</div>
+                      <div class="profile-card__title">{{ $t('relays.nip65.title') }}</div>
                       <q-btn
                         v-if="props.showRelaysEditAction"
                         flat
@@ -404,7 +404,7 @@
                         round
                         icon="edit"
                         color="primary"
-                        :aria-label="$t('Edit relays')"
+                        :aria-label="$t('relays.editRelays')"
                         @click.stop="emit('open-relays-settings')"
                       />
                     </div>
@@ -414,9 +414,9 @@
                 <div class="profile-card__section profile-section__content">
                   <div class="profile-card__bot-row">
                     <div>
-                      <div class="text-body2">{{ $t('Send via App Relays') }}</div>
+                      <div class="text-body2">{{ $t('relays.sendViaAppRelays') }}</div>
                       <div class="text-caption text-grey-6">
-                        {{ $t('Use app relays for outbound messages and reactions. If this contact later adds relays, both relay lists are used.') }}
+                        {{ $t('relays.useAppRelays.description') }}
                       </div>
                     </div>
 
@@ -435,7 +435,7 @@
                     :relays="relayList"
                     relay-validation-error=""
                     :can-add-relay="false"
-                    :empty-message="$t('No relays configured.')"
+                    :empty-message="$t('relays.relaysConfigured')"
                     :show-toolbar="false"
                     :show-secondary-action="false"
                     :relay-toggles-disabled="true"
@@ -464,7 +464,7 @@
                   no-caps
                   outline
                   color="primary"
-                  :label="$t('Refresh')"
+                  :label="$t('common.refresh')"
                   class="profile-tab-actions__button"
                   :disable="
                     !normalizedHeaderPubkey ||
@@ -480,7 +480,7 @@
                   no-caps
                   unelevated
                   color="primary"
-                  :label="$t('Publish')"
+                  :label="$t('common.publishAction')"
                   data-testid="group-members-publish-button"
                   class="profile-tab-actions__button"
                   :disable="!normalizedHeaderPubkey || !hasPendingGroupMemberChanges"
@@ -497,8 +497,8 @@
                   outlined
                   dense
                   rounded
-                  :label="$t('Member')"
-                  :placeholder="$t('hex pubkey, npub, or name@example.com')"
+                  :label="$t('group.member')"
+                  :placeholder="$t('contacts.hexPubkeyNpubName')"
                   :error="Boolean(newMemberIdentifierError)"
                   :error-message="newMemberIdentifierError"
                   @update:model-value="clearMemberIdentifierError"
@@ -513,7 +513,7 @@
                       icon="add"
                       size="sm"
                       data-testid="group-member-add-button"
-                      :aria-label="$t('Add member')"
+                      :aria-label="$t('group.addMember')"
                       :disable="!canAddMember"
                       :loading="isAddingMember"
                       @click="handleAddMember"
@@ -527,10 +527,10 @@
                   <template #avatar>
                     <q-icon name="warning_amber" color="warning" />
                   </template>
-                  {{ $t('You must publish these changes for them to take effect') }}
+                  {{ $t('common.youMustPublishChanges') }}
                 </q-banner>
 
-                <div class="profile-members-section-title">{{ $t('Pending') }}</div>
+                <div class="profile-members-section-title">{{ $t('common.pending') }}</div>
 
                 <q-list bordered separator class="profile-members-list">
                   <q-item
@@ -576,7 +576,7 @@
                         dense
                         icon="undo"
                         color="primary"
-                        :aria-label="$t('Undo pending member change')"
+                        :aria-label="$t('group.undoPendingMemberChange')"
                         @click="handleUndoPendingMember(change.member.public_key)"
                       />
                     </q-item-section>
@@ -584,14 +584,14 @@
                 </q-list>
               </div>
 
-              <div class="profile-members-section-title q-mt-md">{{ $t('Members') }}</div>
+              <div class="profile-members-section-title q-mt-md">{{ $t('group.members') }}</div>
 
               <div
                 v-if="visibleGroupMembers.length === 0"
                 class="profile-members-state"
                 :class="{ 'q-mt-sm': true }"
               >
-                <div class="text-body2">{{ $t('No published members yet.') }}</div>
+                <div class="text-body2">{{ $t('group.publishedMembersYet') }}</div>
               </div>
 
               <q-list v-else bordered separator class="profile-members-list q-mt-sm">
@@ -619,7 +619,7 @@
                         color="primary"
                         class="profile-members-list__badge"
                       >
-                        {{ $t('Admin') }}
+                        {{ $t('common.admin') }}
                       </q-badge>
                     </div>
                     <q-item-label
@@ -646,7 +646,7 @@
                         type="button"
                         class="profile-member-delivery__status-hitbox"
                         data-testid="group-member-ticket-status"
-                        :aria-label="$t('Open relay delivery status for {name}', { name: memberListTitle(member) })"
+                        :aria-label="$t('relays.openRelayDeliveryStatus', { name: memberListTitle(member) })"
                         @click="openGroupMemberTicketStatus(member)"
                       >
                         <div class="profile-member-delivery__status">
@@ -669,7 +669,7 @@
                       dense
                       icon="refresh"
                       color="primary"
-                      :aria-label="$t('Refresh member')"
+                      :aria-label="$t('group.refreshMember')"
                       :loading="isMemberRefreshing(member.public_key)"
                       @click="handleRefreshMember(member.public_key)"
                     />
@@ -680,7 +680,7 @@
                       dense
                       icon="delete"
                       color="negative"
-                      :aria-label="$t('Remove member')"
+                      :aria-label="$t('group.removeMember')"
                       @click="handleRemoveMember(member.public_key)"
                     />
                   </q-item-section>
@@ -692,7 +692,7 @@
           <q-tab-panel v-if="isGroupContact" name="epochs" class="profile-tab-panel">
             <div class="profile-epochs">
               <div class="profile-card__section">
-                <div class="profile-card__title">{{ $t('Current Epoch Public Key') }}</div>
+                <div class="profile-card__title">{{ $t('group.currentEpochPublicKey.title') }}</div>
                 <q-input
                   :model-value="currentEpochPublicKey"
                   class="nc-input q-mt-sm"
@@ -700,8 +700,8 @@
                   dense
                   rounded
                   readonly
-                  :label="$t('Current Epoch Public Key')"
-                  :placeholder="$t('No current epoch public key yet')"
+                  :label="$t('group.currentEpochPublicKey.title')"
+                  :placeholder="$t('group.currentEpochPublicKey.empty')"
                 >
                   <template #append>
                     <q-btn
@@ -710,31 +710,31 @@
                       round
                       icon="content_copy"
                       color="primary"
-                      :aria-label="$t('Copy current epoch public key')"
+                      :aria-label="$t('group.copyCurrentEpochPublic')"
                       :disable="!currentEpochPublicKey"
                       @click.stop="
                         handleCopyProfileValue(currentEpochPublicKey, 'Current epoch public key')
                       "
                     >
-                      <AppTooltip>{{ $t('Copy current epoch public key') }}</AppTooltip>
+                      <AppTooltip>{{ $t('group.copyCurrentEpochPublic') }}</AppTooltip>
                     </q-btn>
                   </template>
                 </q-input>
               </div>
 
               <div class="profile-card__section q-mt-md">
-                <div class="profile-card__title">{{ $t('All Epochs') }}</div>
+                <div class="profile-card__title">{{ $t('group.allEpochs') }}</div>
 
                 <div v-if="groupEpochRows.length === 0" class="profile-members-state q-mt-sm">
-                  <div class="text-body2">{{ $t('No epochs stored for this group yet.') }}</div>
+                  <div class="text-body2">{{ $t('group.epochsStoredGroupYet') }}</div>
                 </div>
 
                 <q-markup-table v-else flat bordered class="profile-epochs-table q-mt-sm">
                   <thead>
                     <tr>
-                      <th class="text-left">{{ $t('Epoch') }}</th>
-                      <th class="text-left">{{ $t('Public Key') }}</th>
-                      <th class="text-left">{{ $t('Invitation Date') }}</th>
+                      <th class="text-left">{{ $t('group.epoch.label') }}</th>
+                      <th class="text-left">{{ $t('contacts.publicKey') }}</th>
+                      <th class="text-left">{{ $t('group.invitationDate') }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -757,7 +757,7 @@
                   no-caps
                   outline
                   color="primary"
-                  :label="$t('Refresh')"
+                  :label="$t('common.refresh')"
                   class="profile-tab-actions__button"
                   :disable="!normalizedHeaderPubkey || isRefreshingGroupRelays"
                   :loading="isRefreshingGroupRelays"
@@ -768,7 +768,7 @@
                   no-caps
                   unelevated
                   color="primary"
-                  :label="$t('Publish')"
+                  :label="$t('common.publishAction')"
                   class="profile-tab-actions__button"
                   :disable="!normalizedHeaderPubkey"
                   :loading="isPublishingGroupRelays"
@@ -781,9 +781,9 @@
                 :relays="groupRelayUrls"
                 :relay-validation-error="groupRelayValidationError"
                 :can-add-relay="canAddGroupRelay"
-                :empty-message="$t('No NIP-65 relays configured.')"
+                :empty-message="$t('relays.nip65RelaysConfigured')"
                 :secondary-action-disabled="!canUseDefaultGroupRelays"
-                :secondary-action-label="$t('Use Default Relays')"
+                :secondary-action-label="$t('relays.useDefaultRelays')"
                 secondary-action-icon="restart_alt"
                 :relay-read-enabled="groupRelayReadEnabled"
                 :relay-write-enabled="groupRelayWriteEnabled"
@@ -816,7 +816,7 @@
           :text-color="activeTab === 'profile' ? 'white' : undefined"
           no-caps
           icon="badge"
-          :label="$t('Profile')"
+          :label="$t('profile.profile')"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeTab === 'profile' }"
           @click="activeTab = 'profile'"
@@ -829,7 +829,7 @@
           :text-color="activeTab === 'members' ? 'white' : undefined"
           no-caps
           icon="groups"
-          :label="$t('Members')"
+          :label="$t('group.members')"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeTab === 'members' }"
           @click="activeTab = 'members'"
@@ -842,7 +842,7 @@
           :text-color="activeTab === 'relays' ? 'white' : undefined"
           no-caps
           icon="satellite_alt"
-          :label="$t('Relays')"
+          :label="$t('relays.title')"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeTab === 'relays' }"
           @click="activeTab = 'relays'"
@@ -855,7 +855,7 @@
           :text-color="activeTab === 'epochs' ? 'white' : undefined"
           no-caps
           icon="history"
-          :label="$t('Epochs')"
+          :label="$t('group.epochs')"
           class="mobile-nav__btn"
           :class="{ 'mobile-nav__btn--active': activeTab === 'epochs' }"
           @click="activeTab = 'epochs'"
@@ -866,8 +866,8 @@
     <AppDialog
       v-if="isShareDialogOpen"
       :model-value="isShareDialogOpen"
-      :title="$t('Share Contact')"
-      :subtitle="$t('Scan the QR code or copy the nostr address.')"
+      :title="$t('contacts.shareContact')"
+      :subtitle="$t('common.scanQrCodeCopy')"
       plain
       max-width="520px"
       body-class="profile-share-dialog__body"
@@ -880,7 +880,7 @@
         >
           <img
             :src="shareQrCodeSvgDataUrl"
-            :alt="$t('QR code for contact nostr address')"
+            :alt="$t('contacts.qrCodeContactNostr')"
             class="profile-share__qr"
             data-testid="contact-profile-share-qr"
           />
@@ -893,7 +893,7 @@
           dense
           rounded
           readonly
-          :label="$t('Nostr Address')"
+          :label="$t('common.nostrAddress')"
         >
           <template #append>
             <q-btn
@@ -902,11 +902,11 @@
               round
               icon="content_copy"
               color="primary"
-              :aria-label="$t('Copy nostr address')"
+              :aria-label="$t('common.copyNostrAddress')"
               :disable="!shareNostrAddress"
               @click.stop="handleCopyProfileValue(shareNostrAddress, 'Nostr address')"
             >
-              <AppTooltip>{{ $t('Copy nostr address') }}</AppTooltip>
+              <AppTooltip>{{ $t('common.copyNostrAddress') }}</AppTooltip>
             </q-btn>
           </template>
         </q-input>
@@ -925,7 +925,7 @@
         v-if="selectedGroupMemberTicketStatusItems.length === 0"
         class="profile-member-delivery__dialog-empty"
       >
-        {{ $t('No relay status recorded yet.') }}
+        {{ $t('relays.relayStatusRecordedYet') }}
       </div>
       <ul v-else class="profile-member-delivery__dialog-list">
         <li
@@ -956,7 +956,7 @@
             no-caps
             size="sm"
             color="primary"
-            :label="$t('Retry')"
+            :label="$t('common.retry')"
             class="profile-member-delivery__dialog-retry"
             :loading="isRetryingGroupMemberTicketRelay(item)"
             :disable="isRetryingGroupMemberTicketRelay(item)"
@@ -1143,24 +1143,24 @@ const displayedPubkeyValue = computed(() => {
   return displayedPubkeyFormat.value === 'npub' ? displayNpub.value : displayHexPubkey.value;
 });
 const displayedPubkeyLabel = computed(() => {
-  return displayedPubkeyFormat.value === 'npub' ? t('Public Key (npub)') : t('Public Key (hex)');
+  return displayedPubkeyFormat.value === 'npub' ? t('contacts.publicKeyNpub') : t('contacts.publicKeyHex');
 });
 const displayedPubkeyPlaceholder = computed(() => {
-  return displayedPubkeyFormat.value === 'npub' ? 'npub1...' : t('hex public key');
+  return displayedPubkeyFormat.value === 'npub' ? 'npub1...' : t('contacts.hexPublicKey.placeholder');
 });
 const displayedPubkeyCopyLabel = computed(() => {
-  return displayedPubkeyFormat.value === 'npub' ? 'npub' : t('Hex public key');
+  return displayedPubkeyFormat.value === 'npub' ? 'npub' : t('contacts.hexPublicKey.label');
 });
 const displayedPubkeyToggleLabel = computed(() => {
   return displayedPubkeyFormat.value === 'npub' ? 'hex' : 'npub';
 });
 const pubkeyFormatToggleAriaLabel = computed(() => {
   return displayedPubkeyFormat.value === 'npub'
-    ? t('Show public key in hex format')
-    : t('Show public key in npub format');
+    ? t('contacts.showPublicKeyHex')
+    : t('contacts.showPublicKeyNpub');
 });
 const pubkeyFormatToggleTooltip = computed(() => {
-  return displayedPubkeyFormat.value === 'npub' ? t('Show hex') : t('Show npub');
+  return displayedPubkeyFormat.value === 'npub' ? t('common.showHex') : t('contacts.showNpub');
 });
 const isMobileTabs = computed(() => $q.screen.lt.md);
 const isGroupContact = computed(() => currentContact.value?.type === 'group');
@@ -1327,10 +1327,10 @@ const selectedGroupMemberTicketStatusItems = computed<GroupMemberTicketStatusLis
 const selectedGroupMemberTicketStatusTitle = computed(() => {
   const selectedStatus = selectedGroupMemberTicketStatus.value;
   if (!selectedStatus) {
-    return t('Relay Status');
+    return t('relays.relayStatus');
   }
 
-  return t('{name} - Epoch {number}', {
+  return t('group.epochTitle', {
     name: selectedStatus.memberLabel,
     number: selectedStatus.delivery.epoch_number
   });
@@ -1349,14 +1349,14 @@ const headerName = computed(() => {
     return name;
   }
 
-  return formatCompactPublicKey(normalizedHeaderPubkey.value) || t('Contact');
+  return formatCompactPublicKey(normalizedHeaderPubkey.value) || t('contacts.contact.label');
 });
 
 const headerSubtitle = computed(() => {
   const pubkey = normalizedHeaderPubkey.value;
   return pubkey
-    ? t('Pubkey {pubkey}', { pubkey: formatCompactPublicKey(pubkey) })
-    : t('Contact profile');
+    ? t('contacts.pubkey.value', { pubkey: formatCompactPublicKey(pubkey) })
+    : t('contacts.contactProfile');
 });
 
 const headerAvatar = computed(() => {
@@ -1512,12 +1512,12 @@ function normalizeGroupEpochRows(value: unknown): ChatGroupEpochKey[] {
 
 function formatEpochInvitationDate(value: string | undefined): string {
   if (!value) {
-    return t('Unknown');
+    return t('common.unknownLabel');
   }
 
   const parsedDate = new Date(value);
   if (Number.isNaN(parsedDate.getTime())) {
-    return t('Unknown');
+    return t('common.unknownLabel');
   }
 
   return new Intl.DateTimeFormat(getDateTimeLocale(), {
@@ -1778,7 +1778,7 @@ async function retrySelectedGroupMemberTicketRelay(
     reportUiError(
       'Failed to retry group member ticket relay',
       error,
-      t('Failed to retry relay.')
+      t('errors.failedRetryRelay')
     );
   } finally {
     retryingGroupMemberTicketRelayKeys.value =
@@ -1875,12 +1875,12 @@ function validateGroupRelayUrl(value: string): string {
         (entry) => buildRelayLookupKey(entry.url) === buildRelayLookupKey(normalizedRelay)
       )
     ) {
-      return t('Relay already added.');
+      return t('relays.validation.alreadyAdded');
     }
 
     return '';
   } catch {
-    return t('Relay must be a valid ws:// or wss:// URL');
+    return t('relays.relayMustValidWs');
   }
 }
 
@@ -1890,11 +1890,11 @@ function memberIdentifierErrorMessage(resolution: {
 }): string {
   if (resolution.identifierType === 'nip05') {
     return resolution.error === 'nip05_unresolved'
-      ? t('NIP-05 could not be resolved. Please verify the identifier.')
-      : t('Enter a valid NIP-05 identifier (name@domain).');
+      ? t('contacts.nip05CouldResolvedPlease')
+      : t('contacts.enterValidNip05Identifier');
   }
 
-  return t('Enter a valid hex pubkey, npub, or NIP-05 email.');
+  return t('contacts.validation.hexPubkeyNpubNip05');
 }
 
 function applyStoredContactToCurrentContact(updatedContact: ContactRecord): void {
@@ -1926,7 +1926,7 @@ function pendingMemberBadgeColor(action: PendingGroupMemberChangeAction): string
 }
 
 function pendingMemberBadgeLabel(action: PendingGroupMemberChangeAction): string {
-  return action === 'add' ? t('Adding') : t('Removing');
+  return action === 'add' ? t('common.adding') : t('common.removing');
 }
 
 async function handleAddMember(): Promise<void> {
@@ -1936,7 +1936,7 @@ async function handleAddMember(): Promise<void> {
 
   const identifier = newMemberIdentifier.value.trim();
   if (!identifier) {
-    newMemberIdentifierError.value = t('Enter a valid hex pubkey, npub, or NIP-05 email.');
+    newMemberIdentifierError.value = t('contacts.validation.hexPubkeyNpubNip05');
     return;
   }
 
@@ -1952,7 +1952,7 @@ async function handleAddMember(): Promise<void> {
     const normalizedPublicKey = resolution.normalizedPubkey;
     const ownerPublicKey = currentContact.value?.meta.owner_public_key?.trim().toLowerCase() ?? '';
     if (ownerPublicKey && normalizedPublicKey === ownerPublicKey) {
-      newMemberIdentifierError.value = t('The group owner does not need to be added as a member.');
+      newMemberIdentifierError.value = t('group.groupOwnerDoesNeed');
       return;
     }
 
@@ -1960,7 +1960,7 @@ async function handleAddMember(): Promise<void> {
     if (pendingChangeIndex >= 0) {
       const pendingChange = pendingGroupMemberChanges.value[pendingChangeIndex];
       if (pendingChange?.action === 'add') {
-        newMemberIdentifierError.value = t('This member is already pending.');
+        newMemberIdentifierError.value = t('relays.memberAlreadyPending');
         return;
       }
 
@@ -1973,7 +1973,7 @@ async function handleAddMember(): Promise<void> {
     }
 
     if (groupMembers.value.some((member) => member.public_key === normalizedPublicKey)) {
-      newMemberIdentifierError.value = t('This member is already in the list.');
+      newMemberIdentifierError.value = t('relays.memberAlreadyList');
       return;
     }
 
@@ -2006,7 +2006,7 @@ async function handleAddMember(): Promise<void> {
     newMemberIdentifier.value = '';
     newMemberIdentifierError.value = '';
   } catch (error) {
-    reportUiError('Failed to validate group member', error, t('Failed to add member.'));
+    reportUiError('Failed to validate group member', error, t('errors.failedAddMember'));
   } finally {
     isAddingMember.value = false;
   }
@@ -2018,7 +2018,7 @@ function handleUndoPendingMember(memberPublicKey: string): void {
       (change) => change.member.public_key !== memberPublicKey
     );
   } catch (error) {
-    reportUiError('Failed to undo pending group member change', error, t('Failed to undo member change.'));
+    reportUiError('Failed to undo pending group member change', error, t('errors.failedUndoMemberChange'));
   }
 }
 
@@ -2045,7 +2045,7 @@ function handleRemoveMember(memberPublicKey: string): void {
       }
     ];
   } catch (error) {
-    reportUiError('Failed to remove group member', error, t('Failed to remove member.'));
+    reportUiError('Failed to remove group member', error, t('errors.failedRemoveMember'));
   }
 }
 
@@ -2064,7 +2064,7 @@ async function handleRefreshMember(memberPublicKey: string): Promise<void> {
       const fallbackName = groupOwnerMember.value?.name?.trim() || memberPublicKey.slice(0, 16);
       await refreshGroupOwnerMember(memberPublicKey, fallbackName);
     } catch (error) {
-      reportUiError('Failed to refresh group owner profile', error, t('Failed to refresh member profile.'));
+      reportUiError('Failed to refresh group owner profile', error, t('errors.failedRefreshMemberProfile'));
     } finally {
       const nextRefreshingState = {
         ...refreshingMemberPubkeys.value
@@ -2103,7 +2103,7 @@ async function handleRefreshMember(memberPublicKey: string): Promise<void> {
         : entry
     ));
   } catch (error) {
-    reportUiError('Failed to refresh group member profile', error, t('Failed to refresh member profile.'));
+    reportUiError('Failed to refresh group member profile', error, t('errors.failedRefreshMemberProfile'));
   } finally {
     const nextRefreshingState = {
       ...refreshingMemberPubkeys.value
@@ -2137,20 +2137,20 @@ async function handleRefreshGroupMembersFromFollowSet(): Promise<void> {
       type: refreshResult.fallbackProfileCount > 0 ? 'warning' : 'positive',
       message:
         visibleRefreshedMemberCount > 0 || refreshResult.ownerIncluded
-          ? t('Refreshed {count} {memberLabel} from the published roster.', {
+          ? t('group.refreshedPublishedRoster', {
               count: visibleRefreshedMemberCount,
               memberLabel:
-                visibleRefreshedMemberCount === 1 ? t('member') : t('members')
+                visibleRefreshedMemberCount === 1 ? t('common.member') : t('common.members')
             })
-          : t('Group members refreshed. No members are currently published.'),
+          : t('group.groupMembersRefreshedMembers'),
       caption:
         refreshResult.fallbackProfileCount > 0
-          ? t('{count} {profileLabel} kept local fallback data.', {
+          ? t('group.members.localFallbackData', {
               count: refreshResult.fallbackProfileCount,
               profileLabel:
-                refreshResult.fallbackProfileCount === 1 ? t('profile') : t('profiles')
+                refreshResult.fallbackProfileCount === 1 ? t('common.profile') : t('common.profiles')
             })
-          : t('Fetched from the latest NIP-51 roster.'),
+          : t('group.fetchedLatestNip51Roster'),
       position: 'top',
       timeout: refreshResult.fallbackProfileCount > 0 ? 6000 : 3000
     });
@@ -2158,7 +2158,7 @@ async function handleRefreshGroupMembersFromFollowSet(): Promise<void> {
     reportUiError(
       'Failed to refresh group members from roster',
       error,
-      t('Failed to refresh group members.')
+      t('errors.failedRefreshGroupMembers')
     );
   } finally {
     isRefreshingGroupMembersFromFollowSet.value = false;
@@ -2195,29 +2195,29 @@ async function handleMembersPublish(): Promise<void> {
         message:
           publishResult.attemptedMemberCount > 0
             ? publishResult.createdNewEpoch
-              ? t('Epoch {epoch} published to {count} {memberLabel}.', {
+              ? t('group.epochPublished', {
                   epoch: publishResult.epochNumber,
                   count: publishResult.deliveredMemberCount,
                   memberLabel:
-                    publishResult.deliveredMemberCount === 1 ? t('member') : t('members')
+                    publishResult.deliveredMemberCount === 1 ? t('common.member') : t('common.members')
                 })
-              : t('Invitations for epoch {epoch} sent to {count} {memberLabel}.', {
+              : t('group.invitationsEpochSent', {
                   epoch: publishResult.epochNumber,
                   count: publishResult.deliveredMemberCount,
                   memberLabel:
-                    publishResult.deliveredMemberCount === 1 ? t('member') : t('members')
+                    publishResult.deliveredMemberCount === 1 ? t('common.member') : t('common.members')
                 })
             : publishResult.createdNewEpoch
-              ? t('Epoch {epoch} created locally. No members to notify.', {
+              ? t('group.epochCreatedLocallyMembers', {
                   epoch: publishResult.epochNumber
                 })
-              : t('No members to notify for epoch {epoch}.', {
+              : t('group.membersNotifyEpoch', {
                   epoch: publishResult.epochNumber
                 }),
-        caption: t('Published to {count} {relayLabel}.', {
+        caption: t('relays.published', {
           count: publishResult.publishedRelayUrls.length,
           relayLabel:
-            publishResult.publishedRelayUrls.length === 1 ? t('relay') : t('relays')
+            publishResult.publishedRelayUrls.length === 1 ? t('common.relay') : t('common.relays')
         }),
         position: 'top'
       });
@@ -2227,18 +2227,18 @@ async function handleMembersPublish(): Promise<void> {
     $q.notify({
       type: publishResult.deliveredMemberCount > 0 ? 'warning' : 'negative',
       message: publishResult.createdNewEpoch
-        ? t('Epoch {epoch} published with partial delivery.', {
+        ? t('group.epochPublishedPartialDelivery', {
             epoch: publishResult.epochNumber
           })
-        : t('Invitations for epoch {epoch} were sent with partial delivery.', {
+        : t('group.invitationsEpochSentPartial', {
             epoch: publishResult.epochNumber
           }),
-      caption: t('{delivered} delivered, {failed} failed, {relayCount} {relayLabel}.', {
+      caption: t('relays.deliverySummary', {
         delivered: publishResult.deliveredMemberCount,
         failed: publishResult.failedMemberPubkeys.length,
         relayCount: publishResult.publishedRelayUrls.length,
         relayLabel:
-          publishResult.publishedRelayUrls.length === 1 ? t('relay') : t('relays')
+          publishResult.publishedRelayUrls.length === 1 ? t('common.relay') : t('common.relays')
       }),
       position: 'top',
       timeout: 6000
@@ -2247,7 +2247,7 @@ async function handleMembersPublish(): Promise<void> {
     reportUiError(
       'Failed to publish group member changes',
       error,
-      t('Failed to publish group members.')
+      t('errors.failedPublishGroupMembers')
     );
   } finally {
     isPublishingMembersEpoch.value = false;
@@ -2284,7 +2284,7 @@ function handleAddGroupRelay(): void {
     ];
     newGroupRelay.value = '';
   } catch (error) {
-    reportUiError('Failed to add group relay', error, t('Failed to add relay.'));
+    reportUiError('Failed to add group relay', error, t('errors.failedAddRelay'));
   }
 }
 
@@ -2292,7 +2292,7 @@ function handleRemoveGroupRelay(index: number): void {
   try {
     groupRelayEntries.value = groupRelayEntries.value.filter((_, relayIndex) => relayIndex !== index);
   } catch (error) {
-    reportUiError('Failed to remove group relay', error, t('Failed to remove relay.'));
+    reportUiError('Failed to remove group relay', error, t('errors.failedRemoveRelay'));
   }
 }
 
@@ -2308,7 +2308,7 @@ function handleUseDefaultGroupRelays(): void {
     reportUiError(
       'Failed to reset group relays to defaults',
       error,
-      t('Failed to use default relays.')
+      t('errors.failedUseDefaultRelays')
     );
   }
 }
@@ -2332,7 +2332,7 @@ function handleUpdateGroupRelayRead({ index, value }: RelayTogglePayload): void 
         : entry
     );
   } catch (error) {
-    reportUiError('Failed to update group relay read flag', error, t('Failed to update relay.'));
+    reportUiError('Failed to update group relay read flag', error, t('errors.failedUpdateRelay'));
   }
 }
 
@@ -2347,7 +2347,7 @@ function handleUpdateGroupRelayWrite({ index, value }: RelayTogglePayload): void
         : entry
     );
   } catch (error) {
-    reportUiError('Failed to update group relay write flag', error, t('Failed to update relay.'));
+    reportUiError('Failed to update group relay write flag', error, t('errors.failedUpdateRelay'));
   }
 }
 
@@ -2363,7 +2363,7 @@ async function handleRefreshGroupRelays(): Promise<void> {
     await nostrStore.refreshContactRelayList(groupPublicKey);
     await loadContactFromPubkey(groupPublicKey);
   } catch (error) {
-    reportUiError('Failed to refresh group relays', error, t('Failed to refresh group relays.'));
+    reportUiError('Failed to refresh group relays', error, t('errors.failedRefreshGroupRelays'));
   } finally {
     isRefreshingGroupRelays.value = false;
   }
@@ -2399,11 +2399,11 @@ async function handlePublishGroupRelays(): Promise<void> {
     if (relaySaveStatus.publishedRelayUrls.length > 0 && relaySaveStatus.failedRelayUrls.length === 0) {
       $q.notify({
         type: 'positive',
-        message: t('Group relays published.'),
-        caption: t('Published to {count} {relayLabel}.', {
+        message: t('relays.groupRelaysPublished'),
+        caption: t('relays.published', {
           count: relaySaveStatus.publishedRelayUrls.length,
           relayLabel:
-            relaySaveStatus.publishedRelayUrls.length === 1 ? t('relay') : t('relays')
+            relaySaveStatus.publishedRelayUrls.length === 1 ? t('common.relay') : t('common.relays')
         }),
         position: 'top'
       });
@@ -2414,20 +2414,20 @@ async function handlePublishGroupRelays(): Promise<void> {
       type: relaySaveStatus.publishedRelayUrls.length > 0 ? 'warning' : 'negative',
       message:
         relaySaveStatus.publishedRelayUrls.length > 0
-          ? t('Group relays published with partial delivery.')
-          : t('Failed to publish group relays.'),
+          ? t('relays.groupRelaysPublishedPartial')
+          : t('errors.failedPublishGroupRelays'),
       caption:
-        t('Published to {count} {relayLabel}.', {
+        t('relays.published', {
           count: relaySaveStatus.publishedRelayUrls.length,
           relayLabel:
-            relaySaveStatus.publishedRelayUrls.length === 1 ? t('relay') : t('relays')
+            relaySaveStatus.publishedRelayUrls.length === 1 ? t('common.relay') : t('common.relays')
         }) +
         (relaySaveStatus.errorMessage ? ` ${relaySaveStatus.errorMessage}` : ''),
       position: 'top',
       timeout: 6000
     });
   } catch (error) {
-    reportUiError('Failed to publish group relays', error, t('Failed to publish group relays.'));
+    reportUiError('Failed to publish group relays', error, t('errors.failedPublishGroupRelays'));
   } finally {
     isPublishingGroupRelays.value = false;
   }
@@ -2655,7 +2655,7 @@ function memberPubkeySnippet(member: GroupMemberDraft): string {
 
 function memberListTitle(member: GroupMemberDraft): string {
   if (isLoggedInMember(member)) {
-    return t('My Self');
+    return t('common.self');
   }
 
   return memberListCandidates(member)[0] ?? memberPubkeySnippet(member);
@@ -2716,7 +2716,7 @@ function handleOpenShareDialog(): void {
 
     isShareDialogOpen.value = true;
   } catch (error) {
-    reportUiError('Failed to open contact share dialog', error, t('Failed to open share dialog.'));
+    reportUiError('Failed to open contact share dialog', error, t('errors.failedOpenShareDialog'));
   }
 }
 
@@ -2740,7 +2740,7 @@ async function copyText(value: string): Promise<void> {
   }
 
   if (typeof document === 'undefined') {
-    throw new Error(t('Clipboard is not available.'));
+    throw new Error(t('common.clipboardAvailable'));
   }
 
   const textarea = document.createElement('textarea');
@@ -2759,7 +2759,7 @@ async function handleCopyProfileValue(value: string, label: string): Promise<voi
     await copyText(value);
     $q.notify({
       type: 'positive',
-      message: t('{label} copied.', { label }),
+      message: t('common.copiedLabel', { label }),
       position: 'top'
     });
   } catch (error) {
@@ -2787,9 +2787,9 @@ async function handleRefreshContactProfile(): Promise<void> {
     });
     await loadContactFromPubkey(normalizedPubkey);
   } catch (error) {
-    reportUiError('Failed to refresh profile', error, t('Failed to refresh profile.'));
+    reportUiError('Failed to refresh profile', error, t('errors.failedRefreshProfile'));
     pubkeyError.value =
-      error instanceof Error ? error.message : t('Failed to refresh contact profile.');
+      error instanceof Error ? error.message : t('errors.failedRefreshContactProfile');
     pubkeyInfo.value = '';
   } finally {
     isRefreshingContact.value = false;
@@ -2835,7 +2835,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
     currentContact.value = null;
     currentGroupChat.value = null;
     isLoadingContact.value = false;
-    pubkeyError.value = t('Enter a valid hex pubkey or npub.');
+    pubkeyError.value = t('contacts.validation.hexPubkeyOrNpub');
     pubkeyInfo.value = '';
     return;
   }
@@ -2857,7 +2857,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
     if (!contact) {
       currentContact.value = null;
       currentGroupChat.value = null;
-      pubkeyInfo.value = t('No contact found for this public key.');
+      pubkeyInfo.value = t('contacts.contactFoundPublicKey');
       return;
     }
 
@@ -2871,7 +2871,7 @@ async function loadContactFromPubkey(input: string): Promise<void> {
 
     currentContact.value = null;
     currentGroupChat.value = null;
-    pubkeyError.value = error instanceof Error ? error.message : t('Failed to load contact.');
+    pubkeyError.value = error instanceof Error ? error.message : t('errors.failedLoadContact');
     pubkeyInfo.value = '';
   } finally {
     if (requestId === lookupRequestId) {

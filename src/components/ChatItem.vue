@@ -29,7 +29,7 @@
         <div
           v-if="unseenReactionCount > 0"
           class="chat-item__reaction-badge"
-          :aria-label="$t('{count} unseen reactions', { count: unseenReactionCount })"
+          :aria-label="$t('chat.reactions.unseenCount', { count: unseenReactionCount })"
         >
           <span class="chat-item__reaction-icon-shell" aria-hidden="true">
             <q-icon name="favorite" size="13px" class="chat-item__reaction-icon" />
@@ -50,17 +50,17 @@
         round
         icon="more_vert"
         class="chat-item__more"
-        :aria-label="$t('Chat actions')"
+        :aria-label="$t('chat.chatActions')"
         data-testid="chat-item-actions-button"
         @click.stop
       >
         <q-menu anchor="bottom right" self="top right" class="nc-pop-menu">
           <q-list dense class="nc-pop-menu__list">
             <q-item clickable v-close-popup @click="emitViewProfile">
-              <q-item-section>{{ $t('View Profile') }}</q-item-section>
+              <q-item-section>{{ $t('profile.viewProfile') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitRefreshProfile">
-              <q-item-section>{{ $t('Refresh Profile') }}</q-item-section>
+              <q-item-section>{{ $t('profile.refreshProfile') }}</q-item-section>
             </q-item>
             <q-item
               v-if="chat.type === 'group'"
@@ -68,16 +68,16 @@
               v-close-popup
               @click="emitRefreshChat"
             >
-              <q-item-section>{{ $t('Refresh Group Chat') }}</q-item-section>
+              <q-item-section>{{ $t('group.refreshGroupChat') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup :disable="isMuted" @click="emitMute">
-              <q-item-section>{{ $t('Mute') }}</q-item-section>
+              <q-item-section>{{ $t('common.mute') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitMarkAsRead">
-              <q-item-section>{{ $t('Mark as Read') }}</q-item-section>
+              <q-item-section>{{ $t('relays.markRead') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitDeleteChat">
-              <q-item-section class="text-negative">{{ $t('Delete Chat') }}</q-item-section>
+              <q-item-section class="text-negative">{{ $t('chat.deleteChat') }}</q-item-section>
             </q-item>
           </q-list>
         </q-menu>
@@ -145,7 +145,7 @@ const formattedTime = computed(() => {
 const chatTitle = computed(() => {
   const loggedInPubkey = getLoggedInPubkey();
   if (loggedInPubkey && props.chat.publicKey.trim().toLowerCase() === loggedInPubkey) {
-    return t('My Self');
+    return t('common.self');
   }
 
   const givenName = readMetaString('given_name');

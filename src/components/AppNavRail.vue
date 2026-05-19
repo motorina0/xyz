@@ -42,9 +42,9 @@ import { useChatStore } from 'src/stores/chatStore';
 import { formatUnreadChatBadgeLabel } from 'src/utils/unreadChatBadge';
 
 const navItems = [
-  { key: 'chats', labelKey: 'Chats', icon: 'chat' },
-  { key: 'contacts', labelKey: 'Contacts', icon: 'contacts' },
-  { key: 'settings', labelKey: 'Settings', icon: 'settings' }
+  { key: 'chats', labelKey: 'chat.chats', icon: 'chat' },
+  { key: 'contacts', labelKey: 'contacts.contacts.label', icon: 'contacts' },
+  { key: 'settings', labelKey: 'settings.settings', icon: 'settings' }
 ] as const;
 
 const chatStore = useChatStore();

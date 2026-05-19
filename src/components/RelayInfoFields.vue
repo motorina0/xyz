@@ -26,7 +26,7 @@
       <div class="relay-info-group__children">
         <q-input
           v-if="value.length === 0"
-          :label="$t('value')"
+          :label="$t('common.value')"
           model-value="[]"
           dense
           outlined
@@ -52,7 +52,7 @@
       <div class="relay-info-group__children">
         <q-input
           v-if="objectEntries.length === 0"
-          :label="$t('value')"
+          :label="$t('common.value')"
           model-value="{}"
           dense
           outlined
@@ -148,7 +148,7 @@ function humanizeLabel(value: string): string {
   const trimmed = value.trim();
   const indexMatch = trimmed.match(/^\[(\d+)\]$/);
   if (indexMatch) {
-    return t('Item {number}', { number: Number(indexMatch[1]) + 1 });
+    return t('common.itemNumber', { number: Number(indexMatch[1]) + 1 });
   }
 
   const normalized = normalizeLabel(trimmed).replace(/[^a-z0-9_]/g, '_');
@@ -159,7 +159,7 @@ function humanizeLabel(value: string): string {
     .map((part) => toDisplayWord(part));
 
   if (words.length === 0) {
-    return t('Value');
+    return t('common.valueLabel');
   }
 
   return words.join(' ');

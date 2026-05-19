@@ -32,7 +32,7 @@
                 :label="unreadChatBadgeLabel"
               />
             </span>
-            <span class="mobile-nav__label">{{ $t('Chats') }}</span>
+            <span class="mobile-nav__label">{{ $t('chat.chats') }}</span>
           </span>
         </q-btn>
         <q-btn
@@ -46,7 +46,7 @@
             <span class="mobile-nav__icon-shell">
               <q-icon name="contacts" class="mobile-nav__icon" />
             </span>
-            <span class="mobile-nav__label">{{ $t('Contacts') }}</span>
+            <span class="mobile-nav__label">{{ $t('contacts.contacts.label') }}</span>
           </span>
         </q-btn>
         <q-btn
@@ -67,7 +67,7 @@
                 label="1"
               />
             </span>
-            <span class="mobile-nav__label">{{ $t('Settings') }}</span>
+            <span class="mobile-nav__label">{{ $t('settings.settings') }}</span>
           </span>
         </q-btn>
       </div>

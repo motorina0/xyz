@@ -51,21 +51,21 @@ interface ReconnectHealingRuntimeDeps {
 }
 
 const RECONNECT_HEALING_STATUS_LABELS = {
-  preparingSync: 'Preparing sync',
-  checkingSessionAndNetwork: 'Checking session and network',
-  checkingMessageRelays: 'Checking message relays',
-  retryingUnsentMessages: 'Retrying unsent messages',
-  refreshingDirectMessages: 'Refreshing direct messages',
-  applyingPendingMessageUpdates: 'Applying pending message updates',
-  finishingSync: 'Finishing sync',
+  preparingSync: 'sync.preparing',
+  checkingSessionAndNetwork: 'sync.checkingSessionNetwork',
+  checkingMessageRelays: 'sync.checkingMessageRelays',
+  retryingUnsentMessages: 'sync.retryingUnsentMessages',
+  refreshingDirectMessages: 'sync.refreshingDirectMessages',
+  applyingPendingMessageUpdates: 'sync.applyingPendingMessageUpdates',
+  finishingSync: 'sync.finishing',
 } as const;
-const RECONNECT_HEALING_QUEUED_STATUS_LABEL_PREFIX = 'Sync started: ';
+const RECONNECT_HEALING_QUEUED_STATUS_LABEL_PREFIX = 'sync.started:';
 const RECONNECT_HEALING_REASON_LABELS: Record<ReconnectHealingReason, string> = {
-  'browser-online': 'browser online',
-  'window-focus': 'window focus',
-  'visibility-regain': 'visibility restored',
-  'relay-connected': 'relay connected',
-  'relay-list-changed': 'relay list changed',
+  'browser-online': 'sync.reason.browserOnline',
+  'window-focus': 'sync.reason.windowFocus',
+  'visibility-regain': 'sync.reason.visibilityRestored',
+  'relay-connected': 'sync.reason.relayConnected',
+  'relay-list-changed': 'sync.reason.relayListChanged',
 };
 const RECONNECT_HEALING_STATUS_MIN_VISIBLE_MS = 500;
 const RECONNECT_HEALING_PRIVATE_MESSAGES_EOSE_TIMEOUT_MS = 60 * 1000;

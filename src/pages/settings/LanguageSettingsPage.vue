@@ -1,11 +1,11 @@
 <template>
-  <SettingsDetailLayout :title="$t('Languages')" icon="language">
+  <SettingsDetailLayout :title="$t('settings.language.titlePlural')" icon="language">
     <q-card flat bordered class="language-card">
       <q-card-section class="language-card__section">
         <div>
-          <div class="text-body1">{{ $t('App language') }}</div>
+          <div class="text-body1">{{ $t('settings.language.field') }}</div>
           <div class="text-caption text-grey-6">
-            {{ $t('Choose the language used for labels, actions, and app messages.') }}
+            {{ $t('settings.language.description') }}
           </div>
         </div>
 
@@ -18,7 +18,7 @@
           map-options
           option-label="label"
           option-value="code"
-          :label="$t('Language')"
+          :label="$t('settings.language.title')"
           :options="languageSelectOptions"
         />
       </q-card-section>

@@ -8,7 +8,7 @@
         outlined
         rounded
         clearable
-        :placeholder="$t('Search emoji')"
+        :placeholder="$t('message.searchEmoji')"
       >
         <template #prepend>
           <q-icon name="search" />
@@ -43,7 +43,7 @@
       </div>
 
       <div v-if="availableEmojiGroups.length === 0" class="emoji-picker__empty">
-        {{ $t('No emoji found.') }}
+        {{ $t('message.emojiFound') }}
       </div>
     </div>
 
@@ -51,7 +51,7 @@
       v-if="availableEmojiGroups.length > 0"
       class="emoji-picker__tabs"
       role="tablist"
-      :aria-label="$t('Emoji categories')"
+      :aria-label="$t('message.emojiCategories')"
     >
       <button
         v-for="group in availableEmojiGroups"

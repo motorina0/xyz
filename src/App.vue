@@ -26,7 +26,7 @@
         round
         dense
         icon="close"
-        :aria-label="$t('Dismiss')"
+        :aria-label="$t('common.dismiss')"
         @click.stop="dismissForegroundMessageBanner"
       />
     </div>
@@ -61,7 +61,7 @@ Notify.setDefaults({
       dense: true,
       flat: true,
       color: 'white',
-      'aria-label': t('Dismiss'),
+      'aria-label': t('common.dismiss'),
     },
   ],
 });
@@ -72,7 +72,7 @@ const foregroundMessageBannerAvatarFallback = computed(() =>
 );
 const foregroundMessageBannerMessage = computed(() => {
   const messageText = foregroundMessageBanner.value?.messageText.replace(/\s+/g, ' ').trim() ?? '';
-  return messageText || t('Message');
+  return messageText || t('message.message');
 });
 let foregroundMessageBannerTimeoutId: number | null = null;
 
@@ -104,7 +104,7 @@ function showForegroundMessageBanner(detail: ForegroundMessageActivityDetail): v
     chatPubkey: detail.chatPubkey,
     iconUrl: detail.iconUrl,
     messageText: detail.messageText,
-    title: detail.title || t('Nostr Chat'),
+    title: detail.title || t('chat.nostrChat'),
     showBanner: true,
   };
   foregroundMessageBannerTimeoutId = window.setTimeout(() => {
