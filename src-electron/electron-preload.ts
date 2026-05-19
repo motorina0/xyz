@@ -3,6 +3,27 @@ import { contextBridge, ipcRenderer } from 'electron';
 contextBridge.exposeInMainWorld('desktopRuntime', {
   isElectron: true,
   platform: process.platform,
+  isSecureStorageAvailable: async () => {
+    return Boolean(await ipcRenderer.invoke('desktop:secure-storage:is-available'));
+  },
+  encryptPrivateKey: async (privateKeyHex: string) => {
+    const result = await ipcRenderer.invoke(
+      'desktop:secure-storage:encrypt-private-key',
+      privateKeyHex
+    );
+    if (typeof result !== 'string') {
+      throw new Error('Electron secure storage did not return encrypted data.');
+    }
+
+    return result;
+  },
+  decryptPrivateKey: async (encryptedPrivateKey: string) => {
+    const result = await ipcRenderer.invoke(
+      'desktop:secure-storage:decrypt-private-key',
+      encryptedPrivateKey
+    );
+    return typeof result === 'string' ? result : null;
+  },
   setUnreadChatBadge: (count: number, label: string) => {
     ipcRenderer.send('desktop:set-unread-chat-badge', { count, label });
   },

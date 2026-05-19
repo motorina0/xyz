@@ -45,11 +45,22 @@ const androidSecurePrivateKeyStorageMock = vi.hoisted(() => ({
   writeAndroidSecurePrivateKeyHex: vi.fn(async () => {}),
 }));
 
+const electronSecurePrivateKeyStorageMock = vi.hoisted(() => ({
+  clearElectronPrivateKeyMemoryOnlySession: vi.fn(),
+  isElectronSecurePrivateKeyStorageAvailable: vi.fn(() => false),
+  markElectronPrivateKeyMemoryOnlySession: vi.fn(),
+  readElectronSecurePrivateKeyHex: vi.fn(async () => null as string | null),
+  removeElectronSecurePrivateKeyHex: vi.fn(async () => {}),
+  writeElectronSecurePrivateKeyHex: vi.fn(async () => {}),
+}));
+
 vi.mock('src/services/chatDataService', () => ({
   chatDataService: chatDataServiceMock,
 }));
 
 vi.mock('src/services/androidSecurePrivateKeyStorage', () => androidSecurePrivateKeyStorageMock);
+
+vi.mock('src/services/electronSecurePrivateKeyStorage', () => electronSecurePrivateKeyStorageMock);
 
 vi.mock('src/services/contactsService', () => ({
   contactsService: contactsServiceMock,
@@ -262,6 +273,14 @@ describe('nostr runtime messaging logic', () => {
     androidSecurePrivateKeyStorageMock.readAndroidSecurePrivateKeyHex.mockResolvedValue(null);
     androidSecurePrivateKeyStorageMock.removeAndroidSecurePrivateKeyHex.mockResolvedValue();
     androidSecurePrivateKeyStorageMock.writeAndroidSecurePrivateKeyHex.mockResolvedValue();
+    electronSecurePrivateKeyStorageMock.clearElectronPrivateKeyMemoryOnlySession.mockClear();
+    electronSecurePrivateKeyStorageMock.isElectronSecurePrivateKeyStorageAvailable.mockReturnValue(
+      false
+    );
+    electronSecurePrivateKeyStorageMock.markElectronPrivateKeyMemoryOnlySession.mockClear();
+    electronSecurePrivateKeyStorageMock.readElectronSecurePrivateKeyHex.mockResolvedValue(null);
+    electronSecurePrivateKeyStorageMock.removeElectronSecurePrivateKeyHex.mockResolvedValue();
+    electronSecurePrivateKeyStorageMock.writeElectronSecurePrivateKeyHex.mockResolvedValue();
   });
 
   afterEach(() => {
@@ -814,6 +833,83 @@ describe('nostr runtime messaging logic', () => {
     expect(androidSecurePrivateKeyStorageMock.writeAndroidSecurePrivateKeyHex).toHaveBeenCalledWith(
       privateKey
     );
+    expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBe('nsec');
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBe(expectedPubkey);
+  });
+
+  it('uses Electron secure storage instead of localStorage for direct key logins', async () => {
+    electronSecurePrivateKeyStorageMock.isElectronSecurePrivateKeyStorageAvailable.mockReturnValue(
+      true
+    );
+    const localStorage = createMockStorage();
+    (globalThis as Record<string, unknown>).window = {
+      localStorage: localStorage.api,
+    };
+
+    const { deps, ndk, runtime } = createAuthSessionHarness();
+    const privateKey = NDKPrivateKeySigner.generate().privateKey;
+    const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
+
+    await expect(runtime.savePrivateKeyHex(privateKey)).resolves.toBe(true);
+
+    expect(
+      electronSecurePrivateKeyStorageMock.writeElectronSecurePrivateKeyHex
+    ).toHaveBeenCalledWith(privateKey);
+    expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBe('nsec');
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBe(expectedPubkey);
+    expect(runtime.getPrivateKeyHex()).toBe(privateKey);
+    expect(deps.setCachedSignerSessionKey).toHaveBeenCalledWith(`nsec:${expectedPubkey}`);
+    expect(ndk.signer).toBeTruthy();
+  });
+
+  it('falls back to a memory-only Electron private-key session when secure storage fails', async () => {
+    electronSecurePrivateKeyStorageMock.isElectronSecurePrivateKeyStorageAvailable.mockReturnValue(
+      true
+    );
+    electronSecurePrivateKeyStorageMock.writeElectronSecurePrivateKeyHex.mockRejectedValue(
+      new Error('secure storage unavailable')
+    );
+    const localStorage = createMockStorage();
+    (globalThis as Record<string, unknown>).window = {
+      localStorage: localStorage.api,
+    };
+
+    const { runtime } = createAuthSessionHarness();
+    const privateKey = NDKPrivateKeySigner.generate().privateKey;
+    const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
+
+    await expect(runtime.savePrivateKeyHex(privateKey)).resolves.toBe(true);
+
+    expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
+    expect(runtime.getPrivateKeyHex()).toBe(privateKey);
+    expect(
+      electronSecurePrivateKeyStorageMock.markElectronPrivateKeyMemoryOnlySession
+    ).toHaveBeenCalledWith(expectedPubkey);
+  });
+
+  it('migrates legacy Electron localStorage private keys into secure storage', async () => {
+    electronSecurePrivateKeyStorageMock.isElectronSecurePrivateKeyStorageAvailable.mockReturnValue(
+      true
+    );
+    const privateKey = NDKPrivateKeySigner.generate().privateKey;
+    const expectedPubkey = new NDKPrivateKeySigner(privateKey).pubkey;
+    const localStorage = createMockStorage({
+      [PRIVATE_KEY_STORAGE_KEY]: privateKey,
+      [PUBLIC_KEY_STORAGE_KEY]: expectedPubkey,
+    });
+    (globalThis as Record<string, unknown>).window = {
+      localStorage: localStorage.api,
+    };
+
+    const { runtime } = createAuthSessionHarness();
+
+    await expect(runtime.loadPrivateKeyHex()).resolves.toBe(privateKey);
+
+    expect(
+      electronSecurePrivateKeyStorageMock.writeElectronSecurePrivateKeyHex
+    ).toHaveBeenCalledWith(privateKey);
     expect(localStorage.store.get(AUTH_METHOD_STORAGE_KEY)).toBe('nsec');
     expect(localStorage.store.get(PRIVATE_KEY_STORAGE_KEY)).toBeUndefined();
     expect(localStorage.store.get(PUBLIC_KEY_STORAGE_KEY)).toBe(expectedPubkey);

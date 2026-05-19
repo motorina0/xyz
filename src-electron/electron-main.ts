@@ -5,6 +5,7 @@ import {
   nativeImage,
   nativeTheme,
   Notification,
+  safeStorage,
   shell,
 } from 'electron';
 import os from 'node:os';
@@ -15,6 +16,7 @@ const platform = process.platform || os.platform();
 const appId = 'com.lnbits.nostrchat';
 const currentDir = fileURLToPath(new URL('.', import.meta.url));
 const MAX_UNREAD_CHAT_BADGE_COUNT = 99;
+const PRIVATE_KEY_HEX_PATTERN = /^[0-9a-f]{64}$/;
 
 let mainWindow: BrowserWindow | null = null;
 let unreadChatBadgeState = {
@@ -147,6 +149,23 @@ function normalizeNotificationChatPubkey(value: unknown): string | null {
 
   const trimmedValue = value.trim().toLowerCase();
   return /^[0-9a-f]{64}$/.test(trimmedValue) ? trimmedValue : null;
+}
+
+function normalizePrivateKeyHex(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmedValue = value.trim().toLowerCase();
+  return PRIVATE_KEY_HEX_PATTERN.test(trimmedValue) ? trimmedValue : null;
+}
+
+function isSecureStorageEncryptionAvailable(): boolean {
+  try {
+    return safeStorage.isEncryptionAvailable();
+  } catch {
+    return false;
+  }
 }
 
 async function focusMainWindow(): Promise<BrowserWindow | null> {
@@ -282,6 +301,34 @@ ipcMain.on('desktop:show-incoming-message-notification', (_event, payload: unkno
   });
 
   notification.show();
+});
+
+ipcMain.handle('desktop:secure-storage:is-available', () => isSecureStorageEncryptionAvailable());
+
+ipcMain.handle('desktop:secure-storage:encrypt-private-key', (_event, payload: unknown) => {
+  if (!isSecureStorageEncryptionAvailable()) {
+    throw new Error('Electron secure storage is not available.');
+  }
+
+  const privateKeyHex = normalizePrivateKeyHex(payload);
+  if (!privateKeyHex) {
+    throw new Error('A valid private key is required.');
+  }
+
+  return safeStorage.encryptString(privateKeyHex).toString('base64');
+});
+
+ipcMain.handle('desktop:secure-storage:decrypt-private-key', (_event, payload: unknown) => {
+  if (!isSecureStorageEncryptionAvailable() || typeof payload !== 'string') {
+    return null;
+  }
+
+  try {
+    const decryptedValue = safeStorage.decryptString(Buffer.from(payload, 'base64'));
+    return normalizePrivateKeyHex(decryptedValue);
+  } catch {
+    return null;
+  }
 });
 
 if (!app.requestSingleInstanceLock()) {

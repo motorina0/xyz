@@ -3,6 +3,10 @@ import {
   clearAndroidPrivateKeySessionMetadata,
   hasUsableAndroidPrivateKeySession,
 } from 'src/services/androidSecurePrivateKeyStorage';
+import {
+  clearElectronPrivateKeySessionMetadata,
+  hasUsableElectronPrivateKeySession,
+} from 'src/services/electronSecurePrivateKeyStorage';
 import { PUBLIC_KEY_STORAGE_KEY } from 'src/stores/nostr/constants';
 import { finalizePendingLogoutCleanup } from 'src/utils/logoutCleanup';
 import {
@@ -23,12 +27,17 @@ async function hasStoredPublicKey(): Promise<boolean> {
     return false;
   }
 
-  if (await hasUsableAndroidPrivateKeySession()) {
-    return true;
+  if (!(await hasUsableAndroidPrivateKeySession())) {
+    clearAndroidPrivateKeySessionMetadata();
+    return false;
   }
 
-  clearAndroidPrivateKeySessionMetadata();
-  return false;
+  if (!(await hasUsableElectronPrivateKeySession())) {
+    clearElectronPrivateKeySessionMetadata();
+    return false;
+  }
+
+  return true;
 }
 
 export default route(() => {

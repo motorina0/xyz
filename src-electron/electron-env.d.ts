@@ -10,6 +10,9 @@ declare namespace NodeJS {
 interface DesktopRuntimeInfo {
   isElectron: true;
   platform: NodeJS.Platform;
+  isSecureStorageAvailable: () => Promise<boolean>;
+  encryptPrivateKey: (privateKeyHex: string) => Promise<string>;
+  decryptPrivateKey: (encryptedPrivateKey: string) => Promise<string | null>;
   setUnreadChatBadge: (count: number, label: string) => void;
   showIncomingMessageNotification: (input: {
     chatPubkey: string;
