@@ -74,7 +74,7 @@
               <q-item-section>{{ $t('common.mute') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitMarkAsRead">
-              <q-item-section>{{ $t('relays.markRead') }}</q-item-section>
+              <q-item-section>{{ $t('chat.markAsRead') }}</q-item-section>
             </q-item>
             <q-item clickable v-close-popup @click="emitDeleteChat">
               <q-item-section class="text-negative">{{ $t('chat.deleteChat') }}</q-item-section>
